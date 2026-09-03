@@ -284,17 +284,32 @@ export function buildNeighbours(seed: number): THREE.Group {
    */
   const NEAR_MAX_H = 6.2;
 
-  // Across the street: a low shopfront terrace, foreground framing only.
-  let cursor = -46;
-  while (cursor < 46) {
-    const w = rng.range(7, 13);
-    const d = rng.range(9, 14);
+  // The across-street row is authored, not generated — see ./neighbours. Only
+  // its continuation beyond the frame edges is filled in here.
+  let cursor = -78;
+  while (cursor < -34) {
+    const w = rng.range(8, 13);
+    const d = rng.range(10, 14);
     blocks.push({
       x: cursor + w / 2,
-      z: SITE.roadZ1 + d / 2 + rng.range(1.2, 2.6),
+      z: SITE.roadZ1 + d / 2 + rng.range(1.6, 2.8),
       w,
       d,
-      h: rng.range(4.2, NEAR_MAX_H),
+      h: rng.range(4.4, NEAR_MAX_H),
+      body: rng.pick(bodies),
+    });
+    cursor += w + rng.range(0.8, 2.2);
+  }
+  cursor = 34;
+  while (cursor < 78) {
+    const w = rng.range(8, 13);
+    const d = rng.range(10, 14);
+    blocks.push({
+      x: cursor + w / 2,
+      z: SITE.roadZ1 + d / 2 + rng.range(1.6, 2.8),
+      w,
+      d,
+      h: rng.range(4.4, NEAR_MAX_H),
       body: rng.pick(bodies),
     });
     cursor += w + rng.range(0.8, 2.2);

@@ -95,7 +95,7 @@ export function createStage(mount: HTMLElement): Stage {
   pmrem.compileEquirectangularShader();
   const environment = pmrem.fromEquirectangular(sky).texture;
   scene.environment = environment;
-  scene.environmentIntensity = 0.85;
+  scene.environmentIntensity = 1.15;
   scene.background = sky;
   pmrem.dispose();
 
@@ -117,7 +117,10 @@ export function createStage(mount: HTMLElement): Stage {
   camera.updateProjectionMatrix();
 
   // ------------------------------------------------------------------ sun
-  const sun = new THREE.DirectionalLight(0xfff1d6, 3.1);
+  // Dialled back from the first pass and paired with much stronger sky fill.
+  // A hot key against weak ambient is what made shadows read as black cut-outs;
+  // the sun now shapes the forms and the sky keeps the shadow side in colour.
+  const sun = new THREE.DirectionalLight(0xfff1d6, 2.5);
   placeOnSphere(sun, SUN_AZIMUTH, SUN_ELEVATION, SUN_DISTANCE);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
@@ -130,13 +133,13 @@ export function createStage(mount: HTMLElement): Stage {
   sun.shadow.camera.bottom = -shadowExtent;
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.022;
-  sun.shadow.radius = 2.1;
+  sun.shadow.radius = 4.2; // wider PCF kernel: soft edges, no hard cut line
   sun.target.position.copy(focus);
   scene.add(sun);
   scene.add(sun.target);
 
   // Sky fill and warm ground bounce, so shadowed faces keep their colour.
-  const hemi = new THREE.HemisphereLight(0xbcd8f5, 0xb59a72, 0.9);
+  const hemi = new THREE.HemisphereLight(0xbcd8f5, 0xc0a582, 1.45);
   scene.add(hemi);
 
   // A cool rim from behind separates the roofline from the sky.

@@ -1,5 +1,16 @@
 import * as THREE from "three";
 
+import {
+  asphaltGrain,
+  brickCourses,
+  concreteGrain,
+  glassPanes,
+  pavingSeams,
+  renderGrain,
+  roofRibs,
+  waterRipples,
+} from "./textures";
+
 /**
  * One shared palette for the whole block.
  *
@@ -124,7 +135,93 @@ export const M = {
 
 export type MaterialKey = keyof typeof M;
 
+/**
+ * Attaches procedural detail to the palette.
+ *
+ * Called once, after the renderer exists, because the textures are drawn into
+ * canvases at boot. Grain goes on as a colour map and again as a roughness map
+ * so surfaces vary in both value and sheen — a wall that is uniformly rough
+ * reads as paper, and one that varies reads as material.
+ *
+ * Deliberately restrained: the strongest map here shifts value by about a tenth.
+ * The brief is bright and sunlit, not weathered.
+ */
+export function applySurfaceDetail(): void {
+  const grain = concreteGrain();
+  const render = renderGrain();
+  const paving = pavingSeams();
+  const asphalt = asphaltGrain();
+  const ribs = roofRibs();
+  const brickTex = brickCourses();
+  const panes = glassPanes();
+  const ripples = waterRipples();
+
+  const assign = (
+    material: THREE.MeshStandardMaterial,
+    map: THREE.Texture,
+    options: { rough?: boolean; roughness?: number } = {},
+  ) => {
+    material.map = map;
+    if (options.rough !== false) material.roughnessMap = map;
+    if (options.roughness !== undefined) material.roughness = options.roughness;
+    material.needsUpdate = true;
+  };
+
+  // Ground surfaces.
+  assign(M.asphalt, asphalt);
+  assign(M.asphaltPatched, asphalt);
+  assign(M.sidewalk, paving);
+  assign(M.sidewalkWorn, paving);
+  assign(M.kerb, grain);
+  assign(M.concrete, grain);
+  assign(M.concreteDark, grain);
+  assign(M.yardApron, paving);
+  assign(M.plaster, render);
+  assign(M.gravel, grain);
+  assign(M.dirt, grain);
+  assign(M.dirtDry, grain);
+  // World UVs are baked at half a unit per metre, which makes a 256px tile two
+  // metres across — about one screen pixel on the creek at this camera. The
+  // ripple map gets its own repeat so a tile spans tens of metres and can
+  // actually be seen to move.
+  ripples.repeat.set(0.045, 0.045);
+  assign(M.water, ripples, { rough: false, roughness: 0.24 });
+
+  // Walls.
+  assign(M.brick, brickTex);
+  assign(M.brickDark, brickTex);
+  for (const material of [
+    M.renderCream,
+    M.renderCreamFaded,
+    M.renderTeal,
+    M.renderTealFaded,
+    M.renderClay,
+    M.renderClayFaded,
+    M.fascia,
+  ]) {
+    assign(material, render);
+  }
+
+  // Roofs and metalwork.
+  assign(M.roofZinc, ribs);
+  assign(M.roofZincWorn, ribs);
+  assign(M.roofFelt, grain);
+  assign(M.shutter, ribs);
+
+  // Glazing: value variation per pane is what stops glass reading as paint.
+  for (const material of [M.glass, M.glassDim, M.glassLit]) {
+    material.map = panes;
+    material.needsUpdate = true;
+  }
+}
+
 /** Used by the README stats pass. */
 export function materialCount(): number {
   return Object.keys(M).length;
+}
+
+// Occlusion is baked per-vertex across the whole scene, so every material in
+// the palette has to read it.
+for (const material of Object.values(M)) {
+  (material as THREE.MeshStandardMaterial).vertexColors = true;
 }

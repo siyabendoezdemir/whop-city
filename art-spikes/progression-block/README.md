@@ -26,6 +26,79 @@ are recognisable in all four. Healthy and struggling share an identical roof
 profile, which is the requirement that the lot stays the same place when it
 declines.
 
+## Second pass — before / after
+
+Bounded visual refinement over the first spike. What changed:
+
+**Capture portability.** `ART_OUT` now defaults to `art-spikes/progression-block/artifacts`,
+a repository-local writable path; `/opt/cursor/artifacts` is no longer hard-coded
+anywhere. Chrome is discovered by probing the usual install locations, with
+`CHROME_PATH` as an explicit override and Playwright's bundled Chromium as the
+final fallback. Frames go to a git-ignored `.frames/`. See `capture/env.mjs`.
+
+**Material depth.** Every surface previously took a flat colour fill. There are
+now eight procedural textures generated into canvases at boot — concrete grain,
+render grain, paving with slab joints, asphalt with tyre polish, corrugated roof
+ribs, brick courses, per-pane glass variation, and water ripples. They are
+sampled through world-space UVs baked in `bakeWorldUv`, so texel density is
+constant whether a surface is a kerb or a warehouse wall, instead of stretching
+per face. Everything is deliberately low contrast; the brief was bright and
+sunlit, not weathered.
+
+**Soft occlusion.** `bakeVertexAo` writes per-vertex darkening into the merged
+geometry: a smoothstep up from the ground over the first metre, undersides
+knocked back, sun-facing tops lifted slightly. Props get the same over a shorter
+reach, and every placed prop now lays an instanced contact-shadow disc. The sun
+dropped from 3.1 to 2.5, hemisphere fill rose from 0.9 to 1.45, environment
+intensity from 0.85 to 1.15, and the shadow kernel widened from 2.1 to 4.2 — so
+shadows read as soft coloured shade rather than black cut-outs.
+
+**Distinct people.** The old pedestrians were two stacked boxes and a sphere,
+identical and fixed-facing. People are now built from eleven parts with posed
+limbs across six poses (walk, carry, stand, point, lean, push), with varying
+build, coat and trouser colour, headgear and load. Static bystanders merge into
+the block geometry so they cost nothing; only movers get their own group.
+
+**Authored neighbours.** The four buildings nearest camera were extruded boxes
+with a painted window band. They are now authored with the same moulded
+construction as the lot: plinth, pilasters between bays, string course, window
+reveals with cills, recessed shopfronts, awnings, a signage slot, four different
+rooflines (parapet, pitched, stepped setback, roof monitor) and four different
+roof details (water tank, plant, stair bulkhead, roof garden), plus their own
+kerb, footway and street trees.
+
+**Motion.** Verified visible in the recording by independent review: the delivery
+van reverses onto the dock and pulls away, a forklift shuttles between the van
+and the workshop door, and pedestrians and site crew traverse the frame in every
+state. The camera is fixed — none of that is parallax.
+
+### What is still wrong
+
+**Four of the intended ambient motions do not read.** The steam plume, the crane
+hook swing, the tree canopy sway and the creek scroll are all implemented and all
+verifiably change state frame to frame — a position probe shows the values
+moving — but at this camera distance and amplitude an independent reviewer
+watching the video sees none of them. They are below the threshold that matters,
+which for the purpose of "does this feel alive" means they are not done. The
+tree sway rotates the instanced canopies by about nine degrees and still reads as
+frozen; the water tile is roughly forty metres across, so its scroll is a slow
+gradient shift rather than moving water. Both need either a much larger amplitude
+or a different technique — a vertex shader for foliage, and a genuine flow-map or
+normal-map scroll for water rather than an albedo offset.
+
+**People slide rather than walk.** Limbs are posed at build time and the figure
+translates as a rigid body with a bob and roll. There is no gait, so a walker
+reads as a model on rails. Skinned or two-part leg animation is the fix and it is
+not in this pass.
+
+**State changes are hard cuts.** The whole block pops between states on a single
+frame. A settle, a dust puff, or a scaffold retract would sell the progression
+as time passing rather than as four slides.
+
+**Textures leak on state change.** `disposeLot` frees geometry but not the
+materials cloned by the steam vent, so the texture count climbs by one per state
+switch (16 → 19 across a full cycle). Harmless at this scale, wrong in principle.
+
 ## Running it
 
 ```
@@ -98,15 +171,21 @@ ground — not the same structures tinted, scaled or hidden.
 
 Measured from `renderer.info` at 1440×900, reported by `pnpm capture`:
 
-| State | Triangles | Draw calls | Instances | Prototypes | Geometries |
-| --- | --- | --- | --- | --- | --- |
-| dormant | 40,140 | 66 | 88 | 14 | 67 |
-| rising | 62,806 | 92 | 180 | 29 | 91 |
-| healthy | 55,776 | 79 | 101 | 23 | 80 |
-| struggling | 46,820 | 79 | 96 | 18 | 80 |
+| State | Triangles | Draw calls | Instances | Prototypes | Geometries | Textures |
+| --- | --- | --- | --- | --- | --- | --- |
+| dormant | 51,022 | 97 | 126 | 13 | 98 | 16 |
+| rising | 75,074 | 135 | 211 | 22 | 134 | 17 |
+| healthy | 67,846 | 137 | 109 | 15 | 138 | 18 |
+| struggling | 56,330 | 109 | 118 | 16 | 110 | 19 |
 
-Six textures total: one sky gradient, its PMREM chain, and the shadow map. No
-image files are loaded — the sky is drawn into a canvas at boot.
+Up from 40k-63k triangles and 66-92 calls in the first pass. The extra triangles
+are the four authored neighbours and the posed figures; the extra calls are the
+animated rigs, which cannot merge into the block because they move independently.
+Texture count climbs across a cycle because of the leak noted above.
+
+Sixteen textures at rest: the sky gradient and its PMREM chain, the shadow map,
+and eight procedural surface maps. **No image files are loaded** — every texture
+is drawn into a canvas at boot.
 
 The draw-call count is dominated by material variety, not object count. There
 are 60-odd materials in the palette and roughly one call per material actually

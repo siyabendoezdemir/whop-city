@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
-import { bevelBox, blob, box, post, slab, transform, wedge, type Vec3 } from "../lib/geom";
+import { bakeVertexAo, bevelBox, blob, box, post, slab, transform, wedge, type Vec3 } from "../lib/geom";
 import { M } from "../scene/materials";
+import { contactShadow } from "../scene/textures";
 
 /**
  * Instanced prop kit.
@@ -65,6 +66,11 @@ export class InstanceKit {
     for (const key of keys) this.place(key, position, yaw, scale);
   }
 
+  /** The placement matrices for one prototype, for post-build animation. */
+  baseMatrices(key: string): THREE.Matrix4[] {
+    return this.protos.get(key)?.matrices ?? [];
+  }
+
   /** Instance and draw-call accounting for the README. */
   stats(): { prototypes: number; instances: number } {
     let instances = 0;
@@ -95,8 +101,11 @@ export class InstanceKit {
 /** Merges a few parts into one prototype geometry based at y=0. */
 function protoGeo(parts: Array<[THREE.BufferGeometry, Vec3, Vec3?, Vec3?]>): THREE.BufferGeometry {
   const placed = parts.map(([g, p, r, s]) => transform(g, p, r ?? [0, 0, 0], s ?? [1, 1, 1]));
-  if (placed.length === 1) return placed[0];
-  return mergeGeometries(placed, false) ?? placed[0];
+  const merged = placed.length === 1 ? placed[0] : (mergeGeometries(placed, false) ?? placed[0]);
+  // Props are authored around their own base at y=0, so occlusion bakes over a
+  // shorter reach than a building — enough to seat them on the pavement.
+  bakeVertexAo(merged, { groundY: 0, reach: 0.55, floor: 0.66 });
+  return merged;
 }
 
 /**
@@ -261,33 +270,61 @@ export function registerProps(kit: InstanceKit): void {
   ]), M.tyre);
 
   // ----------------------------------------------------------- contact AO
-  // Registered by the caller with the shared radial texture.
+  // A soft dark ellipse laid just above the ground under every placed object.
+  // The shadow map handles the sun; this handles the fact that a small object
+  // still reads as hovering without a darkening directly beneath it.
+  const shadowMaterial = new THREE.MeshBasicMaterial({
+    map: contactShadow(),
+    transparent: true,
+    depthWrite: false,
+    opacity: 0.85,
+    vertexColors: false,
+  });
+  const disc = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+  kit.define("contact", disc, shadowMaterial, { castShadow: false, receiveShadow: false });
+}
+
+/** Lays a contact-shadow disc, slightly above the surface to avoid z-fighting. */
+function ground(kit: InstanceKit, position: Vec3, radius: number, yaw = 0): void {
+  kit.place("contact", [position[0], position[1] + 0.018, position[2]], yaw, [radius, 1, radius]);
 }
 
 /** Convenience wrappers so authoring code reads as objects, not prototypes. */
 export const Prop = {
-  tree: (kit: InstanceKit, position: Vec3, yaw = 0, scale = 1, dry = false) =>
-    kit.placeCompound(["tree.trunk", dry ? "tree.canopyDry" : "tree.canopy"], position, yaw, scale),
-  planter: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["planter.box", "planter.green"], position, yaw),
-  bench: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["bench.seat", "bench.legs"], position, yaw),
-  lamp: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["lamp.post", "lamp.head"], position, yaw),
-  barrier: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["barrier.body", "barrier.feet"], position, yaw),
-  fence: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["fence.mesh", "fence.frame", "fence.foot"], position, yaw),
-  hoarding: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["hoard.panel", "hoard.rail"], position, yaw),
-  person: (kit: InstanceKit, position: Vec3, yaw = 0, alt = false) =>
-    kit.placeCompound([alt ? "person.bodyAlt" : "person.body", "person.head"], position, yaw),
-  worker: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["worker.body", "worker.helmet"], position, yaw),
-  van: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["van.body", "van.glass", "van.stripe", "van.wheels"], position, yaw),
-  crate: (kit: InstanceKit, position: Vec3, yaw = 0) =>
-    kit.placeCompound(["crate", "crateLid"], position, yaw),
+  tree: (kit: InstanceKit, position: Vec3, yaw = 0, scale = 1, dry = false) => {
+    kit.placeCompound(["tree.trunk", dry ? "tree.canopyDry" : "tree.canopy"], position, yaw, scale);
+    ground(kit, position, 2.1 * scale);
+  },
+  planter: (kit: InstanceKit, position: Vec3, yaw = 0) => {
+    kit.placeCompound(["planter.box", "planter.green"], position, yaw);
+    ground(kit, position, 2.0, yaw);
+  },
+  bench: (kit: InstanceKit, position: Vec3, yaw = 0) => {
+    kit.placeCompound(["bench.seat", "bench.legs"], position, yaw);
+    ground(kit, position, 1.9, yaw);
+  },
+  lamp: (kit: InstanceKit, position: Vec3, yaw = 0) => {
+    kit.placeCompound(["lamp.post", "lamp.head"], position, yaw);
+    ground(kit, position, 0.9);
+  },
+  barrier: (kit: InstanceKit, position: Vec3, yaw = 0) => {
+    kit.placeCompound(["barrier.body", "barrier.feet"], position, yaw);
+    ground(kit, position, 2.3, yaw);
+  },
+  fence: (kit: InstanceKit, position: Vec3, yaw = 0) => {
+    kit.placeCompound(["fence.mesh", "fence.frame", "fence.foot"], position, yaw);
+    ground(kit, position, 1.6, yaw);
+  },
+  hoarding: (kit: InstanceKit, position: Vec3, yaw = 0) => {
+    kit.placeCompound(["hoard.panel", "hoard.rail"], position, yaw);
+    ground(kit, position, 1.7, yaw);
+  },
+  crate: (kit: InstanceKit, position: Vec3, yaw = 0) => {
+    kit.placeCompound(["crate", "crateLid"], position, yaw);
+    ground(kit, position, 1.4, yaw);
+  },
+  /** Bare contact disc, for objects authored outside the instance kit. */
+  contact: ground,
 };
 
 /** Wedge re-export so district code can shape roofs without importing geom twice. */

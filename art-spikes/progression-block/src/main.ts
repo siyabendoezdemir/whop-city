@@ -1,22 +1,24 @@
 import * as THREE from "three";
 
 import { createStage, VIEW } from "./scene/stage";
+import { applySurfaceDetail } from "./scene/materials";
 import { createLot, disposeLot, type Lot, type LotState } from "./city/lot";
 
 /**
  * Spike entry point.
  *
  * Renders one Offer Forge lot at a fixed strategy camera and swaps its state.
- * There is no UI beyond a state switcher, and that hides under `?bare=1` so the
- * capture harness photographs nothing but the world.
+ * The camera never moves — not in the stills and not in the video — so any
+ * motion you see in the recording is the world moving, not a drifting lens.
  *
  * The render loop is frame-indexed rather than clock-driven: the harness calls
- * `__renderFrame(i)` and gets the same image for the same `i` every time, which
- * is what makes the screenshots and the video reproducible.
+ * `__renderFrame(i)` and gets the same image for the same `i` every time.
  */
 
 const STATES: LotState[] = ["dormant", "rising", "healthy", "struggling"];
 const SEED = 20260903;
+const FPS = 30;
+const DWELL_SECONDS = 3;
 
 const params = new URLSearchParams(location.search);
 const bare = params.get("bare") === "1";
@@ -25,8 +27,15 @@ if (bare) document.body.dataset.bare = "1";
 const mount = document.getElementById("stage")!;
 const stage = createStage(mount);
 
+// Procedural maps are generated into canvases, so this runs after the document
+// exists but before the first lot is built.
+applySurfaceDetail();
+
 let current: Lot | null = null;
 let currentState: LotState = (params.get("state") as LotState) ?? "healthy";
+
+/** Time the stills are posed at: far enough in that actors are mid-action. */
+const STILL_T = 1.6;
 
 function setState(state: LotState): void {
   if (current) {
@@ -37,9 +46,7 @@ function setState(state: LotState): void {
   stage.scene.add(current.group);
   currentState = state;
   renderButtons();
-  // Stills use the authored framing exactly; only the video applies a sway.
-  stage.camera.clearViewOffset();
-  stage.camera.updateProjectionMatrix();
+  current.update(STILL_T);
   stage.renderer.render(stage.scene, stage.camera);
 }
 
@@ -61,44 +68,36 @@ function renderButtons(): void {
 setState(currentState);
 
 // ------------------------------------------------------------ capture hooks
-type CaptureApi = {
-  __ready: boolean;
-  __states: LotState[];
-  __setState: (state: LotState) => void;
-  __renderFrame: (frame: number) => void;
-  __info: () => { triangles: number; calls: number; instances: number; prototypes: number; textures: number; geometries: number };
-  __silhouette: (on: boolean) => void;
-};
-
 let silhouetteMode = false;
 const originalBackground = stage.scene.background;
 
-const api: CaptureApi = {
+const api = {
   __ready: true,
   __states: STATES,
-  __setState: (state) => setState(state),
+  __setState: (state: LotState) => setState(state),
+
+  /** The authored framing, posed mid-action. Used for the four stills. */
+  __renderStill: () => {
+    current?.update(STILL_T);
+    stage.renderer.render(stage.scene, stage.camera);
+  },
 
   /**
    * Deterministic frame render.
    *
-   * Frame index drives the whole cycle: which state is shown and how far into
-   * its dwell we are. No Date.now(), so two runs produce identical footage.
+   * Frame index drives which state is shown and how far into its dwell we are.
+   * No Date.now() anywhere, so two runs produce identical footage.
    */
-  __renderFrame: (frame) => {
-    const FPS = 30;
-    const DWELL = 3 * FPS; // 3s per state -> 12s for the cycle
-    const index = Math.floor(frame / DWELL) % STATES.length;
+  __renderFrame: (frame: number) => {
+    const dwellFrames = DWELL_SECONDS * FPS;
+    const index = Math.floor(frame / dwellFrames) % STATES.length;
     const wanted = STATES[index];
     if (wanted !== currentState) setState(wanted);
 
-    // A slow orbital drift so the video has parallax without moving the
-    // composition off its authored framing.
-    const t = (frame % (DWELL * STATES.length)) / (DWELL * STATES.length);
-    const sway = Math.sin(t * Math.PI * 2) * 0.6;
-    stage.camera.position.x += 0;
-    stage.camera.setViewOffset(VIEW.width, VIEW.height, sway * 6, 0, VIEW.width, VIEW.height);
-    stage.camera.updateProjectionMatrix();
-
+    // Seconds since this state appeared. Actors animate against this, so the
+    // motion restarts cleanly at each state change and stays reproducible.
+    const t = (frame % dwellFrames) / FPS;
+    current?.update(t);
     stage.renderer.render(stage.scene, stage.camera);
   },
 
@@ -114,12 +113,10 @@ const api: CaptureApi = {
   /**
    * Flat-black render of the lot's architecture against white.
    *
-   * Ground, creek and neighbours are hidden: with them in, every pixel is black
-   * and the test proves nothing. What is left is the thing that has to be
-   * recognisable as a shape — the street unit, the vent stack, the gantry and
-   * whatever the workshop currently is.
+   * Ground, creek, neighbours and props are hidden: with them in, every pixel
+   * is black and the test proves nothing.
    */
-  __silhouette: (on) => {
+  __silhouette: (on: boolean) => {
     silhouetteMode = on;
     const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
     const context = ["ground", "creek", "neighbours"];
@@ -150,12 +147,17 @@ const api: CaptureApi = {
 };
 
 Object.assign(window, api);
+(window as unknown as Record<string, unknown>).__scene = stage.scene;
 
-// Idle render loop for interactive use only; capture calls __renderFrame itself.
+// Interactive loop. Capture drives frames itself and never enters here.
 if (!bare) {
   let raf = 0;
+  const start = performance.now();
   const tick = () => {
-    if (!silhouetteMode) stage.renderer.render(stage.scene, stage.camera);
+    if (!silhouetteMode) {
+      current?.update((performance.now() - start) / 1000);
+      stage.renderer.render(stage.scene, stage.camera);
+    }
     raf = requestAnimationFrame(tick);
   };
   tick();

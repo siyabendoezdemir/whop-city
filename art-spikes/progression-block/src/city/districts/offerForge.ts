@@ -5,6 +5,17 @@ import { Rng } from "../../lib/rng";
 import { M } from "../../scene/materials";
 import { Prop, type InstanceKit } from "../props";
 import { SITE } from "../ground";
+import {
+  addPersonTo,
+  makeBanner,
+  makeForklift,
+  makeSteamVent,
+  makeVan,
+  makeWalker,
+  type PersonSpec,
+  type Pose,
+  type Rig,
+} from "../actors";
 
 /**
  * Offer Forge — a maker block.
@@ -726,7 +737,7 @@ function frontageBarrier(b: PartsBuilder, kit: InstanceKit, state: LotState, rng
 }
 
 /** Scaffolding and the tower crane — the rising state's landmark additions. */
-function constructionRig(b: PartsBuilder, kit: InstanceKit, rng: Rng): void {
+function constructionRig(b: PartsBuilder, kit: InstanceKit, rng: Rng): Rig {
   // Scaffold to the clad bays of the workshop.
   const lifts = [2.2, 4.4, 6.6];
   for (let x = WS.x0 - 0.4; x <= WS.x0 + BAY_W * 2.6; x += 2.1) {
@@ -772,18 +783,33 @@ function constructionRig(b: PartsBuilder, kit: InstanceKit, rng: Rng): void {
   b.add(M.hazard, box(5.0, 0.4, 0.4), [mx - 2.9, jibY, mz]);
   b.add(M.concreteDark, box(1.5, 1.2, 2.1), [mx - 4.8, jibY - 0.2, mz]);
   b.add(M.steel, box(0.16, 2.6, 0.16), [mx, jibY + 1.4, mz]);
-  // Hoist rope and load.
-  const hookX = mx + 9.6;
-  b.add(M.ironDark, box(0.9, 0.32, 0.7), [hookX, jibY - 0.4, mz]);
-  b.add(M.ironDark, box(0.06, 6.4, 0.06), [hookX, jibY - 3.7, mz]);
-  b.add(M.steel, box(2.6, 0.22, 0.5), [hookX, jibY - 7.05, mz]);
-  b.add(M.timberPale, box(2.4, 0.5, 1.1), [hookX, jibY - 7.45, mz]);
 
   // Spoil and materials around the base.
   kit.place("dirtPile", [mx + 2.6, LOT_Y, mz + 3.4], 0.5, 1.1);
   for (let i = 0; i < 5; i++) {
     kit.place("pallet", [rng.range(mx - 1.5, mx + 3.5), LOT_Y, rng.range(mz + 5.0, mz + 7.5)], rng.range(0, 1.5));
   }
+
+  // The hoist is authored separately so the load can swing. A crane whose hook
+  // is welded in place is the clearest tell that a construction scene is a
+  // photograph rather than a site.
+  const hookBuilder = new PartsBuilder();
+  hookBuilder.add(M.ironDark, box(0.9, 0.32, 0.7), [0, -0.4, 0]);
+  hookBuilder.add(M.ironDark, box(0.06, 6.4, 0.06), [0, -3.7, 0]);
+  hookBuilder.add(M.steel, box(2.6, 0.22, 0.5), [0, -7.05, 0]);
+  hookBuilder.add(M.timberPale, box(2.4, 0.5, 1.1), [0, -7.45, 0]);
+  const hook = hookBuilder.build("crane-hook");
+  hook.position.set(mx + 9.6, jibY, mz);
+
+  return {
+    group: hook,
+    update: (t: number) => {
+      // Pendulum about the jib, damped, plus a slow trolley creep.
+      hook.rotation.z = Math.sin(t * 1.15) * 0.15;
+      hook.rotation.x = Math.sin(t * 0.9 + 1.1) * 0.1;
+      hook.position.x = mx + 9.6 + Math.sin(t * 0.5) * 2.4;
+    },
+  };
 }
 
 /** An excavator, authored rather than instanced — there is only ever one. */
@@ -831,75 +857,130 @@ function excavator(b: PartsBuilder, x: number, z: number, yaw: number): void {
   });
 }
 
-/** Who is on the block, and doing what. */
-function life(kit: InstanceKit, state: LotState, rng: Rng): void {
+const COATS = [M.personBody, M.personAlt, M.renderTeal, M.accentDeep, M.renderClay, M.timberDark];
+const TROUSERS = [M.ironDark, M.steel, M.timberDark, M.personBody];
+
+/** A distinct bystander: no two share build, palette, pose and headgear. */
+function bystander(rng: Rng, pose: Pose, extras: Partial<PersonSpec> = {}): PersonSpec {
+  return {
+    pose,
+    build: rng.range(0.88, 1.12),
+    body: rng.pick(COATS),
+    legs: rng.pick(TROUSERS),
+    hat: rng.chance(0.28) ? "cap" : "none",
+    seed: rng.int(1, 1e6),
+    ...extras,
+  };
+}
+
+/**
+ * Who is on the block, and doing what.
+ *
+ * Static figures are merged into the block's geometry — posed and individual,
+ * but free. Anything that moves comes back as a rig for the frame loop.
+ */
+function life(b: PartsBuilder, kit: InstanceKit, state: LotState, rng: Rng): Rig[] {
   const walkY = SITE.groundY + SITE.kerbH;
   const lotY = LOT_Y;
+  const rigs: Rig[] = [];
+  const contact = (p: Vec3, r = 0.75) => Prop.contact(kit, p, r);
 
   if (state === "dormant") {
-    // One person passing on the far footway. Nothing else.
-    Prop.person(kit, [-17.0, walkY, SITE.walkZ0 + 2.2], 1.5, true);
-    return;
+    // Economically quiet, not vacant: someone waits at the stop, someone else
+    // walks past without stopping. Nobody has business here.
+    addPersonTo(b, bystander(rng, "lean", { hat: "cap" }), [-17.6, walkY, SITE.walkZ0 + 2.3], 1.4);
+    contact([-17.6, walkY, SITE.walkZ0 + 2.3]);
+    addPersonTo(b, bystander(rng, "stand"), [-16.4, walkY, SITE.walkZ0 + 1.5], 1.6);
+    contact([-16.4, walkY, SITE.walkZ0 + 1.5]);
+    rigs.push(
+      makeWalker(bystander(rng, "walk"), [24, walkY, SITE.walkZ0 + 1.9], [-24, walkY, SITE.walkZ0 + 1.9], 5.2, 0.1),
+    );
+    return rigs;
   }
 
   if (state === "rising") {
-    const crew: Array<[number, number, number]> = [
-      [6.9, -2.4, 2.3],
-      [8.6, -5.2, 0.7],
-      [4.6, -8.4, 1.9],
-      [-6.4, -9.0, 0.4],
-      [-9.6, -4.2, 2.8],
-      [10.8, 0.4, 3.4],
+    const crew: Array<[number, number, number, Pose]> = [
+      [6.9, -2.4, 2.3, "carry"],
+      [8.6, -5.2, 0.7, "stand"],
+      [4.6, -8.4, 1.9, "point"],
+      [-6.4, -9.0, 0.4, "lean"],
+      [-9.6, -4.2, 2.8, "carry"],
     ];
-    for (const [x, z, yaw] of crew) Prop.worker(kit, [x, lotY, z], yaw);
-    Prop.worker(kit, [-2.2, lotY, 3.6], 1.1);
-    Prop.person(kit, [-15.5, walkY, SITE.walkZ0 + 1.9], 1.5);
-    Prop.van(kit, [9.2, lotY, 1.2], 0.06);
-    return;
+    for (const [x, z, yaw, pose] of crew) {
+      addPersonTo(b, bystander(rng, pose, { hat: "helmet", vest: true }), [x, lotY, z], yaw);
+      contact([x, lotY, z], 0.8);
+    }
+    // Two crew on the move, plus a supervisor pacing the frontage.
+    rigs.push(makeWalker(bystander(rng, "walk", { hat: "helmet", vest: true }), [11.2, lotY, 1.2], [1.2, lotY, -6.0], 3.1, 0));
+    rigs.push(makeWalker(bystander(rng, "walk", { hat: "helmet", vest: true }), [-2.0, lotY, 4.2], [-11.0, lotY, 4.2], 2.4, 0.4));
+    rigs.push(makeWalker(bystander(rng, "walk"), [26, walkY, SITE.walkZ0 + 2.1], [-22, walkY, SITE.walkZ0 + 2.1], 4.6, 0.55));
+    return rigs;
   }
 
   if (state === "healthy") {
-    const strollers: Array<[number, number, number, boolean]> = [
-      [-6.2, SITE.walkZ0 + 1.6, 1.5, false],
-      [-3.0, SITE.walkZ0 + 2.4, 1.4, true],
-      [3.4, SITE.walkZ0 + 1.4, -1.6, false],
-      [11.5, SITE.walkZ0 + 2.2, -1.5, true],
-      [-14.0, SITE.walkZ0 + 2.0, 1.5, false],
-      [18.5, SITE.walkZ0 + 1.7, -1.5, true],
+    // Static plaza life: browsing the display plinths.
+    const browsers: Array<[number, number, number, Pose]> = [
+      [-2.4, 2.3, 2.6, "stand"],
+      [-1.5, 2.7, 3.4, "point"],
+      [2.7, 1.3, 4.0, "stand"],
+      [0.4, 4.2, 1.5, "carry"],
     ];
-    for (const [x, z, yaw, alt] of strollers) Prop.person(kit, [x, walkY, z], yaw, alt);
+    for (const [x, z, yaw, pose] of browsers) {
+      addPersonTo(b, bystander(rng, pose), [x, lotY, z], yaw);
+      contact([x, lotY, z]);
+    }
+    // Static footway figures at the edges of frame.
+    for (const [x, z, yaw] of [[-15.5, SITE.walkZ0 + 2.1, 1.5], [21.5, SITE.walkZ0 + 1.6, -1.5]] as const) {
+      addPersonTo(b, bystander(rng, "stand"), [x, walkY, z], yaw);
+      contact([x, walkY, z]);
+    }
 
-    // Plaza visitors, browsing the plinths.
-    Prop.person(kit, [-2.2, lotY, 2.2], 2.6, false);
-    Prop.person(kit, [-1.4, lotY, 2.6], 3.4, true);
-    Prop.person(kit, [2.6, lotY, 1.4], 4.0, false);
+    // ---------------------------------------------------- the delivery loop
+    // Van reverses onto the dock, a forklift shuttles a pallet to the door,
+    // and a banksman stands off to the side. This is the readable loop.
+    rigs.push(makeVan([9.4, lotY, -4.4], [9.4, lotY, 4.4], 0));
+    rigs.push(makeForklift([7.0, lotY, -2.2], [7.0, lotY, -7.4], 0));
+    addPersonTo(b, bystander(rng, "point", { hat: "helmet", vest: true }), [5.4, lotY, -5.6], 1.7);
+    contact([5.4, lotY, -5.6], 0.8);
 
-    // Yard: a delivery being loaded.
-    Prop.van(kit, [8.6, lotY, -4.2], -0.04);
-    Prop.worker(kit, [6.6, lotY, -2.6], 1.2);
-    Prop.person(kit, [5.6, lotY, -5.4], 1.7, false);
+    // Pedestrians crossing the frame both ways.
+    rigs.push(makeWalker(bystander(rng, "walk"), [-26, walkY, SITE.walkZ0 + 1.5], [26, walkY, SITE.walkZ0 + 1.5], 5.4, 0.0));
+    rigs.push(makeWalker(bystander(rng, "walk", { hat: "cap" }), [26, walkY, SITE.walkZ0 + 2.6], [-26, walkY, SITE.walkZ0 + 2.6], 4.7, 0.35));
+    rigs.push(makeWalker(bystander(rng, "carry"), [-9.0, lotY, 5.2], [4.5, lotY, 5.2], 2.2, 0.6));
 
-    // Kerbside vehicle on the street.
-    Prop.van(kit, [-9.0, SITE.groundY, SITE.roadZ0 + 2.0], Math.PI / 2 + 0.02);
-    return;
+    // Working building: extract plume off the roof, banner on the pergola.
+    rigs.push(makeSteamVent([-3.6, LOT_Y + 7.1, -10.6], 1.15));
+    rigs.push(makeBanner([0.2, LOT_Y + 3.3, 4.0], 7.4, 0.5, M.accent, 0.4));
+    return rigs;
   }
 
-  // Struggling: the street still works, the lot does not.
-  Prop.person(kit, [-11.5, walkY, SITE.walkZ0 + 1.8], 1.5, false);
-  Prop.person(kit, [7.5, walkY, SITE.walkZ0 + 2.3], -1.5, true);
-  Prop.person(kit, [20.0, walkY, SITE.walkZ0 + 1.6], -1.5, false);
+  // Struggling: the street still works, the lot does not. One passer-by, one
+  // person waiting, nobody entering.
+  addPersonTo(b, bystander(rng, "lean", { hat: "cap" }), [-12.6, walkY, SITE.walkZ0 + 1.7], 1.5);
+  contact([-12.6, walkY, SITE.walkZ0 + 1.7]);
+  addPersonTo(b, bystander(rng, "stand"), [21.0, walkY, SITE.walkZ0 + 1.6], -1.5);
+  contact([21.0, walkY, SITE.walkZ0 + 1.6]);
+  rigs.push(makeWalker(bystander(rng, "walk"), [26, walkY, SITE.walkZ0 + 2.4], [-26, walkY, SITE.walkZ0 + 2.4], 5.0, 0.2));
+  // A loose sheet of hoarding fabric flapping on the stalled extension.
+  rigs.push(makeBanner([-3.4, LOT_Y + 4.6, -7.0], 3.0, 0.7, M.tarp, 1.2));
   for (let i = 0; i < 3; i++) {
     kit.place("weeds", [rng.range(-12, 12), lotY + 0.02, rng.range(1.0, 4.8)], rng.range(0, 3), rng.range(0.8, 1.2));
   }
+  return rigs;
 }
 
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
-export function buildOfferForge(kit: InstanceKit, state: LotState, seed: number): THREE.Group {
+export function buildOfferForge(
+  kit: InstanceKit,
+  state: LotState,
+  seed: number,
+): { group: THREE.Group; rigs: Rig[] } {
   const rng = new Rng(seed).fork(`offer-forge:${state}`);
   const b = new PartsBuilder();
+  const rigs: Rig[] = [];
 
   surfaces(b, state, rng.fork("surfaces"));
 
@@ -913,7 +994,7 @@ export function buildOfferForge(kit: InstanceKit, state: LotState, seed: number)
     workshopFootings(b);
   } else if (state === "rising") {
     workshopFrame(b, 2);
-    constructionRig(b, kit, rng.fork("rig"));
+    rigs.push(constructionRig(b, kit, rng.fork("rig")));
     excavator(b, -4.2, -6.6, 0.72);
   } else {
     workshopComplete(b, state);
@@ -923,7 +1004,9 @@ export function buildOfferForge(kit: InstanceKit, state: LotState, seed: number)
   plaza(b, kit, state, rng.fork("plaza"));
   yard(b, kit, state, rng.fork("yard"));
   frontageBarrier(b, kit, state, rng.fork("frontage"));
-  life(kit, state, rng.fork("life"));
+  rigs.push(...life(b, kit, state, rng.fork("life")));
 
-  return b.build(`offer-forge:${state}`);
+  const group = b.build(`offer-forge:${state}`);
+  for (const rig of rigs) group.add(rig.group);
+  return { group, rigs };
 }

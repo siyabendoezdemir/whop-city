@@ -70,16 +70,106 @@ export function blob(radius: number, detail = 0): THREE.BufferGeometry {
 function normalise(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   const flat = geometry.index ? geometry.toNonIndexed() : geometry.clone();
   for (const name of Object.keys(flat.attributes)) {
-    if (name !== "position" && name !== "normal" && name !== "uv") flat.deleteAttribute(name);
+    if (name !== "position" && name !== "normal" && name !== "uv" && name !== "color") {
+      flat.deleteAttribute(name);
+    }
   }
   if (!flat.getAttribute("normal")) flat.computeVertexNormals();
+  const count = flat.getAttribute("position").count;
   if (!flat.getAttribute("uv")) {
-    const count = flat.getAttribute("position").count;
     flat.setAttribute("uv", new THREE.BufferAttribute(new Float32Array(count * 2), 2));
+  }
+  // Materials run with vertexColors on, so every geometry needs the attribute
+  // even if nothing has baked occlusion into it yet.
+  if (!flat.getAttribute("color")) {
+    flat.setAttribute("color", new THREE.BufferAttribute(new Float32Array(count * 3).fill(1), 3));
   }
   flat.morphAttributes = {};
   flat.clearGroups();
   return flat;
+}
+
+/**
+ * Projects UVs from world position, choosing a plane per vertex from its
+ * dominant normal axis.
+ *
+ * Primitives arrive with their own 0..1 UVs per face, which means a grain
+ * texture would stretch differently on a kerb than on a warehouse wall. Baking
+ * from world space gives one constant texel density across the whole block, so
+ * a single fine-grain texture works everywhere.
+ */
+export function bakeWorldUv(geometry: THREE.BufferGeometry, scale = 0.5): void {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  if (!position || !normal) return;
+
+  const uv = new Float32Array(position.count * 2);
+  for (let i = 0; i < position.count; i++) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const nx = Math.abs(normal.getX(i));
+    const ny = Math.abs(normal.getY(i));
+    const nz = Math.abs(normal.getZ(i));
+
+    let u: number;
+    let v: number;
+    if (ny >= nx && ny >= nz) {
+      u = x;
+      v = z; // floors, roofs, pavements
+    } else if (nx >= nz) {
+      u = z;
+      v = y; // walls facing along X
+    } else {
+      u = x;
+      v = y; // walls facing along Z
+    }
+    uv[i * 2] = u * scale;
+    uv[i * 2 + 1] = v * scale;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+}
+
+/**
+ * Bakes soft occlusion into vertex colours.
+ *
+ * Cheap and approximate, but it does the one thing a shadow map cannot: darken
+ * the last half-metre where an object meets the ground, and the undersides of
+ * everything. That is what stops objects reading as cut-outs pasted on top of
+ * the pavement. It also carries a slight per-surface value drift so large flat
+ * masses are not one uniform tone.
+ */
+export function bakeVertexAo(
+  geometry: THREE.BufferGeometry,
+  options: { groundY?: number; reach?: number; floor?: number } = {},
+): void {
+  const groundY = options.groundY ?? 0;
+  const reach = options.reach ?? 1.15;
+  const floor = options.floor ?? 0.6;
+
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  if (!position) return;
+
+  const colors = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i++) {
+    const height = position.getY(i) - groundY;
+    // Smoothstep up from the ground.
+    const t = Math.min(1, Math.max(0, height / reach));
+    let shade = floor + (1 - floor) * (t * t * (3 - 2 * t));
+
+    if (normal) {
+      const ny = normal.getY(i);
+      if (ny < -0.25) shade *= 0.78; // soffits and undersides
+      else if (ny > 0.75) shade *= 1.03; // sun-facing tops lift slightly
+    }
+
+    shade = Math.min(1.06, shade);
+    colors[i * 3] = shade;
+    colors[i * 3 + 1] = shade;
+    colors[i * 3 + 2] = shade;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }
 
 export function transform(
@@ -151,6 +241,10 @@ export class PartsBuilder {
         // loud rather than a skipped iteration.
         throw new Error(`PartsBuilder: merge failed for ${name} (${geometries.length} parts)`);
       }
+      // Everything the builder emits is already in world space, so both bakes
+      // can run once, here, on the merged result.
+      bakeWorldUv(merged, 0.5);
+      bakeVertexAo(merged);
       const mesh = new THREE.Mesh(merged, material);
       mesh.castShadow = castShadow;
       mesh.receiveShadow = receiveShadow;
