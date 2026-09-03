@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "capture": "node capture/capture.mjs",
     "preview": "node capture/preview.mjs",
-    "leak-check": "node capture/leak-check.mjs"
+    "leak-check": "node capture/leak-check.mjs",
+    "stats": "node capture/stats.mjs"
   },
   "dependencies": {
     "three": "^0.182.0"

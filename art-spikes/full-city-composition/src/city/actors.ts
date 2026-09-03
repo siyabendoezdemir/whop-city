@@ -247,13 +247,13 @@ const PUFF_COUNT = 6;
  * One shared material for every plume in the scene.
  *
  * Puffs used to be six cloned materials per vent, which both leaked on rebuild
- * and cost six draw calls. They are one instanced mesh now: the per-puff fade
- * rides on instance colour instead of on material opacity.
+ * and cost six draw calls. They are one instanced mesh now, and each puff fades
+ * by shrinking rather than by dimming.
  */
 const PUFF_MATERIAL = new THREE.MeshStandardMaterial({
   color: "#ffffff",
   transparent: true,
-  opacity: 0.42,
+  opacity: 0.66,
   roughness: 1,
   depthWrite: false,
   // Instance colour supplies the per-puff fade; there is no vertex colour on a
@@ -263,10 +263,9 @@ const PUFF_MATERIAL = new THREE.MeshStandardMaterial({
 
 export function makeSteamVent(origin: Vec3, scale = 1): Rig {
   const group = new THREE.Group();
-  const puffs = new THREE.InstancedMesh(blob(0.52 * scale, 1), PUFF_MATERIAL, PUFF_COUNT);
+  const puffs = new THREE.InstancedMesh(blob(0.85 * scale, 1), PUFF_MATERIAL, PUFF_COUNT);
   puffs.castShadow = false;
   puffs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  puffs.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(PUFF_COUNT * 3), 3);
   group.add(puffs);
   group.position.set(...origin);
 
@@ -280,17 +279,19 @@ export function makeSteamVent(origin: Vec3, scale = 1): Rig {
     update: (t) => {
       for (let i = 0; i < PUFF_COUNT; i++) {
         const life = (t * 0.42 + i / PUFF_COUNT) % 1;
-        position.set(life * 1.5 * scale, life * 4.2 * scale, life * 0.7 * scale);
-        scaling.setScalar(0.5 + life * 2.4);
+        // The column snakes as it rises. Evenly spaced puffs on a straight line
+        // produce a plume whose overall shape never changes, which reads as a
+        // static grey blob however fast the individual puffs are moving.
+        const wobble = Math.sin(t * 0.8 + i * 1.1 + life * 2.4) * 0.9 * scale;
+        position.set(life * 2.4 * scale + wobble, life * 7.0 * scale, life * 1.1 * scale + wobble * 0.5);
+        // Fade by size, not by colour. One shared material cannot hold six
+        // opacities, and dimming instance colour instead just turns the steam
+        // grey — which is exactly what it looked like.
+        scaling.setScalar(Math.sin(life * Math.PI) ** 0.7 * (0.6 + life * 1.9));
         matrix.compose(position, quaternion, scaling);
         puffs.setMatrixAt(i, matrix);
-        // Instance colour carries the fade, since one shared material cannot
-        // hold six different opacities.
-        const fade = (1 - life) * (life < 0.1 ? life * 10 : 1);
-        puffs.instanceColor!.setXYZ(i, fade, fade, fade);
       }
       puffs.instanceMatrix.needsUpdate = true;
-      puffs.instanceColor!.needsUpdate = true;
     },
   };
 }

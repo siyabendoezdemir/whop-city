@@ -1,6 +1,7 @@
 import * as THREE from "three";
 
-import { buildCity, disposeCity, type City } from "./city/city";
+import { DEFAULT_STATES, buildCity, disposeCity, type City } from "./city/city";
+import type { StateName } from "./city/districts/buildings";
 import { applySurfaceDetail } from "./scene/materials";
 import { CITY_FOCUS, CITY_FRUSTUM, VIEW, createStage } from "./scene/stage";
 
@@ -31,8 +32,23 @@ export const FRAMINGS = {
 export type FramingKey = keyof typeof FRAMINGS;
 const ORDER: FramingKey[] = ["city", "commerce", "forge", "creator"];
 
-const city: City = buildCity();
+let city: City = buildCity();
 stage.scene.add(city.group);
+
+/**
+ * Rebuild every lot under a new state configuration.
+ *
+ * This is what a real progression change costs, and it is the operation the
+ * leak check hammers: the old city has to give its GPU resources back, and the
+ * shared palette and prop textures have to survive being reused.
+ */
+function setStates(states: Record<string, StateName>): void {
+  stage.scene.remove(city.group);
+  disposeCity(city);
+  city = buildCity(20260903, states);
+  stage.scene.add(city.group);
+  applyFraming(framing, clock);
+}
 
 let framing: FramingKey = "city";
 let zoomBias = 1;
@@ -108,6 +124,7 @@ declare global {
     __renderFrame: (t: number) => void;
     __flyTo: (key: string, t: number, progress: number, from: string) => void;
     __silhouette: (on: boolean) => void;
+    __rebuild: (states?: Record<string, string>) => void;
     __scene: THREE.Scene;
     __info: () => Record<string, number>;
   }
@@ -153,6 +170,11 @@ Object.assign(window, {
     stage.renderer.render(stage.scene, stage.camera);
   },
 
+  __rebuild: (states?: Record<string, string>) => {
+    setStates((states as Record<string, StateName>) ?? DEFAULT_STATES);
+    stage.renderer.render(stage.scene, stage.camera);
+  },
+
   __silhouette: (on: boolean) => {
     silhouette = on;
     stage.scene.background = on ? new THREE.Color("#ffffff") : originalBackground;
@@ -161,7 +183,12 @@ Object.assign(window, {
       if (!(child instanceof THREE.Mesh) && !(child instanceof THREE.InstancedMesh)) return;
       const named = child.parent?.name ?? "";
       // Context drops out; only the authored architecture is silhouetted.
-      const isContext = named === "city-ground" || named === "surroundings" || named === "props";
+      const isContext =
+        named === "city-ground" ||
+        named === "parcel-ground" ||
+        named === "surroundings" ||
+        named === "props" ||
+        child.parent?.parent?.name === "actors";
       if (isContext) {
         child.visible = !on;
         return;
@@ -190,7 +217,8 @@ Object.assign(window, {
   },
 });
 
-// Diagnostics only.
+// Exposed for capture/stats.mjs, which walks the graph to break draw calls
+// down by group. Not part of any proposed product API.
 Object.assign(window, { __scene: stage.scene });
 
-export { city, disposeCity, stage };
+export { disposeCity, stage };

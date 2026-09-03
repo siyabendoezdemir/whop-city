@@ -595,6 +595,63 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     });
   }
 
+  // ------------------------------------------------------ rear mews + court
+  // A live/work block is a street frontage with workshops behind it around a
+  // shared yard. Without the rear range the back half of every plot was bare
+  // paving, which is what made the quarter read as thin.
+  if (parcel.id !== "creator-venue") {
+    const mewsZ = z0 + parcel.depth * 0.15;
+    const mewsD = parcel.depth * 0.26;
+    const runX0 = parcel.id === "creator-park" ? x0 + parcel.width * 0.58 : x0 + 1.5;
+    const runX1 = x1 - 1.5;
+    const units = Math.max(2, Math.round((runX1 - runX0) / 6));
+    const unitW = (runX1 - runX0) / units;
+
+    for (let i = 0; i < units; i++) {
+      const cx = runX0 + unitW * (i + 0.5);
+      const h = rng.range(3.4, 4.6);
+      const body = state === "struggling" ? M.renderCreamFaded : rng.pick([M.brick, M.plaster, M.renderCream]);
+      local.add(body, bevelBox(unitW - 0.4, h, mewsD, 0.08), [cx, y + h / 2, mewsZ]);
+      local.add(M.concreteDark, box(unitW - 0.2, 0.4, mewsD + 0.2), [cx, y + 0.2, mewsZ]);
+      // Monopitch falling to the back, with a rooflight.
+      local.add(M.roofZinc, box(unitW - 0.1, 0.16, mewsD + 0.7), [cx, y + h + 0.42, mewsZ], [-0.17, 0, 0]);
+      local.add(M.glassLit, box(unitW * 0.42, 0.1, mewsD * 0.34), [cx, y + h + 0.5, mewsZ + mewsD * 0.16]);
+      // Workshop door and a window onto the yard.
+      const face = mewsZ + mewsD / 2 + 0.02;
+      if (state === "struggling") {
+        local.add(M.shutter, box(unitW * 0.44, 2.5, 0.1), [cx - unitW * 0.18, y + 1.3, face]);
+      } else {
+        local.add(M.ironDark, box(unitW * 0.46, 2.6, 0.22), [cx - unitW * 0.18, y + 1.35, face - 0.06]);
+        local.add(M.glass, box(unitW * 0.4, 2.3, 0.07), [cx - unitW * 0.18, y + 1.3, face]);
+      }
+      local.add(M.brickDark, box(unitW * 0.3, 1.3, 0.18), [cx + unitW * 0.22, y + 2.3, face - 0.04]);
+      local.add(M.glass, box(unitW * 0.26, 1.1, 0.07), [cx + unitW * 0.22, y + 2.3, face + 0.02]);
+    }
+
+    // The shared yard: setts, planting, bikes, a little seating.
+    const yardZ = (mewsZ + mewsD / 2 + (z1 - parcel.depth * 0.45)) / 2;
+    local.add(M.gravel, box(runX1 - runX0, 0.06, parcel.depth * 0.2), [
+      (runX0 + runX1) / 2,
+      y + 0.04,
+      yardZ,
+    ]);
+    for (let i = 0; i < 3; i++) {
+      const px = rng.range(runX0 + 1.5, runX1 - 1.5);
+      localProp(kit, matrix, Prop.planter, [px, y + 0.06, yardZ + rng.range(-1.6, 1.6)], rng.range(0, 3));
+    }
+    if (state !== "struggling") {
+      localProp(kit, matrix, (k, p, yw) => Prop.tree(k, p, yw, 0.85), [
+        runX0 + 2.5,
+        y + 0.06,
+        yardZ,
+      ], rng.range(0, 6));
+      localProp(kit, matrix, Prop.bench, [runX1 - 3.0, y + 0.06, yardZ - 1.0], 1.5);
+      stand(ctx, person(rng, "carry"), [(runX0 + runX1) / 2, y + 0.06, yardZ + 0.6], 0.3);
+    } else {
+      localPlace(kit, matrix, "drum", [runX1 - 2.5, y + 0.06, yardZ], 0.4);
+    }
+  }
+
   // ---------------------------------------------------------- small venue
   if (parcel.id === "creator-venue") {
     const vx = x0 + 6;

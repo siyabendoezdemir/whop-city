@@ -31,11 +31,14 @@ export function createLot(
   kit: InstanceKit,
   target: PartsBuilder,
   rigs: Rig[],
+  groundTarget: PartsBuilder = target,
 ): void {
   const rng = new Rng(spec.seed).fork(spec.parcel.id).fork(spec.state);
   const surface =
     spec.district === "forge" ? M.yardApron : spec.district === "creator" ? M.sidewalk : M.concrete;
-  buildParcelGround(target, kit, spec.parcel, surface);
+  // Kept in its own bucket so silhouette mode can drop the ground without
+  // dropping the buildings standing on it.
+  buildParcelGround(groundTarget, kit, spec.parcel, surface);
 
   const local = new PartsBuilder();
   const matrix = parcelMatrix(spec.parcel);
@@ -91,6 +94,7 @@ export function buildCity(seed = 20260903, states: Record<string, StateName> = D
 
   const rigs: Rig[] = [...buildWaterLife(), ...buildTraffic(seed)];
   const structures = new PartsBuilder();
+  const parcelGround = new PartsBuilder();
 
   group.add(buildCityGround(kit, seed));
   group.add(buildSurroundings(seed));
@@ -107,8 +111,13 @@ export function buildCity(seed = 20260903, states: Record<string, StateName> = D
       kit,
       structures,
       rigs,
+      parcelGround,
     );
   }
+
+  const ground = parcelGround.build("parcel-ground", false, true);
+  ground.name = "parcel-ground";
+  group.add(ground);
 
   const built = structures.build("structures", true, true);
   built.name = "structures";
@@ -124,8 +133,10 @@ export function buildCity(seed = 20260903, states: Record<string, StateName> = D
   group.add(actors);
 
   // Tree canopies sway. Instanced, so the matrices are edited in place.
+  // InstanceKit names its meshes "inst:<key>". Looking for the bare key found
+  // nothing, which is why the trees were not moving.
   const canopy = instances.children.find(
-    (c) => c instanceof THREE.InstancedMesh && c.name === "tree.canopy",
+    (c) => c instanceof THREE.InstancedMesh && c.name === "inst:tree.canopy",
   ) as THREE.InstancedMesh | undefined;
   const canopyBase = canopy ? kit.baseMatrices("tree.canopy") : null;
   const tmp = new THREE.Matrix4();
@@ -139,7 +150,7 @@ export function buildCity(seed = 20260903, states: Record<string, StateName> = D
       if (canopy && canopyBase) {
         for (let i = 0; i < canopyBase.length; i++) {
           const phase = i * 1.37;
-          sway.makeRotationZ(Math.sin(t * 0.85 + phase) * 0.035);
+          sway.makeRotationZ(Math.sin(t * 0.95 + phase) * 0.085);
           tmp.multiplyMatrices(canopyBase[i], sway);
           canopy.setMatrixAt(i, tmp);
         }
