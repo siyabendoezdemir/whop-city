@@ -74,6 +74,8 @@ async function main(): Promise<void> {
   if (report.permissions.status === "verified") {
     console.log(`granted: ${report.permissions.granted.join(", ") || "(none)"}`);
     console.log(`denied:  ${report.permissions.denied.join(", ") || "(none)"}`);
+    const vocabulary = [...report.allPermissions.granted, ...report.allPermissions.denied];
+    console.log(`whop advertises ${vocabulary.length} permission actions on this business`);
   } else {
     console.log(`permission check: ${report.permissions.status} ${report.permissions.detail ?? ""}`);
   }

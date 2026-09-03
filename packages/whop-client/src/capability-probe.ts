@@ -163,6 +163,12 @@ export interface CapabilityReport {
   readonly accountIdPresent: boolean;
   readonly writesAllowed: boolean;
   readonly permissions: PermissionCheckResult;
+  /**
+   * Every permission action Whop knows about for this business, granted or
+   * not. Whop publishes no enumerable list of requestable app permissions, so
+   * this is the only authoritative source for the vocabulary.
+   */
+  readonly allPermissions: PermissionCheckResult;
   readonly capabilities: readonly CapabilityResult[];
   readonly summary: Readonly<Record<CapabilityStatus, number>>;
 }
@@ -351,6 +357,8 @@ export class WhopCapabilityProbe {
   ): Promise<CapabilityReport> {
     const scopes = [...new Set(manifest.flatMap((c) => c.requiredScopes))].sort();
     const permissions = await this.checkPermissions(scopes);
+    // Omitting `actions` makes Whop return the complete action vocabulary.
+    const allPermissions = await this.checkPermissions([]);
 
     const capabilities: CapabilityResult[] = [];
     for (const capability of manifest) {
@@ -365,6 +373,7 @@ export class WhopCapabilityProbe {
       accountIdPresent: Boolean(this.#accountId),
       writesAllowed: this.#allowWrites,
       permissions,
+      allPermissions,
       capabilities,
       summary: summarize(capabilities),
     };
