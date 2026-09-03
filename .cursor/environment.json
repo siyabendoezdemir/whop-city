@@ -1,0 +1,4 @@
+{
+  "name": "Whop City",
+  "install": "corepack enable >/dev/null 2>&1 || true; if [ -f pnpm-lock.yaml ]; then pnpm install --frozen-lockfile; elif [ -f package.json ]; then pnpm install; else echo 'Whop City is in the planning/paper-design gate: no package.json yet, so there are no dependencies to install. Node + pnpm toolchain is ready for when the workspace is scaffolded (Task 3).'; fi"
+}
