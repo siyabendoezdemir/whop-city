@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+
 import { DIRECTION_LABEL, paletteFor } from "../city/palette";
 import type { CityProjection, DistrictProjection } from "../server/projection";
 
@@ -78,9 +80,22 @@ export type DistrictInspectorProps = {
 export function DistrictInspector({ district, freshness, capturedAt, onClose }: DistrictInspectorProps) {
   const palette = paletteFor(district.id, district.tier);
   const captured = new Date(capturedAt);
+  const panel = useRef<HTMLElement | null>(null);
+
+  // On a short viewport the panel scrolls. Switching districts while scrolled
+  // down would otherwise leave the new district's name out of view, which reads
+  // as the panel having closed rather than changed.
+  useEffect(() => {
+    panel.current?.scrollTo({ top: 0 });
+  }, [district.id]);
 
   return (
-    <aside className="panel panel-inspector" aria-label={`${district.name} details`} data-testid="district-inspector">
+    <aside
+      ref={panel}
+      className="panel panel-inspector"
+      aria-label={`${district.name} details`}
+      data-testid="district-inspector"
+    >
       <header>
         <h2 className="panel-title" data-testid="inspector-title">
           {district.name}

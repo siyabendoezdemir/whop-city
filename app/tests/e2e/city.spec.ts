@@ -138,6 +138,33 @@ test.describe("Operator Mode boundary", () => {
   });
 });
 
+test.describe("short viewports", () => {
+  test.use({ viewport: { width: 1024, height: 640 } });
+
+  test("switching district while the panel is scrolled brings the new name back into view", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByTestId("first-load")).toBeHidden();
+    await page.getByTestId("dock-commerce-core").click();
+
+    const inspector = page.getByTestId("district-inspector");
+    await expect(inspector).toBeVisible();
+
+    // The panel scrolls at this height; scroll to the operator section.
+    await inspector.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    expect(await inspector.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+    await page.getByTestId("dock-offer-forge").click();
+    await expect(page.getByTestId("inspector-title")).toHaveText("Offer Forge");
+
+    // Without the reset the heading stays scrolled out of sight, which reads as
+    // the panel having closed rather than changed.
+    expect(await inspector.evaluate((element) => element.scrollTop)).toBe(0);
+    await expect(page.getByTestId("inspector-title")).toBeInViewport();
+  });
+});
+
 test("the public page exposes no Whop identifiers of its own", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByTestId("city-world")).toBeVisible();
