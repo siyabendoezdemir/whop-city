@@ -19,8 +19,8 @@ no web app, no 3D city, and no Whop write outside the probe.
 
 ```bash
 pnpm install
-pnpm test                      # offline contract tests, no network, no secrets
-WHOP_LIVE_UNAUTH=1 pnpm test   # adds live checks against api.whop.com, still no secrets
+pnpm test                      # 52 offline contract tests: no network, no secrets
+WHOP_LIVE_UNAUTH=1 pnpm test   # adds 11 live checks against api.whop.com, still no secrets
 pnpm probe                     # capability sweep; safe to run with no credentials
 ```
 

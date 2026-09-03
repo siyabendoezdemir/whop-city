@@ -42,6 +42,35 @@ interface OpenApiDocument {
   paths: Record<string, Record<string, { security?: Record<string, string[]>[] }>>;
 }
 
+/**
+ * Whop declares the product visibility enum inline rather than on a named
+ * component, so it is found by walking rather than by path. City sends
+ * `hidden` on the one v1 write, and a contract test checks that value against
+ * whatever comes back from here.
+ */
+function findProductVisibilityValues(spec: OpenApiDocument): string[] {
+  const found = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+      if (/visibilit/i.test(key) && value !== null && typeof value === "object") {
+        const holder = value as { enum?: unknown; items?: { enum?: unknown } };
+        const candidate = holder.enum ?? holder.items?.enum;
+        if (Array.isArray(candidate) && candidate.includes("visible")) {
+          for (const entry of candidate) if (typeof entry === "string") found.add(entry);
+        }
+      }
+      walk(value);
+    }
+  };
+  walk(spec.paths);
+  return [...found].sort();
+}
+
 async function loadSpec(url: string): Promise<OpenApiDocument> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url} -> HTTP ${response.status}`);
@@ -91,6 +120,7 @@ async function main(): Promise<void> {
     generatedFrom: SPECS,
     apiVersionDate: specs.native.info["x-api-version-date"],
     servers: specs.native.servers,
+    productVisibilityValues: findProductVisibilityValues(specs.native),
     operations,
   };
 

@@ -15,6 +15,12 @@
       "url": "https://sandbox-api.whop.com/api/v1"
     }
   ],
+  "productVisibilityValues": [
+    "archived",
+    "hidden",
+    "quick_link",
+    "visible"
+  ],
   "operations": {
     "GET /permissions": {
       "surface": "native",

@@ -21,6 +21,7 @@ import {
   CAPABILITY_MANIFEST,
   CITY_OIDC_SCOPES,
   CITY_REQUESTED_SCOPES,
+  CITY_WEBHOOK_EVENTS,
   WHOP_API_VERSION_PIN,
   WHOP_PRODUCTION_BASE_URL,
   WHOP_SANDBOX_BASE_URL,
@@ -162,6 +163,19 @@ describe("capability manifest matches Whop's OpenAPI security", () => {
 
   it("does not request the OIDC email scope", () => {
     expect(CITY_OIDC_SCOPES).not.toContain("email");
+  });
+
+  it("creates the draft offer with a visibility value Whop accepts", () => {
+    // City sends `hidden`. If Whop renames or drops it, this fails here rather
+    // than at the moment a player confirms a real write.
+    expect(openApiScopes.productVisibilityValues).toContain("hidden");
+    expect(draftIntent().visibility).toBe("hidden");
+  });
+
+  it("subscribes only to events Whop publishes", () => {
+    // Affiliate activity has no event; nothing in the list may imply otherwise.
+    expect(CITY_WEBHOOK_EVENTS.some((event) => event.startsWith("affiliate."))).toBe(false);
+    for (const event of CITY_WEBHOOK_EVENTS) expect(event).toMatch(/^[a-z_]+\.[a-z_]+$/);
   });
 });
 
@@ -664,6 +678,7 @@ liveUnauth("live Whop API, no credential", () => {
     };
 
     expect(spec.info["x-api-version-date"]).toBe(openApiScopes.apiVersionDate);
+    expect(JSON.stringify(spec)).toContain('"hidden"');
 
     for (const [key, expected] of Object.entries(specOperations)) {
       if (expected.surface !== "native") continue;

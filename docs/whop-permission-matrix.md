@@ -174,7 +174,7 @@ cancellation, payout, transfer, affiliate invitation, or bulk message.
 | --- | --- | --- |
 | `account_id` | The selected business | Explicit rather than implied by the credential. |
 | `title` | From the reviewed intent | Shown verbatim in the review step. |
-| `visibility` | `hidden` | Keeps the draft off the seller's public storefront. A contract test fails if City ever sends `visible`. |
+| `visibility` | `hidden` | Keeps the draft off the seller's public storefront. Whop's enum is `visible \| hidden \| archived \| quick_link`; a contract test checks `hidden` against the spec's enum and fails if City ever sends `visible`. |
 | `description` | From the reviewed intent | Optional. |
 | `global_affiliate_percentage` | Optional, from the intent | The affiliate settings the plan wanted are accepted at creation, so no follow-up write is needed. |
 | `metadata` | `{whop_city_idempotency_key: <sha256>}` | Durable idempotency, below. |
@@ -292,7 +292,7 @@ Remove each of these from v1 copy and UI.
 
 ```bash
 pnpm install
-pnpm test                      # 50 offline contract tests
+pnpm test                      # 52 offline contract tests
 WHOP_LIVE_UNAUTH=1 pnpm test   # + 11 live tests, network only, no secrets
 pnpm probe                     # capability sweep; safe with no credentials
 ```
