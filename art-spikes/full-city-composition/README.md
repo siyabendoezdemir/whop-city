@@ -196,6 +196,9 @@ pnpm preview forge out.png 9.5    # framing, path, animation time
   Forge → Creator Quarter → default
 - `renderer-stats.json`
 
+`pnpm shadow-check <label>` produces `shadow-path-<label>.mp4`, the same route
+with the world frozen.
+
 ## Leak check
 
 `pnpm leak-check` cycles every framing, toggles silhouette mode, and rebuilds
