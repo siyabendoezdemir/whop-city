@@ -1,0 +1,23 @@
+{
+  "name": "whop-city-art-spike-progression-block",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Throwaway visual-production spike: one Offer Forge city block through four progression states.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5180",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5181",
+    "typecheck": "tsc --noEmit",
+    "capture": "node capture/capture.mjs"
+  },
+  "dependencies": {
+    "three": "^0.182.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/three": "^0.182.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5"
+  }
+}
