@@ -453,12 +453,33 @@ be dropped. This needs deciding before any public copy repeats it.
 Responses that are not HTML are left alone: the probe's `text/plain` body came
 back as exactly two bytes.
 
-### Rollback is not instant
+### Promotion and rollback lag at the edge
 
 After the production pointer flipped to the holding build, the edge kept serving
-the previous build for a further ~41 seconds. Rollback is eventually consistent,
-so treat "promote the old build" as a request rather than a switch, and verify at
-the URL rather than trusting the pointer.
+the **previous** build for a further ~41 seconds. Three checks fired immediately
+after the pointer moved and all three still reached the old build. The pointer is
+a request, not a switch.
+
+This cuts both ways: a promotion is not live when the API says it is, and a
+rollback has not taken effect when the API says it has. The measured exposure was
+~50 seconds against the 8.6 seconds the pointer implied.
+
+**Operational policy, binding on every promotion and rollback:**
+
+- **Allow a minimum 60-second settling window** after the production pointer
+  changes, before treating the new build as serving.
+- **Verify with multiple fresh requests** before declaring a build promoted or
+  rolled back. One `200` proves nothing — the edge is inconsistent between
+  requests during the window. Check the `x-whop-build` response header, which
+  names the build that actually served, rather than inferring from the body.
+- **Never briefly promote sensitive content as a test.** There is no short
+  window. Anything promoted is reachable for at least a minute after you try to
+  withdraw it, and you cannot shorten that. If content would be harmful to expose
+  for two minutes, it must never be promoted at all — verify it another way.
+
+The corollary for rollback planning: the holding build must already be uploaded
+before the build it replaces is promoted, because uploading one afterwards adds
+its own build-and-upload time on top of the settling window.
 
 ## What this spike still could not answer
 

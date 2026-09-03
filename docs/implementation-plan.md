@@ -224,10 +224,21 @@ any product code. Everything runs against City's own test business.
 [`docs/website-auth-spike.md`](website-auth-spike.md) carries the endpoint and
 permission model this task verifies.
 
-**Status: steps 1–6 are done.** Approved and run 2026-09-03 against the test
-business. Results are in [`docs/website-auth-spike.md`](website-auth-spike.md);
-`scripts/auth-spike.mjs` reproduces the read-only part. Steps 7 and 8 are not
-done and step 8 in particular still needs its own approval.
+**Status: the hosted runtime spike is signed off.** Approved and run 2026-09-03
+against the test business, including a live promotion to production. Results are
+in [`docs/website-auth-spike.md`](website-auth-spike.md);
+`scripts/auth-spike.mjs` reproduces the read-only part.
+
+| Question | Status |
+| --- | --- |
+| Website runtime bindings | **live-hosted verified** — all six documented bindings present; dev and hosted share no binding name |
+| Injected-credential invisibility | **live-hosted verified** — `WHOP_API_KEY` absent, no runtime value resembles a credential |
+| Outbound proxy and opt-out behaviour | **live-hosted verified** — proxied call `200`, `x-whop-inject-key: none` → `401` |
+| Membership-read capability | **live-hosted verified** — `company:authorized_user:read` granted to the injected credential |
+| Operator OAuth bootstrap and redirect registration | **still open** — needs a `PATCH /apps/{id}`, which is unapproved |
+| Buyer versus team-member fallback behaviour | **still open** — needs a real customer, which is a mutation |
+
+Steps 7 and 8 are not done, and step 8 still needs its own approval.
 
 **Steps:**
 

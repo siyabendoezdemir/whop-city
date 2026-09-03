@@ -270,9 +270,48 @@ is in [`docs/website-auth-spike.md`](website-auth-spike.md); the summary:
 Browsable by anyone, no sign-in. It renders a privacy-safe City projection
 only: district health, tier, direction, visual variant, and freshness. No
 absolute revenue, no customer counts, no customer records, no product titles or
-roster, no plan pricing, no team details, no Whop object ids, and no
-operations. The projection is produced by a dedicated function whose return type
-contains no sensitive field, so a leak fails typecheck rather than review.
+roster, no plan pricing, no team details, and no operations. The projection is
+produced by a dedicated function whose return type contains no sensitive field,
+so a leak fails typecheck rather than review.
+
+#### Whop-hosted HTML is platform-rewritten — verified live
+
+The earlier version of this section promised "no Whop object ids" on the public
+surface. **That promise cannot be kept, and the reason is the platform, not
+City.** Verified against a deployed build on 2026-09-03:
+
+- **Whop injects its analytics pixel** into every HTML response. The pixel loads
+  `https://t.whop.tw/s.js`.
+- **Page views are tracked automatically.** The injected snippet calls
+  `whop.track("page")` on load, with no opt-in and nothing in the build asking
+  for it.
+- **The business id is exposed through the page scope.** The same snippet calls
+  `whop.setScope("biz_…")`, putting the `biz_` id in the markup of every public
+  page.
+- Whop also replaces the document `<title>` with the app's name and installs a
+  `MutationObserver` that re-asserts it, so a page cannot keep its own title.
+
+A build cannot opt out. This was confirmed on a build that was **inert by
+construction** — no analytics, no scripts, no network calls, a `noindex` meta tag
+and an `X-Robots-Tag` header — and it received the injection anyway. A `noindex`
+holding page is not exempt.
+
+**The design rule that follows.** Public City views must be privacy-safe **by
+design**, never by assuming the absence of platform telemetry or of business
+identifier exposure. Concretely:
+
+- Treat the `biz_` id as **public** on any deployed City. Do not use it as a
+  capability, a guess-resistant token, or part of an access decision.
+- Assume every public page view is recorded by Whop and attributed to the
+  business, and never let "the platform will not see this" be a premise.
+- Never rely on `noindex`, an obscure route, or an unlinked page as a privacy
+  control. Privacy comes from the projection type containing no sensitive field —
+  that is the only mechanism that holds.
+- Do not publish copy claiming the public surface exposes no Whop identifiers.
+  It does.
+
+Responses that are not HTML are left alone: a `text/plain` body came back
+byte-identical. Anything that must not be rewritten should not be served as HTML.
 
 ### Operator surface
 
@@ -303,6 +342,44 @@ mid-session.
 | Private `GET` | Verified operator session; membership re-checked. |
 | `POST`/`PUT`/`PATCH`/`DELETE` | Verified operator session, a fresh membership re-check against the role allowlist, and an action-specific confirmation token bound to that exact intent hash, that session, and a short expiry. |
 | Generic proxy | **Forbidden.** No route forwards an arbitrary path, method, or body to the Whop API. Every call is a named server function with a fixed method and a validated payload. |
+
+### Server security policy — non-negotiable
+
+The hosted Website credential is meaningfully lower privilege than a dashboard
+business key: 165 of 257 actions against 246, with `payout:withdraw_funds`,
+`payout:transfer_funds`, `payout:create_destination`, `company:delete`, and
+`company:transfer_ownership` all **denied**. That is a real reduction in blast
+radius and it is worth relying on.
+
+**It is not a safety net.** The same credential still grants **`payment:charge`**
+and **`developer:update_app`**, so a route that forwards attacker-shaped input to
+Whop can still take money and still reconfigure the app. The credential does not
+protect City from its own server routes — only these rules do, and they are not
+negotiable per feature.
+
+1. **No generic Whop proxy.** No route may accept a Whop path, or anything that
+   is turned into one, from a caller. There is no "escape hatch" endpoint, no
+   admin passthrough, and no debug forwarder — not behind a flag, not in
+   non-production, not temporarily.
+2. **Fixed server-side endpoints only.** Every Whop call is a named server
+   function with a literal method and a literal path template. The set of Whop
+   operations City can perform is enumerable by reading the source.
+3. **Nothing caller-controlled is forwarded.** Not the URL, not the HTTP method,
+   not headers, not the body. Caller input may only select among predefined
+   options and populate fields that a schema has validated. It never becomes a
+   request shape.
+4. **Allowlisted, reviewed mutations only.** A write reaches Whop only if its
+   intent is on an explicit allowlist that a human reviewed. Adding to that list
+   is a code change and a review, never configuration.
+5. **v1 product routes perform no payment, payout, transfer, account, team,
+   OAuth-config, or app-config action.** Not gated behind confirmation, not
+   behind an operator session, not behind a feature flag. These capabilities are
+   absent from the product surface entirely, so no bug in session handling,
+   membership checking, or confirmation-token logic can reach them.
+
+Rule 5 is what makes the rest survivable. `payment:charge` and
+`developer:update_app` being granted means the only reliable defence is that no
+product code path constructs such a call at all.
 
 ### On the shared-secret option
 
