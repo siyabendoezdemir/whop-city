@@ -303,6 +303,16 @@ bundle scan, a successful preview upload, and the five tracking events.
 
 **Objective:** Freeze the job, IA, city grammar, and operating surfaces.
 
+**Status: this is now the blocking gate.** A first visual implementation was
+built ahead of this task and has been **rejected** — it read as an isometric bar
+chart rather than an inhabited city. The diagnosis and the full redesign
+specification are in [`docs/design-brief.md`](design-brief.md). The world and
+component implementation from that attempt is disposable; the server adapter and
+privacy boundary carry forward.
+
+No production world code may be written until the Paper artboard described in
+the design brief is approved.
+
 Write `docs/product-brief.md` and `docs/design-brief.md`. Component sheet:
 district focus card, mission card, neutral operation button, confirm button,
 receipt, freshness indicator, locked-district marker, mobile read-only card.
