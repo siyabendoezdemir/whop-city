@@ -1,0 +1,19 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Secrets. Nothing matching these may ever be committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Capability-probe output. Reports are generated locally and may echo business
+# identifiers, so they stay out of Git even though the probe redacts secrets.
+probe-reports/
+tests/fixtures/live/
+
+.DS_Store

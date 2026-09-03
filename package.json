@@ -1,0 +1,23 @@
+{
+  "name": "whop-city",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Whop City — a Whop seller's live commerce operation rendered as a city.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "probe": "node --experimental-strip-types scripts/run-capability-probe.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
