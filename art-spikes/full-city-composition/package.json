@@ -11,7 +11,8 @@
     "capture": "node capture/capture.mjs",
     "preview": "node capture/preview.mjs",
     "leak-check": "node capture/leak-check.mjs",
-    "stats": "node capture/stats.mjs"
+    "stats": "node capture/stats.mjs",
+    "shadow-check": "node capture/shadow-check.mjs"
   },
   "dependencies": {
     "three": "^0.182.0"

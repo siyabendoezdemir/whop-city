@@ -21,7 +21,34 @@ export const VIEW = { width: 1440, height: 900 } as const;
 /** Sun azimuth/elevation chosen so the sawtooth roof self-shadows and the street reads. */
 const SUN_AZIMUTH = THREE.MathUtils.degToRad(128);
 const SUN_ELEVATION = THREE.MathUtils.degToRad(27);
-const SUN_DISTANCE = 60;
+
+/**
+ * The shadow volume. Fixed in world space, once, and never touched again.
+ *
+ * It used to be rebuilt on every camera move: the sun rode along with the
+ * focus and the orthographic bounds were rescaled to the frustum height. Both
+ * remap every texel in the shadow map to a different patch of world on every
+ * frame, so during a dolly or a zoom the entire shadow pattern re-quantises and
+ * the whole city shimmers. A shadow map has to be welded to the world, not to
+ * the camera.
+ *
+ * The extent is sized from the union of the ground footprints of all four
+ * framings. Light-space X is a horizontal axis, so raising a point does not
+ * change it, and every caster stands on ground inside that footprint — height
+ * only costs light-space Y, which is the smaller of the two axes anyway. The
+ * measured requirement is 106 x 64; this is square at 118 so the texels stay
+ * isotropic and the PCF kernel does not smear along one axis.
+ *
+ * 236 world units across a 4096 map is 5.8cm per texel, against 4.4cm at the
+ * old default framing. That is the price of the fix, and it is the right trade:
+ * slightly coarser shadows everywhere beats correct shadows that crawl.
+ */
+const SHADOW_ANCHOR = new THREE.Vector3(-8, 26, -29);
+const SHADOW_EXTENT = 118;
+/** How far back along the sun axis the shadow camera sits. */
+const SHADOW_DISTANCE = 280;
+const SHADOW_NEAR = 40;
+const SHADOW_FAR = 560;
 
 /** Three-quarter strategy framing. */
 const CAM_AZIMUTH = THREE.MathUtils.degToRad(45);
@@ -72,12 +99,16 @@ function skyTexture(): THREE.DataTexture | THREE.CanvasTexture {
   return texture;
 }
 
-function placeOnSphere(target: THREE.Object3D, azimuth: number, elevation: number, distance: number) {
-  target.position.set(
+function onSphere(azimuth: number, elevation: number, distance: number): THREE.Vector3 {
+  return new THREE.Vector3(
     Math.cos(elevation) * Math.sin(azimuth) * distance,
     Math.sin(elevation) * distance,
     Math.cos(elevation) * Math.cos(azimuth) * distance,
   );
+}
+
+function placeOnSphere(target: THREE.Object3D, azimuth: number, elevation: number, distance: number) {
+  target.position.copy(onSphere(azimuth, elevation, distance));
 }
 
 export function createStage(mount: HTMLElement): Stage {
@@ -129,24 +160,33 @@ export function createStage(mount: HTMLElement): Stage {
   // A hot key against weak ambient is what made shadows read as black cut-outs;
   // the sun now shapes the forms and the sky keeps the shadow side in colour.
   const sun = new THREE.DirectionalLight(0xfff1d6, 2.5);
-  placeOnSphere(sun, SUN_AZIMUTH, SUN_ELEVATION, SUN_DISTANCE);
+
+  // World-fixed, because it is the sun. The direction is unchanged from before
+  // — the light is simply anchored to a point in the city and pushed far enough
+  // back along its own axis that the whole world sits inside the depth range.
+  const sunAxis = onSphere(SUN_AZIMUTH, SUN_ELEVATION, 1);
+  sun.position.copy(SHADOW_ANCHOR).addScaledVector(sunAxis, SHADOW_DISTANCE);
+  sun.target.position.copy(SHADOW_ANCHOR);
+
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
-  sun.shadow.camera.near = 1;
-  sun.shadow.camera.far = 320;
-  // Wide enough to cover the whole authored city at the default framing. At
-  // 4096 that is roughly 5cm per texel, which still resolves a kerb.
-  const shadowExtent = 105;
-  sun.shadow.camera.left = -shadowExtent;
-  sun.shadow.camera.right = shadowExtent;
-  sun.shadow.camera.top = shadowExtent;
-  sun.shadow.camera.bottom = -shadowExtent;
+  sun.shadow.camera.near = SHADOW_NEAR;
+  sun.shadow.camera.far = SHADOW_FAR;
+  sun.shadow.camera.left = -SHADOW_EXTENT;
+  sun.shadow.camera.right = SHADOW_EXTENT;
+  sun.shadow.camera.top = SHADOW_EXTENT;
+  sun.shadow.camera.bottom = -SHADOW_EXTENT;
   sun.shadow.bias = -0.0012;
-  sun.shadow.normalBias = 0.05;
+  // Scaled with the texel: the fixed volume has coarser texels than the old
+  // zoomed-in dynamic one, and too small a normal bias shows as acne on the
+  // sunlit roof pitches.
+  sun.shadow.normalBias = 0.09;
   sun.shadow.radius = 4.2; // wider PCF kernel: soft edges, no hard cut line
-  sun.target.position.copy(focus);
   scene.add(sun);
   scene.add(sun.target);
+  sun.target.updateMatrixWorld();
+  sun.shadow.camera.updateProjectionMatrix();
+  // Nothing below is allowed to touch any of the above again.
 
   // Sky fill and warm ground bounce, so shadowed faces keep their colour.
   const hemi = new THREE.HemisphereLight(0xbcd8f5, 0xc0a582, 1.45);
@@ -156,8 +196,6 @@ export function createStage(mount: HTMLElement): Stage {
   const rim = new THREE.DirectionalLight(0xcfe2ff, 0.55);
   rim.position.set(-24, 14, -22);
   scene.add(rim);
-
-  const sunOffset = sun.position.clone();
 
   function applyFrustum() {
     camera.left = -halfH * aspect;
@@ -174,8 +212,11 @@ export function createStage(mount: HTMLElement): Stage {
   }
 
   /**
-   * The shadow camera travels with the focus. Without this, framing a district
-   * at the edge of the plan would walk the whole city out of the shadow map.
+   * Dolly and zoom to a framing.
+   *
+   * This moves the render camera and nothing else. The sun and its shadow
+   * camera are deliberately absent: they are world-fixed, and reaching in here
+   * to nudge them is what made the shadows swim.
    */
   function frame(at: THREE.Vector3, frustumHeight: number) {
     focus.copy(at);
@@ -184,15 +225,6 @@ export function createStage(mount: HTMLElement): Stage {
     camera.position.add(focus);
     camera.lookAt(focus);
     applyFrustum();
-    sun.position.copy(sunOffset).add(focus);
-    sun.target.position.copy(focus);
-    sun.target.updateMatrixWorld();
-    const extent = Math.max(34, frustumHeight * 0.94);
-    sun.shadow.camera.left = -extent;
-    sun.shadow.camera.right = extent;
-    sun.shadow.camera.top = extent;
-    sun.shadow.camera.bottom = -extent;
-    sun.shadow.camera.updateProjectionMatrix();
   }
 
   return { renderer, scene, camera, sun, focus, resize, frame };

@@ -216,9 +216,67 @@ focus point and the frustum height and nothing else. Every silhouette is
 authored against exactly one view direction, so an orbit would invalidate all of
 them at once.
 
-The shadow camera travels with the focus and resizes with the frustum. Without
-that, framing a district at the edge of the plan walks the whole city out of the
-4096² shadow map.
+## Shadows are welded to the world, not to the camera
+
+`stage.frame` deliberately does not touch the sun or its shadow camera.
+
+It used to. The sun rode along with the focus and the orthographic shadow bounds
+were rescaled to the frustum height on every call. Both of those remap every
+texel in the shadow map to a different patch of world on every frame, so during
+a dolly or a zoom the entire shadow pattern re-quantises at once and the whole
+city shimmers. It is the sun; it does not follow the camera around.
+
+The sun is now anchored at a fixed world point and pushed back along its own
+axis, with one fixed orthographic volume:
+
+| | |
+| --- | --- |
+| Anchor | `(-8, 26, -29)` |
+| Half extent | 118, square |
+| Distance / near / far | 280 / 40 / 560 |
+| Map | 4096², unchanged |
+
+The extent comes from the union of the **ground** footprints of all four
+framings, not their full view volumes. Light-space X is a horizontal axis, so
+raising a point does not change it, and every caster stands on ground inside
+that footprint — height only costs light-space Y, which is the smaller axis. The
+measured requirement is 106 × 64; 118 square leaves margin and keeps texels
+isotropic so the PCF kernel does not smear along one axis.
+
+The trade is resolution: 236 world units across 4096 texels is 5.8cm per texel,
+against 4.4cm at the old default framing and 2.4cm at the old district framings.
+`normalBias` went from 0.05 to 0.09 to match the coarser texel. Slightly softer
+shadows everywhere is the right price for shadows that do not crawl.
+
+### Verifying it
+
+```bash
+pnpm shadow-check                    # measures, then records the dolly path
+node capture/shadow-check.mjs before --no-video   # measurement only
+```
+
+The decisive measurement is the first one it prints. It walks the whole
+city → Commerce → Forge → Creator path and records everything that decides where
+the shadow map lands: sun position, shadow target, and the six shadow-camera
+planes. A world-fixed rig produces exactly one distinct state.
+
+| | Distinct rig states along the path |
+| --- | --- |
+| Before | 64 sampled (180 when sampled every frame) |
+| After | **1** |
+
+That is not a proxy for the defect, it is the defect, and one state means the
+shadow map is bit-identical on every frame of the fly for a static world.
+
+The script also reports two pixel metrics — a warp-compensated consecutive-frame
+residue and an exact 2× zoom-pair comparison of the isolated shadow mask. Both
+improved slightly (worst 1.70 → 1.27 and 1.29 → 1.29) and **neither could
+resolve the change**, because both are floored at around 1.2 levels by
+antialiasing along every geometry edge. They are kept as regression guards, not
+as evidence. The evidence is the rig-state count above and the before/after
+recordings, which is why the recordings run with the animation clock frozen:
+nothing in the world is allowed to move, so anything that changes between frames
+other than the camera transform is a rendering artefact.
 
 ## Route from this spike to the production renderer
 

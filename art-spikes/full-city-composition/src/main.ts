@@ -125,6 +125,15 @@ declare global {
     __flyTo: (key: string, t: number, progress: number, from: string) => void;
     __silhouette: (on: boolean) => void;
     __rebuild: (states?: Record<string, string>) => void;
+    __frameAt: (focus: [number, number, number], height: number, t: number) => void;
+    __framingTable: () => Array<{
+      key: string;
+      focus: [number, number, number];
+      height: number;
+      right: [number, number, number];
+      up: [number, number, number];
+    }>;
+    __shadowRig: () => number[];
     __scene: THREE.Scene;
     __info: () => Record<string, number>;
   }
@@ -168,6 +177,54 @@ Object.assign(window, {
     stage.frame(focus, height);
     city.update(t);
     stage.renderer.render(stage.scene, stage.camera);
+  },
+
+  /** Arbitrary framing, for the shadow-anchoring check's micro-dolly. */
+  __frameAt: (focus: [number, number, number], height: number, t: number) => {
+    clock = t;
+    stage.frame(new THREE.Vector3(...focus), height);
+    city.update(t);
+    stage.renderer.render(stage.scene, stage.camera);
+  },
+
+  /**
+   * The framings plus the camera's world-space right axis, so a test can turn
+   * a wanted pixel translation into a focus offset.
+   */
+  __framingTable: () =>
+    ORDER.map((key) => {
+      const right = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 0);
+      const up = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 1);
+      return {
+        key,
+        focus: FRAMINGS[key].focus.toArray() as [number, number, number],
+        height: FRAMINGS[key].height,
+        right: right.toArray() as [number, number, number],
+        up: up.toArray() as [number, number, number],
+      };
+    }),
+
+  /**
+   * Everything that decides where the shadow map lands in the world. If any of
+   * it changes while the camera moves, every shadow texel remaps to a different
+   * world position and the whole map shimmers.
+   */
+  __shadowRig: () => {
+    const c = stage.sun.shadow.camera;
+    return [
+      stage.sun.position.x,
+      stage.sun.position.y,
+      stage.sun.position.z,
+      stage.sun.target.position.x,
+      stage.sun.target.position.y,
+      stage.sun.target.position.z,
+      c.left,
+      c.right,
+      c.top,
+      c.bottom,
+      c.near,
+      c.far,
+    ];
   },
 
   __rebuild: (states?: Record<string, string>) => {
