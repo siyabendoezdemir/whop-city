@@ -187,19 +187,24 @@ An SSAO pass, or baked vertex AO at build time, is the single highest-value
 addition and I did not get to it. The contact-shadow texture helper exists in
 `geom.ts` and is currently unused.
 
-**3. Nothing moves, and the people are unposed blocks.** The brief asked for
-walkers, vehicles, smoke, flags and fountains, and the spike delivers a static
-frame — the video's only motion is a camera sway. Worse, the pedestrians are two
-stacked rounded boxes with a sphere on top, identical, facing fixed directions,
-with no gait, no arms, no variation in height or colour beyond two body
-materials. In Clash or Townscaper the ambient life is most of what sells the
-place as inhabited; here a still frame and a moving frame are nearly the same
-image. Animation was scoped out to get the four states standing up, and it is
-the most obvious thing missing when you watch the video rather than look at the
-stills.
+**3. Nothing moves at all.** The brief asked for walkers, vehicles, smaller
+moving life, smoke, flags and fountains, and the spike delivers a static frame.
+There is a camera sway in the capture loop but its amplitude is a few pixels
+over twelve seconds, which is to say it is not there: an independent review of
+the video reported no camera motion whatsoever, and that is the honest reading.
+The pedestrians make it worse — two stacked rounded boxes with a sphere on top,
+identical, facing fixed directions, no gait, no arms, no height variation, two
+body colours between them. In Clash or Townscaper the ambient life is most of
+what sells a place as inhabited; here a still and a moving frame are the same
+image, and the state changes are instant hard cuts with no dust, settle or
+transition between them. Animation was scoped out to get the four states
+standing up, and it is the most obvious absence the moment you watch rather than
+look.
 
-Two smaller ones worth recording: the building vocabulary is still fundamentally
-prismatic — no curves, no chamfered corners at the urban scale, no material
-changes partway up a facade — and there is no post-processing at all, so no
-bloom on the lit signage, no subtle vignette, and no colour grading to pull the
-whole frame toward a coherent warm key.
+Three smaller ones worth recording: the building vocabulary is still
+fundamentally prismatic — no curves, no chamfered corners at the urban scale, no
+material changes partway up a facade; the creek is a flat opaque polygon with no
+movement, transparency or shoreline detail, which stands out badly against the
+density of the block; and there is no post-processing at all, so no bloom on the
+lit signage, no vignette, and no colour grading pulling the frame toward a
+coherent warm key.
