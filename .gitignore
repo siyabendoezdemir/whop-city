@@ -20,3 +20,7 @@ probe-reports/
 tests/fixtures/live/
 
 .DS_Store
+
+# Playwright run output.
+test-results/
+playwright-report/
