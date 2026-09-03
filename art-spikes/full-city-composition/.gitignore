@@ -1,3 +1,8 @@
 # Generated capture output. The curated set lives in shots/.
 artifacts/
 .frames/
+
+# Vite dependency cache.
+.vite/
+dist/
+node_modules/
