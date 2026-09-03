@@ -15,8 +15,26 @@ City is an app of type `website`. Whop hosts it, serves it at
 Blueprint gives a customer their own business, their own copy of the products
 and the site, and their own app — and City then renders **that** business.
 
-There is no seller OAuth, no PKCE, no refresh-token vault, no app-install
-permission grant, no business picker, and no external API service.
+There is no seller-install consent model, no cross-business OAuth integration,
+no refresh-token vault, no app-install permission grant, no business picker, and
+no external API service.
+
+### What "no seller OAuth consent flow" means
+
+It means City never asks a seller to grant it standing access to their business.
+There is no install, no permission matrix, no stored refresh token, and no
+credential that lets City act on a business it was not deployed into.
+
+It does **not** mean the site is unauthenticated. A `whop.site` route is public
+and has no built-in visitor identity, so the operator surface is gated by a
+minimal identity-only "Sign in with Whop": OAuth 2.1 + PKCE requesting `openid`
+alone, used once to learn who the visitor is, then discarded. The membership
+check that follows is made against **this deployment's own** `WHOP_ACCOUNT_ID`
+and nothing else. That is operator authentication, not a seller integration, and
+it does not make City a `b2c_app`.
+
+The full endpoint and permission model is in
+[`docs/website-auth-spike.md`](website-auth-spike.md).
 
 `verified` — "A Whop website is an app of type `website`: a site visitors
 browse at `<route>.whop.site`, hosted by Whop." Deploying a blueprint means
@@ -49,17 +67,27 @@ flowchart TB
     end
 
     subgraph runtime["One deployed instance at runtime"]
-        browser["Browser<br/>React + R3F city<br/>window.whop.track()<br/>NO API key, NO private numbers"]
-        server["Whop-hosted server routes<br/>dist/server"]
+        browser["Browser<br/>React + R3F city<br/>window.whop.track()<br/>NO API key, NO token, NO private numbers"]
+        pub["Public GET routes<br/>privacy-safe City projection only"]
+        priv["Private routes<br/>verified operator session required"]
         proxy["Whop outbound proxy<br/>attaches the app's own key"]
         api["Whop API<br/>Api-Version-Date: 2026-09-02-2"]
-        browser -->|"fetch /api/... same origin"| server
-        server -->|"fetch WHOP_API_ORIGIN + /api/v1/..."| proxy
+        browser -->|"same-origin fetch"| pub
+        browser -->|"same-origin fetch + session cookie"| priv
+        pub --> proxy
+        priv --> proxy
         proxy --> api
     end
 
+    subgraph auth["Operator sign-in — identity only"]
+        oauth["Whop OAuth 2.1 + PKCE<br/>scope: openid<br/>server-side exchange, token discarded"]
+        check["Membership check against<br/>THIS deployment's WHOP_ACCOUNT_ID"]
+        cookie["httpOnly Secure SameSite cookie<br/>short expiry, re-checked per write"]
+        browser -->|"Manage this city"| oauth --> check --> cookie --> priv
+    end
+
     newapp --> runtime
-    api -->|"products, plans, members,<br/>memberships, payments, stats<br/>for WHOP_ACCOUNT_ID"| server
+    api -->|"products, plans, members,<br/>memberships, payments, stats<br/>for WHOP_ACCOUNT_ID"| priv
 ```
 
 ### Runtime bindings
@@ -124,15 +152,20 @@ state *derived*:
   City stamps the intent hash and confirmation time into the product's
   `metadata`, so the receipt is recoverable by reading the product back.
 
-Two things genuinely need durable state and are therefore **deferred out of
-v1**, consciously rather than quietly:
+Two things genuinely need durable state — shared external persistence that Whop
+hosting does not provide — and are therefore **deferred out of v1**,
+consciously rather than quietly:
 
 1. **Manual mission claims.** A `claimed` state that is not derivable from
-   Whop data has nowhere to live. Either v1 ships only `available` /
-   `verified` missions, or we add a store on purpose.
+   Whop data has nowhere to live. v1 ships only `available` and `verified`.
 2. **The cross-business leaderboard.** It needs a service that sees every
-   deployed instance, which is by definition not a per-business website. Out
-   of v1.
+   deployed instance, which is by definition not a per-business website.
+
+Neither may be simulated. No placeholder leaderboard with invented ranks, no
+claim button that only sets local state, no "coming soon" surface dressed as
+working functionality. If it is not backed by real data it does not ship, and
+copy must not imply otherwise. Adding either means consciously adding a
+backend, as its own decision.
 
 Also unrecoverable without a store: a **failure** receipt. A write that fails
 creates no product to stamp. v1 surfaces failures in the session and in
@@ -152,12 +185,11 @@ and requires the flag when the credential has none.
 - App type: `website`, **permanent and unchangeable**
 - Scaffold target: `./whop-city` by default; `--dir` overrides
 
-**Address discrepancy, `unverified`.** The Websites docs say the address is
-`<route>.whop.site`, and `whop.site` resolves and serves per-subdomain today
-(`shine-time.whop.site` returns 404 for an unclaimed route). The CLI's own help
-in `whop@0.16.3` says `<route>.whop.app` and describes apps as
-"*.whop.app". The route slug is the same either way; confirm which domain the
-live address uses at init and record it.
+**Address, `verified`.** `<route>.whop.site`. The API settles it: the `route`
+field on `GET /apps/{id}` is documented as "Claimed subdomain route where hosted
+web builds are served (`myapp` for myapp.whop.site)". `whop.site` also resolves
+and serves per-subdomain today. The `.whop.app` wording in `whop@0.16.3`'s help
+is a stale generic string; the slug is identical either way.
 
 **Repo shape.** `whop apps init` scaffolds a TanStack Start project, installs
 dependencies, and runs `git init`. Running it inside this repository would
@@ -191,11 +223,16 @@ API safety work that would be wasteful to rewrite.
 | File / section | Why it goes |
 | --- | --- |
 | `docs/whop-permission-matrix.md` | Framed entirely around OAuth scopes and app-install permission grants. Its architecture-independent findings — version pin, idempotency semantics, webhook mechanics, the affiliate gap, sandbox and CLI limits — get folded into a new `docs/whop-website-capability-matrix.md`. |
-| OAuth scope tables in `capability-manifest.ts` | `requiredScopes` becomes "what the injected key must already be able to do", answered by `GET /permissions` rather than declared by City. |
-| Tests asserting OIDC scopes, PKCE, and the email-scope exclusion | No OAuth flow to assert against. |
-| `.env.example` OAuth block | `WHOP_APP_ID`, `WHOP_CLIENT_SECRET`, redirect URI, `WHOP_TEST_ACCESS_TOKEN` all go. The version pin and probe gates stay. |
+| App-install permission tables in `capability-manifest.ts` | `requiredScopes` becomes "what the injected credential must already be able to do", answered by `GET /permissions` rather than declared by City. |
+| Seller-token tests | `WHOP_TEST_ACCESS_TOKEN` and the business-picker assumptions go. |
+| `.env.example` seller block | `WHOP_CLIENT_SECRET` and `WHOP_TEST_ACCESS_TOKEN` go. The version pin and the probe gates stay. |
 | `pnpm-workspace.yaml` and the `packages/*` layout | Single package at the repo root. |
 | `developer:manage_webhook` capability entries | Not a dependency any more; see below. |
+
+The PKCE, `state`, `nonce`, and OIDC-scope tests are **kept and retargeted**.
+Operator sign-in uses the same primitives; what changes is that the scope set
+shrinks to `openid` alone and there is no refresh token to persist. The
+email-scope exclusion test stays exactly as written.
 
 ### Webhooks
 
@@ -207,46 +244,78 @@ connections") with no page behind it. v1 therefore refreshes on explicit user
 action and on navigation, and labels data `live` / `refreshing` / `delayed`.
 No near-real-time claim until a website-native mechanism is proven.
 
-## Open risks that need your decision
+## Access model — decided
 
-### 1. A `*.whop.site` site is public. This is the big one.
+A `*.whop.site` route is public and has **no automatic visitor identity**:
+`x-whop-user-token` exists only for apps rendering inside the whop.com iframe,
+which is the `b2c_app` model. Unaddressed, that means anything City renders is
+world-readable, and any visitor could POST to a server route and trigger the
+real write, because the injected credential authenticates as the business
+regardless of who asked.
 
-`verified` — `x-whop-user-token` exists only for apps rendering inside the
-whop.com iframe, which is the `b2c_app` model. A `website` is browsed directly
-at its route, so **there is no automatic visitor identity**. The Websites docs
-document no visitor auth and no private-site setting.
+**Decision: identity-only Whop OAuth.** The full endpoint and permission model
+is in [`docs/website-auth-spike.md`](website-auth-spike.md); the summary:
 
-Two consequences, both severe if unaddressed:
+### Public surface
 
-- Anything City renders is world-readable. Revenue, customer counts, and the
-  product roster of the deployed business would be visible to anyone with the
-  URL.
-- Any visitor could POST to City's own server route and trigger the real
-  write, because the injected key authenticates as the business regardless of
-  who asked.
+Browsable by anyone, no sign-in. It renders a privacy-safe City projection
+only: district health, tier, direction, visual variant, and freshness. No
+absolute revenue, no customer counts, no customer records, no product titles or
+roster, no plan pricing, no team details, no Whop object ids, and no
+operations. The projection is produced by a dedicated function whose return type
+contains no sensitive field, so a leak fails typecheck rather than review.
 
-The write gate is non-negotiable either way. The options for the operator
-surface, none of which I have adopted:
+### Operator surface
 
-- **A. Split the surface.** Public route shows a non-sensitive city — shapes,
-  tiers, and progress, no absolute numbers — and no operations at all. The
-  operator surface is separate and gated. Keeps the Blueprint attractive as a
-  public artifact.
-- **B. Shared-secret operator session.** The deployer sets an app secret; the
-  operator enters it once and gets a signed, expiring cookie. No OAuth, no
-  consent screen, works entirely inside Whop hosting. Weaker than real auth and
-  needs care against brute force.
-- **C. Identity-only Whop OAuth.** `openid` alone, then check the signed-in
-  user is a team member of `WHOP_ACCOUNT_ID` via `GET /team_members`. No
-  permission grants, no refresh-token vault, no business picker — but it is
-  still an OAuth consent screen, which you ruled out. Flagging it only because
-  it is the sole option that gives a real identity.
+"Manage this city" starts Whop OAuth 2.1 + PKCE with `state` and `nonce`,
+requesting **`openid` only**. `profile` is unnecessary because `GET /users/{id}`
+is public — verified live — and `email` is not requested because no v1 feature
+sends mail. The token is exchanged server-side, read once for `sub`, and
+discarded; it is never stored, never refreshed, and never reaches the browser.
 
-My recommendation is **A plus B**: it satisfies "no seller OAuth consent flow"
-literally, and A alone is not enough because the write still needs a gate.
-This needs your call before any code.
+The server then verifies the signed-in user is currently on the team of **this
+deployment's** `WHOP_ACCOUNT_ID` — primarily via
+`GET /team_members?account_id=…&user_id=…&status=joined`, checking `role`
+against an allowlist of `owner` and `admin`. The fallback,
+`GET /users/{sub}/access/{WHOP_ACCOUNT_ID}`, needs no extra permission but must
+be read as `access_level === "admin"`, never as `has_access`, which is also true
+for a plain customer.
 
-### 2. Injected-key reach is unverified
+On success City issues its own `httpOnly`, `Secure`, `SameSite` cookie with a
+short expiry, bound to this `WHOP_ACCOUNT_ID`. **Membership is re-checked before
+every consequential write**, not merely at login, because a role can be revoked
+mid-session.
+
+### Server-route policy
+
+| Class | Rule |
+| --- | --- |
+| Public `GET` | Privacy-safe City projection only. |
+| Private `GET` | Verified operator session; membership re-checked. |
+| `POST`/`PUT`/`PATCH`/`DELETE` | Verified operator session, a fresh membership re-check against the role allowlist, and an action-specific confirmation token bound to that exact intent hash, that session, and a short expiry. |
+| Generic proxy | **Forbidden.** No route forwards an arbitrary path, method, or body to the Whop API. Every call is a named server function with a fixed method and a validated payload. |
+
+### On the shared-secret option
+
+Withdrawn from the architecture. A shared operator password is not an
+acceptable default for a public Blueprint that anyone can deploy. It may exist
+only as a local-development break-glass mechanism, gated behind an explicit
+non-production flag, and it must never be reachable on a deployed site.
+
+## Open risks
+
+### 1. Blueprint OAuth bootstrap
+
+Each deployment registers a new app with its own id and route, and OAuth needs
+a registered exact-match redirect URI that a fresh deployment does not have.
+`oauth_client_type: public` removes the need for a per-deployment client secret,
+and `GET /apps/{id}` is public so City can read its own route at boot — but
+registering the URI needs `PATCH /apps/{id}` and therefore
+`developer:update_app`. If the injected credential holds it, City self-registers
+on first boot and deployment stays one-step; if not, each deployer performs one
+documented manual step before the operator surface works. The spike settles it.
+
+### 2. Injected-credential reach is unverified
 
 The key "can't move money" and grants payout and transfer *reads*, but the docs
 do not enumerate what else it can do. Whether it can read `stats`, read
@@ -257,8 +326,8 @@ is the first thing the spike runs.
 ### 3. Whether affiliate reads work at all here
 
 `/affiliates` is legacy-surface only, requires `account_id`, and has no
-webhook. Under the injected key it is untested. Creator Quarter may have to be
-narrowed to what `global_affiliate_status` on each product reveals.
+webhook. Under the injected credential it is untested. Creator Quarter may have
+to be narrowed to what `global_affiliate_status` on each product reveals.
 
 ### 4. The spike needs a Whop login
 

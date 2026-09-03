@@ -15,19 +15,24 @@ exactly one real Whop write through review → confirm → execute → receipt.
 **Architecture:** One Vite application of Whop app type `website`, hosted by
 Whop at `<route>.whop.site`. Its server routes are the only thing that talks to
 the Whop API, and they do so through Whop's outbound proxy, which attaches the
-app's own business key. Browser code never receives a key. There is no seller
-sign-in, no business picker, and no external service or database. All city
-state is derived from the business snapshot; the one write records its receipt
-in the created product's own metadata.
+app's own business key. Browser code never receives a key or a token. The public
+city is browsable by anyone and shows a privacy-safe projection; the operator
+surface is gated by a minimal identity-only "Sign in with Whop" that establishes
+who the visitor is and confirms they are on this deployment's team. There is no
+seller-install consent model, no business picker, and no external service or
+database. All city state is derived from the business snapshot; the one write
+records its receipt in the created product's own metadata.
 
 **Tech stack:** TypeScript; React 19; Vite + TanStack Start; `whop()` plugin
 from `@whop/cli/vite`; React Three Fiber + Three.js + Drei; Zustand; TanStack
 Query; Whop REST API pinned with `Api-Version-Date`; the Whop pixel plus
 `whop.track()`; Vitest; Playwright; GitHub Actions.
 
-Explicitly **not** in the stack any more: OAuth 2.1/PKCE, refresh tokens, a
-token vault, Fastify, SQLite/Drizzle/`better-sqlite3`, a job runner, Socket.IO,
-Docker Compose, Caddy, and Hetzner.
+OAuth 2.1 + PKCE appears exactly once, for identity-only operator sign-in with
+the `openid` scope, and holds no token past the exchange. Explicitly **not** in
+the stack any more: seller-install consent, refresh tokens, a token vault,
+Fastify, SQLite/Drizzle/`better-sqlite3`, a job runner, Socket.IO, Docker
+Compose, Caddy, and Hetzner.
 
 ---
 
@@ -35,9 +40,14 @@ Docker Compose, Caddy, and Hetzner.
 
 ### First playable release — definition of done
 
-Someone operating a business that deployed the City Blueprint can:
+Anyone can open the site at its `whop.site` route with no sign-in and see a
+privacy-safe city: district health, tier, direction, and freshness, with no
+figures that expose the business.
 
-1. open the site at its `whop.site` route with no sign-in step;
+Someone operating the business that deployed the City Blueprint can additionally:
+
+1. press "Manage this city", sign in with Whop, and be recognised as a member of
+   this deployment's team — with no permission grant and no business picker;
 2. see a city generated from that business's current data, not mock stats;
 3. inspect three functional districts:
    - **Commerce Core** — revenue and customer signal;
@@ -73,6 +83,9 @@ window closes.
   deployed instance, which a per-business website is not. Deferred on purpose.
 - **No manual mission claims.** A `claimed` state that Whop data cannot derive
   has nowhere durable to live. v1 ships `available` and `verified` only.
+- **Neither may be simulated.** No placeholder ranks, no claim button that only
+  sets local state, no "coming soon" surface dressed as working functionality.
+  Both need shared external persistence, and adding it is its own decision.
 - **No near-real-time claim.** Whop's `REALTIME` binding is a single
   undocumented line with no page behind it. Until a website-native mechanism is
   proven, City refreshes on explicit action and on navigation.
@@ -109,8 +122,15 @@ window closes.
   supplies `WHOP_APP_ID` and a short-lived `WHOP_API_KEY`; production supplies
   the proxy and the bindings above. One server code path must handle both.
 - A `whop.site` route is publicly browsable and has no automatic visitor
-  identity. Nothing sensitive renders publicly and no write executes without
-  the operator gate agreed in the architecture document.
+  identity — `x-whop-user-token` exists only for iframe apps. Nothing sensitive
+  renders publicly, and no write executes without a verified operator session
+  plus a fresh action-specific confirmation.
+- No server route forwards an arbitrary path, method, or body to the Whop API.
+- OAuth is identity-only, `openid` alone, with the token discarded after the
+  exchange. It never reaches the browser and is never persisted.
+- `has_access` is not an authorization signal: `access_level` includes
+  `customer`, so a buyer would pass. Require `access_level === "admin"`, or
+  better, an explicit `role` from `GET /team_members`.
 - Rate limit: 600 requests per minute per operation per credential.
 
 ---
@@ -197,10 +217,15 @@ a failing business.
 
 ## Implementation tasks
 
-### Task 1: Website capability spike through `whop apps dev`
+### Task 1: Website capability and operator-auth spike through `whop apps dev`
 
-**Objective:** Prove the hosting model end to end before any product code.
-Everything runs against City's own test business.
+**Objective:** Prove the hosting model and the operator identity check before
+any product code. Everything runs against City's own test business.
+[`docs/website-auth-spike.md`](website-auth-spike.md) carries the endpoint and
+permission model this task verifies.
+
+**Requires explicit approval before running.** `--app_type` is permanent, and
+step 8 creates a real product.
 
 **Steps:**
 
@@ -209,26 +234,40 @@ Everything runs against City's own test business.
    directory, move to the repo root, drop the nested `.git`.
 2. Assert the registered app's type is `website` via `whop apps get --format json`.
 3. Add a temporary server route that prints which runtime bindings exist, so
-   the dev-versus-hosted asymmetry is measured rather than assumed.
+   the dev-versus-hosted asymmetry is measured rather than assumed —
+   specifically whether `WHOP_ACCOUNT_ID` and `WHOP_API_ORIGIN` are set under
+   `whop apps dev`.
 4. Call `GET /permissions?resource_id=$WHOP_ACCOUNT_ID` server-side and record
-   the full granted/denied list for the injected credential.
-5. Read products, plans, members, memberships, and payments or stats for the
+   the full granted/denied list for the injected credential. Note in particular
+   whether `company:authorized_user:read` and `developer:update_app` are
+   granted.
+5. **Operator identity.** Run the identity-only OAuth flow end to end: `openid`
+   only, PKCE with `state` and `nonce`, server-side exchange, token discarded
+   after reading `sub`. Then resolve membership two ways and compare:
+   `GET /team_members?account_id=…&user_id=…&status=joined` for the precise
+   role, and `GET /users/{sub}/access/{WHOP_ACCOUNT_ID}` for `access_level`.
+   Record what the owner returns, and confirm a non-member returns `no_access`
+   and an empty team-member list.
+6. `GET /apps/{APP_ID}` and record `route`, `hosted_url`, `redirect_uris`, and
+   `oauth_client_type`, so the Blueprint bootstrap question can be answered.
+7. Read products, plans, members, memberships, and payments or stats for the
    website's own business; record which succeed and which are refused.
-6. Create exactly one hidden product, only behind an explicit local
+8. Create exactly one hidden product, only behind an explicit local
    confirmation step, carrying an `Idempotency-Key` and metadata. Submit the
    same intent twice and prove one product exists.
-7. Grep the built client bundle and the served HTML for any credential.
-8. `whop apps deploy --preview` and confirm the build uploads without promoting.
-9. Fire `city_loaded`, `district_opened`, `mission_reviewed`,
-   `operation_confirmed`, and `operation_receipt_viewed` through `whop.track()`
-   and confirm they arrive.
+9. Grep the built client bundle and the served HTML for any credential, token,
+   or session secret.
+10. `whop apps deploy --preview` and confirm the build uploads without promoting.
+11. Fire `city_loaded`, `district_opened`, `mission_reviewed`,
+    `operation_confirmed`, and `operation_receipt_viewed` through `whop.track()`
+    and confirm they arrive.
 
 **Verification:** one recorded `whop apps dev` session showing the app type,
-the permission list, the successful reads, one product created and not
-duplicated, a clean bundle scan, a successful preview upload, and the five
-tracking events.
+the permission list, the owner's role and access level, a non-member correctly
+refused, the successful reads, one product created and not duplicated, a clean
+bundle scan, a successful preview upload, and the five tracking events.
 
-**Commit:** `test: prove the whop website capability surface`
+**Commit:** `test: prove the whop website capability and operator auth surface`
 
 ### Task 2: Product brief and approved Paper design
 
@@ -275,18 +314,41 @@ no mission reaches `verified` without snapshot evidence.
 
 **Commit:** `feat: derive city districts and missions from business state`
 
-### Task 5: The operator gate
+### Task 5: Operator identity and the server-route policy
 
 **Objective:** Make sure a public route cannot leak the business or act on it.
 
-Implement the gate chosen in the architecture document. Every server route that
-writes, and every route that returns sensitive figures, checks it. Public
-rendering carries no absolute revenue, customer counts, or product roster.
+Implement identity-only sign-in: OAuth 2.1 + PKCE with `state` and `nonce`,
+`openid` only, exchanged server-side, token read once for `sub` and discarded.
+Verify membership of this deployment's `WHOP_ACCOUNT_ID` against a role
+allowlist of `owner` and `admin`, using `GET /team_members` where the injected
+credential allows and `GET /users/{sub}/access/{…}` with
+`access_level === "admin"` — never `has_access` — where it does not. Issue an
+`httpOnly`, `Secure`, `SameSite` cookie with a short expiry, bound to that
+account id. Re-check membership before every consequential write.
 
-**Verification:** tests prove an ungated request gets no sensitive field and
-cannot reach the write path.
+Enforce the route policy in one place, so a new route cannot opt out by
+omission:
 
-**Commit:** `feat: gate the operator surface`
+- public `GET` returns the privacy-safe City projection only, built by a
+  function whose return type contains no sensitive field;
+- private `GET` requires a verified operator session;
+- every `POST`/`PUT`/`PATCH`/`DELETE` requires a verified operator session, a
+  fresh membership re-check, and an action-specific confirmation token bound to
+  the intent hash, the session, and a short expiry;
+- no generic proxy route to the Whop API exists — every call is a named server
+  function with a fixed method and a validated payload.
+
+A shared-secret bypass may exist only behind an explicit non-production flag,
+for local development, and must be unreachable on a deployed site.
+
+**Verification:** tests prove an anonymous request receives no sensitive field
+and cannot reach any write path; a signed-in non-member is refused; a signed-in
+`customer` is refused despite `has_access` being true; a revoked role fails at
+the write even with a still-valid cookie; a confirmation token cannot be
+replayed or reused for a different intent.
+
+**Commit:** `feat: gate the operator surface with whop identity`
 
 ### Task 6: The one safe operation and its receipt
 
@@ -296,8 +358,18 @@ Build the intent server-side from a mission context; preview title, visibility,
 affiliate configuration, and expected city consequence. Require a checkbox —
 "This creates a real Whop product in this business" — and a concrete confirm
 label. Generate the idempotency key before the request; expire unconfirmed
-intents. Execute only on confirm, validate the response, read the business
-back, then show the receipt. Animate construction only after that read.
+intents. Execute only on confirm, after re-checking membership, then validate
+the response, read the business back, and show the receipt. Animate
+construction only after that read.
+
+The receipt records actor identity, timestamp, intent hash, Whop object id,
+status, and the API version pin. With no datastore, a success is stamped into
+the created product's `metadata` and read back from it. Because
+`GET /products/{id}` is public and returns `metadata`, store a **salted hash**
+of the actor rather than the raw `user_` id, and resolve the readable identity
+from the session on the gated receipt view. A failed write creates no product,
+so v1 surfaces failures in-session and in `whop apps logs` and does not claim a
+durable failure ledger.
 
 **Verification:** E2E proves cancellation writes nothing, confirmation produces
 one product and one receipt, retry cannot duplicate it, and a failure produces
@@ -382,23 +454,30 @@ is real, what is fixture, and how to report a security issue.
 
 - **Unit:** city rules, scoring, mission transitions, intent hashing, freshness.
 - **Contract:** API version pin, adapter validation against recorded fixtures,
-  idempotency including `Idempotent-Replayed`, redaction, operator gate.
+  idempotency including `Idempotent-Replayed`, redaction, and the OAuth
+  primitives — PKCE challenge, `state`, `nonce`, and that the requested scope
+  set is exactly `openid`.
 - **Integration:** server routes under both the dev and hosted environment
   shapes; snapshot → city state.
 - **E2E:** city load, district inspect, cancel operation, confirm operation,
   receipt, refresh and freshness.
 - **Visual:** approved Paper state matched by desktop screenshot; mobile state.
-- **Security:** no credential in the client bundle, served HTML, or logs; no
-  sensitive field on an ungated response; no write without confirmation.
+- **Security:** no credential, token, or session secret in the client bundle,
+  served HTML, or logs; no sensitive field on an ungated response; no write
+  without a verified operator session plus a fresh confirmation; a signed-in
+  `customer` refused despite `has_access`; a revoked role refused at the write
+  even with a live cookie; a confirmation token neither replayable nor
+  transferable to another intent; no generic proxy route exists.
 
 ---
 
 ## Sequencing and stop points
 
-1. **Do not write product code** until Task 1's spike output and Task 2's Paper
+1. **Do not run the Task 1 spike** — including `whop apps init` — until Siya
+   approves it explicitly. The app type is permanent and the spike creates a
+   real product.
+2. **Do not write product code** until Task 1's spike output and Task 2's Paper
    state are approved.
-2. **Do not run `whop apps init`** until the route, name, and test business are
-   confirmed — the app type is permanent.
 3. **Do not buy assets** until Siya approves a pack, license, and cost.
 4. **Do not create any Whop product** outside the test business, and never
    without the review and confirmation UI.
@@ -409,10 +488,15 @@ is real, what is fixture, and how to report a security issue.
 
 ## Risks and mitigations
 
-- **A public route exposes the business.** The largest open risk; see the
-  architecture document. Nothing sensitive renders publicly and no write runs
-  ungated.
-- **The injected key's reach is unknown.** Settled in one call by
+- **A public route exposes the business.** Addressed by the split surface and
+  identity-only operator sign-in. The residual risk is an implementation slip,
+  so the route policy is enforced centrally and the privacy-safe projection is
+  a distinct type.
+- **Blueprint OAuth bootstrap.** A fresh deployment has no registered redirect
+  URI. `oauth_client_type: public` removes the secret problem; whether City can
+  self-register the URI depends on `developer:update_app`, settled in Task 1.
+  Worst case is one documented manual step per deployment.
+- **The injected credential's reach is unknown.** Settled in one call by
   `GET /permissions` in Task 1; build only what comes back granted.
 - **Dev and hosted environments differ.** Measured in Task 1; one code path
   handles both, and integration tests cover both shapes.
@@ -434,5 +518,6 @@ is real, what is fixture, and how to report a security issue.
 - Quickstart: <https://docs.whop.com/developer/websites/quickstart>
 - Tracking: <https://docs.whop.com/developer/websites/tracking>
 - Authentication: <https://docs.whop.com/developer/guides/authentication>
+- OAuth: <https://docs.whop.com/developer/guides/oauth>
 - Idempotency: <https://docs.whop.com/developer/api/idempotency>
 - API versioning: <https://docs.whop.com/developer/api/versioning>
