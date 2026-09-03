@@ -390,7 +390,19 @@ non-production flag, and it must never be reachable on a deployed site.
 
 ## Open risks
 
-### 1. Blueprint OAuth bootstrap — narrowed, still open, and now two writes
+### 1. Blueprint OAuth bootstrap — closed
+
+**Resolved 2026-09-03 in the hosted runtime.** A deployed build, using only the
+injected credential, registered its own redirect URI and moved the app to a
+public PKCE client in one atomic `PATCH /api/v1/apps/{APP_ID}` returning `200`.
+`developer:update_app` is sufficient by itself; the denied
+`developer:manage_oauth` governs nothing on that endpoint. Blueprint deployment
+stays one step, with no manual step for the deployer and no per-deployment client
+secret. Of 37 app fields, only the two intended ones changed.
+
+The original framing is kept below because it records what was uncertain and why.
+
+### 1a. The original problem — narrowed, then closed
 
 Each deployment registers a new app with its own id and route, and OAuth needs a
 registered exact-match redirect URI that a fresh deployment does not have. The

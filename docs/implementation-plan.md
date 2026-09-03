@@ -235,7 +235,8 @@ in [`docs/website-auth-spike.md`](website-auth-spike.md);
 | Injected-credential invisibility | **live-hosted verified** — `WHOP_API_KEY` absent, no runtime value resembles a credential |
 | Outbound proxy and opt-out behaviour | **live-hosted verified** — proxied call `200`, `x-whop-inject-key: none` → `401` |
 | Membership-read capability | **live-hosted verified** — `company:authorized_user:read` granted to the injected credential |
-| Operator OAuth bootstrap and redirect registration | **still open** — needs a `PATCH /apps/{id}`, which is unapproved |
+| Operator OAuth bootstrap and redirect registration | **live-hosted verified** — the injected credential PATCHed both OAuth fields itself, `200`, so Blueprint deployment stays one step |
+| Whether `openid` works as an authorize-time scope | **still open** — newly testable now that a redirect URI exists |
 | Buyer versus team-member fallback behaviour | **still open** — needs a real customer, which is a mutation |
 
 Steps 7 and 8 are not done, and step 8 still needs its own approval.

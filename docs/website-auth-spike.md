@@ -177,13 +177,42 @@ Registering the URI needs `PATCH /apps/{id}`, which requires
 - **If it does not,** every deployer performs one documented manual step before
   the operator surface works. The public city still renders.
 
-The spike narrowed this but did not close it. A business API key holds
-`developer:update_app` and `developer:manage_oauth`, so the two writes are
-possible in principle. Whether the *runtime* credential holds them is still
-unknown, for the reason in
-[What this spike could not answer](#what-this-spike-could-not-answer). Note also
-that the bootstrap now needs **two** writes rather than one, since the client
-type has to be flipped as well as the URI registered.
+### Closed: a deployed Website can self-bootstrap — verified in hosted
+
+Settled on 2026-09-03 by promoting a build that reads `APP_ID` and
+`WHOP_API_ORIGIN` from hosted bindings, compares the two OAuth fields, and
+PATCHes on mismatch. It ran once, in production, using **only the injected
+credential** — the build holds no key and cannot read one.
+
+```
+GET   /api/v1/apps/{APP_ID}   -> 200   both fields differ from desired
+PATCH /api/v1/apps/{APP_ID}   -> 200   redirect_uris + oauth_client_type only
+GET   /api/v1/apps/{APP_ID}   -> 200   both fields now match
+```
+
+**`developer:update_app` is sufficient on its own.** The injected credential is
+denied `developer:manage_oauth`, and the PATCH still returned `200` for *both*
+fields — including `oauth_client_type`, the one that looked most likely to be
+gated by the denied permission. This matches the OpenAPI, where Update App
+declares `bearerAuth: ["developer:update_app"]` and no operation anywhere
+requires `developer:manage_oauth`. That permission does not govern app OAuth
+configuration.
+
+**Blueprint deployment therefore stays one step.** A deployed City can register
+its own redirect URI and move itself to a public PKCE client on first boot, with
+no manual step for the deployer and no per-deployment client secret. Both writes
+land in a single atomic PATCH, so there is no half-configured intermediate state.
+
+The write was surgical: of 37 app fields compared before and after, **35 were
+unchanged** and the two that moved were exactly the two intended.
+`required_scopes` stayed `["read_user"]`.
+
+That last point keeps a hypothesis open rather than closing it. `required_scopes`
+is schema-constrained to `const: "read_user"`, so `openid` cannot be declared at
+app level. Whether `openid` is accepted as an authorize-time `scope` parameter is
+a **separate** question, now testable for the first time because a redirect URI
+finally exists — `/oauth/authorize` previously rejected on `redirect_uri` before
+it ever validated `scope`.
 
 ## Receipts
 
