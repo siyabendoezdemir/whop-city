@@ -4,6 +4,10 @@ build/
 coverage/
 *.tsbuildinfo
 
+# Local Workers runtime state. Deploy uploads git-tracked files as the source
+# archive, so anything left here by `wrangler dev` would ship with the build.
+.wrangler/
+
 # Secrets. Nothing matching these may ever be committed.
 .env
 .env.*
