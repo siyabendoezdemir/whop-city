@@ -273,15 +273,37 @@ export function registerProps(kit: InstanceKit): void {
   // A soft dark ellipse laid just above the ground under every placed object.
   // The shadow map handles the sun; this handles the fact that a small object
   // still reads as hovering without a darkening directly beneath it.
-  const shadowMaterial = new THREE.MeshBasicMaterial({
+  //
+  // Texture, material and geometry are process-wide singletons. `registerProps`
+  // runs once per lot, so building them here allocated a fresh canvas texture on
+  // every state switch and the texture count climbed forever.
+  kit.define("contact", contactDisc(), contactMaterial(), {
+    castShadow: false,
+    receiveShadow: false,
+  });
+}
+
+let sharedContactMaterial: THREE.MeshBasicMaterial | null = null;
+let sharedContactDisc: THREE.PlaneGeometry | null = null;
+
+function contactMaterial(): THREE.MeshBasicMaterial {
+  sharedContactMaterial ??= new THREE.MeshBasicMaterial({
     map: contactShadow(),
     transparent: true,
     depthWrite: false,
     opacity: 0.85,
     vertexColors: false,
   });
-  const disc = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
-  kit.define("contact", disc, shadowMaterial, { castShadow: false, receiveShadow: false });
+  return sharedContactMaterial;
+}
+
+function contactDisc(): THREE.PlaneGeometry {
+  if (!sharedContactDisc) {
+    sharedContactDisc = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    // Outlives any single lot, so teardown must leave it alone.
+    sharedContactDisc.userData.shared = true;
+  }
+  return sharedContactDisc;
 }
 
 /** Lays a contact-shadow disc, slightly above the surface to avoid z-fighting. */

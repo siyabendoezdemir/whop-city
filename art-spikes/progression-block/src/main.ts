@@ -70,6 +70,8 @@ setState(currentState);
 // ------------------------------------------------------------ capture hooks
 let silhouetteMode = false;
 const originalBackground = stage.scene.background;
+/** One instance for the process, so toggling silhouette mode allocates nothing. */
+const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
 
 const api = {
   __ready: true,
@@ -118,7 +120,6 @@ const api = {
    */
   __silhouette: (on: boolean) => {
     silhouetteMode = on;
-    const black = new THREE.MeshBasicMaterial({ color: 0x000000 });
     const context = ["ground", "creek", "neighbours"];
 
     for (const child of current?.group.children ?? []) {

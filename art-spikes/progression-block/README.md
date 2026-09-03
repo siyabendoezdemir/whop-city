@@ -118,9 +118,15 @@ The four states are switchable from the bar at the bottom. Useful URL params:
 Capture, with the dev server already running:
 
 ```
-pnpm capture       # four stills + silhouette sheet + 12s MP4 -> /opt/cursor/artifacts
-node capture/silhouette.mjs   # just the silhouette contact sheet
-node capture/preview.mjs healthy /tmp/out.png
+# Four stills + silhouette sheet + 12s MP4. Writes to ./artifacts by default.
+pnpm capture
+
+# Send the output somewhere else.
+ART_OUT=/tmp/city-proof pnpm capture
+
+# One frame. Third argument is an optional path, fourth an optional frame index.
+node capture/preview.mjs healthy ./artifacts/look.png
+node capture/preview.mjs healthy ./artifacts/mid-delivery.png 210
 ```
 
 Capture runs headless Chrome on SwiftShader, so it needs no GPU. It renders

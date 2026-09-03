@@ -117,10 +117,16 @@ export function createLot(spec: LotSpec): Lot {
   };
 }
 
-/** Frees GPU resources when a state is swapped out. */
+/**
+ * Frees GPU resources when a state is swapped out.
+ *
+ * Materials are not touched: they all come from the shared palette and outlive
+ * every lot. Geometry flagged `shared` is skipped for the same reason.
+ */
 export function disposeLot(lot: Lot): void {
   lot.group.traverse((child) => {
     if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
+      if (child.geometry.userData.shared) return;
       child.geometry.dispose();
     }
   });

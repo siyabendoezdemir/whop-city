@@ -241,19 +241,32 @@ export function makeForklift(from: Vec3, to: Vec3, yaw: number): Rig {
  * Six soft blobs rising, expanding and fading on a loop. Reads as a working
  * extract fan without a particle system.
  */
-export function makeSteamVent(origin: Vec3, scale = 1): Rig {
-  const group = new THREE.Group();
-  const puffs: THREE.Mesh[] = [];
-  const material = new THREE.MeshStandardMaterial({
+const PUFF_COUNT = 6;
+
+/**
+ * Puff materials are created once for the whole process, not per vent.
+ *
+ * Each puff needs its own material because it fades on its own schedule, but
+ * cloning them per lot meant every state switch leaked six more — the texture
+ * and material counts climbed for as long as you kept clicking. Pooling them
+ * keeps a full state cycle flat.
+ */
+const PUFF_MATERIALS: THREE.MeshStandardMaterial[] = Array.from({ length: PUFF_COUNT }, () =>
+  new THREE.MeshStandardMaterial({
     color: "#ffffff",
     transparent: true,
     opacity: 0.4,
     roughness: 1,
     depthWrite: false,
     vertexColors: false,
-  });
-  for (let i = 0; i < 6; i++) {
-    const mesh = new THREE.Mesh(blob(0.52 * scale, 1), material.clone());
+  }),
+);
+
+export function makeSteamVent(origin: Vec3, scale = 1): Rig {
+  const group = new THREE.Group();
+  const puffs: THREE.Mesh[] = [];
+  for (let i = 0; i < PUFF_COUNT; i++) {
+    const mesh = new THREE.Mesh(blob(0.52 * scale, 1), PUFF_MATERIALS[i]);
     mesh.castShadow = false;
     group.add(mesh);
     puffs.push(mesh);
