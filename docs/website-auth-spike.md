@@ -358,20 +358,109 @@ API    404  {"error":{"type":"not_found","message":"Resource not found"}}
 OAuth  400  {"error":"unsupported_grant_type","error_description":"grant_type is not supported"}
 ```
 
-## What this spike could not answer
+## The hosted runtime, measured
 
-Three questions remain open, and each is blocked by something outside the
-approved scope. None should be quietly assumed in either direction.
+Settled on 2026-09-03 by promoting a probe build to production for 8.6 seconds,
+loading the site once, reading `whop apps logs`, and promoting a holding build
+back. Two of the three open questions are now closed.
 
-**What the hosted runtime actually injects.** Everything above measures
-`whop apps dev`. The hosted environment is documented to differ — that is the
-whole reason the question was asked — and settling it requires a deploy.
+### Every documented binding is present, and dev is the odd one out
 
-**What the injected credential is granted.** Answering it needs
-`whop apps dev` to mint a token from an OAuth CLI login rather than pass an API
-key through, which needs an interactive browser login the Cloud Agent cannot
-perform. Until then, the 246-of-257 figure describes a dashboard API key and
-nothing else.
+| Binding | Hosted | `whop apps dev` |
+| --- | --- | --- |
+| `APP_ID` | `string` | absent |
+| `BUILD_ID` | `string` | absent |
+| `WHOP_ACCOUNT_ID` | `string` | absent |
+| `WHOP_API_ORIGIN` | `string` | absent |
+| `ASSETS` | `Fetcher` | absent |
+| `REALTIME` | `Fetcher` | absent |
+| `WHOP_APP_ID` | **absent** | present |
+| `WHOP_API_KEY` | **absent** | present |
+
+The two runtimes share **no** binding name. Hosted names the app `APP_ID`; dev
+names it `WHOP_APP_ID`. Code that reads either one alone works in exactly one of
+the two environments, so read `APP_ID ?? WHOP_APP_ID` and default the origin.
+
+Deriving the business from the app record works in hosted:
+`GET /apps/{APP_ID}` returned `200` with `account.id` equal to the
+`WHOP_ACCOUNT_ID` binding. Keep that path — it is what a Blueprint deployment
+needs, and it is now verified rather than assumed.
+
+### The proxy behaves as documented, and the key really is absent
+
+- `GET /accounts/me` with no key set by the app returned `200`: the outbound
+  proxy attaches one.
+- The same call with `x-whop-inject-key: none` returned `401`: the opt-out works.
+- No value in the runtime environment looks like a credential, and `WHOP_API_KEY`
+  is absent. "The key never reaches your code" holds.
+
+### The injected credential is genuinely weaker — 165 of 257
+
+The earlier 246-of-257 figure described a dashboard API key. The injected
+credential is a different thing, and the difference is the one the docs claim:
+
+| Action | Injected credential | Business API key |
+| --- | --- | --- |
+| `payout:withdraw_funds` | **denied** | granted |
+| `payout:transfer_funds` | **denied** | granted |
+| `payout:create_destination` | **denied** | granted |
+| `company:delete` | **denied** | granted |
+| `company:transfer_ownership` | **denied** | granted |
+| `company:authorized_user:read` | **granted** | granted |
+| `developer:update_app` | **granted** | granted |
+| `developer:manage_oauth` | **denied** | granted |
+| `payment:charge` | granted | granted |
+
+Two consequences.
+
+**The operator gate is viable on the primary endpoint.** The injected credential
+holds `company:authorized_user:read`, so `GET /team_members` — the only endpoint
+that returns the real role — works from a deployed site. The weaker
+`access_level` fallback is not needed as the primary check.
+
+**The Blueprint bootstrap is half solved.** `developer:update_app` is granted, so
+a deployment can register its own redirect URI. `developer:manage_oauth` is
+denied, so flipping `oauth_client_type` from `confidential` to `public` probably
+cannot be self-served. Each deployer may still need one manual step, just a
+smaller one than feared. Which of the two permissions actually governs the
+client-type field is untested, because that test is a mutation.
+
+Note also that `openid`, `profile`, and `email` appear in the credential's
+*denied* list as actions. They are visitor-scoped grants, so the app credential
+never carries them — which is consistent with identity coming from OAuth rather
+than from the app key.
+
+### Whop rewrites HTML responses, and that breaks a design assumption
+
+The holding build serves 673 bytes. The edge served 2,491. Whop's hosting injects
+into every HTML response:
+
+- a replacement `<title>`, carrying the **app's name**, overriding the one the
+  build set;
+- a `MutationObserver` script that continuously re-asserts that title, so a page
+  cannot keep its own;
+- the platform analytics pixel, which loads `https://t.whop.tw/s.js`, calls
+  `whop.setScope("biz_…")` with the **business id**, and fires `whop.track("page")`
+  on load.
+
+The access model says the public surface exposes "no Whop object ids". **The
+platform puts the business id in the markup of every public page regardless of
+what City renders**, and tracks a page view without being asked. Neither is
+something a build can opt out of, so the privacy-safe projection must be
+described as "no ids *beyond the business id Whop injects*", or the claim has to
+be dropped. This needs deciding before any public copy repeats it.
+
+Responses that are not HTML are left alone: the probe's `text/plain` body came
+back as exactly two bytes.
+
+### Rollback is not instant
+
+After the production pointer flipped to the holding build, the edge kept serving
+the previous build for a further ~41 seconds. Rollback is eventually consistent,
+so treat "promote the old build" as a request rather than a switch, and verify at
+the URL rather than trusting the pointer.
+
+## What this spike still could not answer
 
 **What a plain customer reports.** The fallback gate is only safe because
 `access_level` distinguishes `admin` from `customer`, and that distinction is
@@ -382,7 +471,8 @@ gap covers low-privilege roles — whether `support` or `workforce` collapses to
 
 Until a real `customer` has been observed returning `access_level: "customer"`,
 **the fallback gate should not be shipped as the only check.** Build on
-`GET /team_members`, which returns the actual role and needed no such inference.
+`GET /team_members`, which returns the actual role, needed no such inference, and
+is now confirmed reachable by the injected credential.
 
 ## Reproducing this
 
