@@ -281,6 +281,12 @@ recordings, which is why the recordings run with the animation clock frozen:
 nothing in the world is allowed to move, so anything that changes between frames
 other than the camera transform is a rendering artefact.
 
+Played side by side at normal speed the difference is unambiguous. Before, the
+shadow edges vibrate and redraw themselves throughout every camera move; after,
+the same stair-step edges stay locked to the ground and the buildings. The
+coarser texel turns out not to be visible: shadow softness looks unchanged
+between the two, and no acne appeared on the lit roofs or roads.
+
 ## Route from this spike to the production renderer
 
 This is a spike, not a foundation, but the pieces are in the order they need to
