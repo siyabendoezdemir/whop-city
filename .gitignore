@@ -1,0 +1,18 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Secrets. Nothing matching these may ever be committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Capability-spike output. May echo business identifiers even after redaction.
+probe-reports/
+tests/fixtures/live/
+
+.DS_Store
