@@ -224,37 +224,55 @@ any product code. Everything runs against City's own test business.
 [`docs/website-auth-spike.md`](website-auth-spike.md) carries the endpoint and
 permission model this task verifies.
 
-**Requires explicit approval before running.** `--app_type` is permanent, and
-step 8 creates a real product.
+**Status: steps 1–6 are done.** Approved and run 2026-09-03 against the test
+business. Results are in [`docs/website-auth-spike.md`](website-auth-spike.md);
+`scripts/auth-spike.mjs` reproduces the read-only part. Steps 7 and 8 are not
+done and step 8 in particular still needs its own approval.
 
 **Steps:**
 
-1. `whop apps init --app_type website --name "Whop City" --route whop-city`,
-   pinned with `--company_id` to the test business. Scaffold to a scratch
-   directory, move to the repo root, drop the nested `.git`.
-2. Assert the registered app's type is `website` via `whop apps get --format json`.
-3. Add a temporary server route that prints which runtime bindings exist, so
-   the dev-versus-hosted asymmetry is measured rather than assumed —
-   specifically whether `WHOP_ACCOUNT_ID` and `WHOP_API_ORIGIN` are set under
-   `whop apps dev`.
-4. Call `GET /permissions?resource_id=$WHOP_ACCOUNT_ID` server-side and record
-   the full granted/denied list for the injected credential. Note in particular
-   whether `company:authorized_user:read` and `developer:update_app` are
-   granted.
-5. **Operator identity.** Run the identity-only OAuth flow end to end: `openid`
-   only, PKCE with `state` and `nonce`, server-side exchange, token discarded
-   after reading `sub`. Then resolve membership two ways and compare:
-   `GET /team_members?account_id=…&user_id=…&status=joined` for the precise
-   role, and `GET /users/{sub}/access/{WHOP_ACCOUNT_ID}` for `access_level`.
-   Record what the owner returns, and confirm a non-member returns `no_access`
-   and an empty team-member list.
-6. `GET /apps/{APP_ID}` and record `route`, `hosted_url`, `redirect_uris`, and
-   `oauth_client_type`, so the Blueprint bootstrap question can be answered.
+1. ~~`whop apps init --app_type website`~~ **Done.** Registered
+   `app_USXOBX9htLTka7` on route `city-spike`, scaffolded into `app/`. Two
+   deviations from the plan as written: the route cannot contain the word
+   "whop", so `whop-city` was never claimable; and the route was deliberately
+   kept test-scoped so the throwaway business does not squat the real one. The
+   CLI git-inits nothing when the target is inside an existing repository, so
+   there was no nested `.git` to drop.
+2. ~~Assert `app_type` is `website`~~ **Done.** `GET /apps/{id}` returns
+   `app_type: website`, `hosted_url: https://city-spike.whop.site`.
+3. ~~Measure the runtime bindings~~ **Done**, and measured without adding a
+   temporary route to the app: the probe ran as the dev script of a scratch
+   project outside the repo, so no debug code ever entered the tree. Under
+   `whop apps dev` the runtime gets `WHOP_APP_ID` and `WHOP_API_KEY` and
+   **neither** `WHOP_ACCOUNT_ID` nor `WHOP_API_ORIGIN`.
+4. ~~`GET /permissions`~~ **Done, but it did not answer the question it was
+   meant to.** It measured a dashboard business API key — 246 of 257 actions
+   granted, including `company:authorized_user:read` and `developer:update_app`
+   — not the injected credential, because `whop apps dev` forwards an exported
+   key verbatim instead of minting a scoped token. Re-run this step after a
+   `whop login`, or after a deploy.
+5. **Operator identity — partly done.** Both membership resolutions were
+   exercised and agree: the owner returns `role: owner` / `access_level: admin`,
+   and non-members return an empty list and `no_access`. The OAuth flow itself
+   was **not** run: `redirect_uris` is empty on a fresh app and
+   `GET /oauth/authorize` rejects on that before it validates `scope`, so
+   registering a redirect URI — a mutation — blocks the whole flow, and with it
+   the question of whether `openid` is even an accepted scope.
+6. ~~`GET /apps/{APP_ID}`~~ **Done.** `redirect_uris: []` and
+   `oauth_client_type: confidential`, which makes the Blueprint bootstrap two
+   writes rather than one.
 7. Read products, plans, members, memberships, and payments or stats for the
    website's own business; record which succeed and which are refused.
 8. Create exactly one hidden product, only behind an explicit local
    confirmation step, carrying an `Idempotency-Key` and metadata. Submit the
    same intent twice and prove one product exists.
+
+> Worth recording for step 8: `whop apps init` **already created a product**,
+> `prod_Yp7lnTxi59wlD` with a $0 one-time plan, both `visibility: visible`. An
+> app on Whop is backed by a product, so registering one is not separable from
+> creating the other. The step-8 idempotency test therefore starts from a
+> business that already has a product, and the "exactly one product" assertion
+> must be scoped to the intent hash rather than to the business.
 9. Grep the built client bundle and the served HTML for any credential, token,
    or session secret.
 10. `whop apps deploy --preview` and confirm the build uploads without promoting.
@@ -473,9 +491,10 @@ is real, what is fixture, and how to report a security issue.
 
 ## Sequencing and stop points
 
-1. **Do not run the Task 1 spike** — including `whop apps init` — until Siya
-   approves it explicitly. The app type is permanent and the spike creates a
-   real product.
+1. ~~**Do not run the Task 1 spike**~~ **Approved and run** for the read-only
+   part plus `whop apps init` on 2026-09-03. The remaining write steps — step 8's
+   product creation, registering a redirect URI, flipping `oauth_client_type` —
+   are still unapproved and still stop points.
 2. **Do not write product code** until Task 1's spike output and Task 2's Paper
    state are approved.
 3. **Do not buy assets** until Siya approves a pack, license, and cost.

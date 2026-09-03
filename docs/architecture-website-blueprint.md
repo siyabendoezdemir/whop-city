@@ -104,15 +104,24 @@ server-side request unauthenticated.
 `verified` — the injected key "belongs to the app's own business and can't move
 money… It also authenticates as your business, never as the visitor."
 
-`verified` — `whop apps dev` sets `WHOP_APP_ID` and a short-lived token as
-`WHOP_API_KEY`, minted from the CLI credential, plus every stored app secret.
+`verified`, with an important qualifier — `whop apps dev` sets `WHOP_APP_ID` and
+a short-lived token as `WHOP_API_KEY`, minted from the CLI credential, plus every
+stored app secret. **The minting only happens when nothing is exported.** The
+spike confirmed that an exported `WHOP_API_KEY` is forwarded to the dev runtime
+verbatim, so a developer holding a dashboard API key silently gives the local app
+their business's full authority instead of a scoped token.
 
-**`unverified`, and the first thing the spike must settle:** local dev and the
-hosted runtime are not the same environment. Production injects the key via a
-proxy and sets `WHOP_API_ORIGIN` / `WHOP_ACCOUNT_ID`; local dev hands you a
-`WHOP_API_KEY` and documents neither of those two bindings. City needs one
-server code path that works in both, so the spike must print the actual
-environment under `whop apps dev` and confirm which bindings exist.
+**`measured` — the two environments differ, and dev is missing more than
+expected.** Under `whop apps dev` the runtime receives `WHOP_APP_ID` and
+`WHOP_API_KEY` and *neither* `WHOP_ACCOUNT_ID` nor `WHOP_API_ORIGIN`. Any code
+that reads those two cannot run locally as written.
+
+City should therefore not require either. Read `WHOP_APP_ID`, call the public
+`GET /apps/{id}`, and take `account.id` as the business identity; default the API
+origin to `https://api.whop.com` and let the binding override it. That gives one
+server code path for dev and hosted, and it is what a Blueprint deployment needs
+anyway, since each deployment gets a different business. Whether the hosted
+runtime sets the two bindings is still unverified — settling it requires a deploy.
 
 ## Whop hosting versus external persistence
 
@@ -121,8 +130,8 @@ environment under `whop apps dev` and confirm which bindings exist.
 | Need | Provided by | Verified |
 | --- | --- | --- |
 | Static assets and SSR | `dist/client` served directly, `dist/server` runs | yes |
-| Server-side Whop API auth | Outbound proxy, app's own key | yes |
-| Business identity | `WHOP_ACCOUNT_ID` | yes |
+| Server-side Whop API auth | Outbound proxy, app's own key | docs only; in dev there is no proxy and the key is readable in `process.env` |
+| Business identity | `WHOP_ACCOUNT_ID`, or `account.id` from the public `GET /apps/{WHOP_APP_ID}` | the binding is **absent in dev**; derive it from the app record instead |
 | Config and secrets | `whop apps secrets set/list/unset`, encrypted at rest | yes |
 | Versioning and rollback | `whop apps builds promote <build_id>`, Versions tab | yes |
 | Server logs | `whop apps logs`, retained 7 days | yes |
@@ -304,24 +313,40 @@ non-production flag, and it must never be reachable on a deployed site.
 
 ## Open risks
 
-### 1. Blueprint OAuth bootstrap
+### 1. Blueprint OAuth bootstrap — narrowed, still open, and now two writes
 
-Each deployment registers a new app with its own id and route, and OAuth needs
-a registered exact-match redirect URI that a fresh deployment does not have.
-`oauth_client_type: public` removes the need for a per-deployment client secret,
-and `GET /apps/{id}` is public so City can read its own route at boot — but
-registering the URI needs `PATCH /apps/{id}` and therefore
-`developer:update_app`. If the injected credential holds it, City self-registers
-on first boot and deployment stays one-step; if not, each deployer performs one
-documented manual step before the operator surface works. The spike settles it.
+Each deployment registers a new app with its own id and route, and OAuth needs a
+registered exact-match redirect URI that a fresh deployment does not have. The
+spike confirmed the shape of the problem and made it slightly worse.
 
-### 2. Injected-credential reach is unverified
+`GET /apps/{id}` is public and returns `route`, `hosted_url`, `redirect_uris`,
+`oauth_client_type`, and `account.id` with no credential, so the read half of the
+bootstrap is settled: City can inspect its own configuration at boot and tell
+whether it still needs setting up.
 
-The key "can't move money" and grants payout and transfer *reads*, but the docs
-do not enumerate what else it can do. Whether it can read `stats`, read
-`members`, and create a product is exactly what
-`GET /permissions?resource_id=$WHOP_ACCOUNT_ID` will answer in one call. That
-is the first thing the spike runs.
+The write half is not. A fresh `website` app comes back `confidential`, not
+`public`, so avoiding a per-deployment client secret is itself a `PATCH`. The
+bootstrap therefore needs **two** writes — register the redirect URI *and* flip
+the client type — and both need `developer:update_app`. A business API key holds
+that permission; whether the runtime credential does is still unknown.
+
+### 2. Injected-credential reach is still unverified
+
+The spike could not answer this, and it is worth being precise about why, because
+it produced a number that looks like an answer and is not one.
+
+`GET /permissions?resource_id=…` was run and returned 246 of 257 actions granted.
+But it was run with a **dashboard business API key**, because that is what a Cloud
+Agent secret can hold. `whop apps dev` only mints a scoped token when no
+`WHOP_API_KEY` is exported, and falling back to that path needs an interactive
+`whop login`. So the 246 figure describes the API key, not the injected credential.
+
+That the API key is granted `company:delete`, `company:transfer_ownership`, and
+`payout:withdraw_funds` — directly contradicting the documented "can't move money"
+property of the injected key — is itself the clearest evidence that the two
+credentials are different things and must not be conflated.
+
+Answering the real question needs either an OAuth CLI login or a deploy.
 
 ### 3. Whether affiliate reads work at all here
 
@@ -329,12 +354,30 @@ is the first thing the spike runs.
 webhook. Under the injected credential it is untested. Creator Quarter may have
 to be narrowed to what `global_affiliate_status` on each product reveals.
 
-### 4. The spike needs a Whop login
+### 4. The spike ran, but an API key cannot finish it
 
-`whop apps dev` mints its token from the CLI credential, so the spike cannot
-run in this environment: there is no Whop credential here and the Whop MCP
-server reports `needsAuth`. Either add a Whop credential as a Cloud Agent
-secret, or run the spike locally and paste the output.
+Resolved in part. A `WHOP_API_KEY` was added as a Cloud Agent secret and the
+read-only spike ran against the dedicated test business; results are in
+[`docs/website-auth-spike.md`](website-auth-spike.md) and reproduce with
+`node scripts/auth-spike.mjs`.
+
+What an API key cannot do is exercise the credential path City actually ships on.
+`whop apps dev` forwards an exported key verbatim and only mints a scoped token
+when it has a saved OAuth profile, which needs an interactive browser login. So
+the injected-credential questions in risk 2 stay open until either someone runs
+`whop login` locally and re-runs the spike, or the app is deployed.
+
+### 5. The operator gate rests on an untested distinction
+
+`GET /users/{id}/access/{biz}` is only safe as a gate because `access_level`
+separates `admin` from `customer`. The spike exercised `admin` and `no_access`
+but never `customer`, because the test business has no customers and creating one
+is a mutation. Low-privilege team roles are equally untested — whether `support`
+or `workforce` reports as `admin` is unknown.
+
+Until that is observed, build the gate on `GET /team_members`, which returns the
+real role, and treat the access-level endpoint as a fallback that has not yet
+earned trust.
 
 ## Sources
 

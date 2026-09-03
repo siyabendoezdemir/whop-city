@@ -10,8 +10,10 @@ or business picker.
 
 ## Status
 
-Architecture revision, before any product code. No `whop apps init`, no deploy,
-no Blueprint publication, and no Whop write has been performed.
+Architecture revision, before any product code. The app is registered and
+scaffolded in [`app/`](app) against a dedicated test business, and the read-only
+operator-auth spike has been run. **No deploy, no Blueprint publication, and no
+business-data write has been performed.**
 
 ## Start here
 
@@ -19,20 +21,45 @@ no Blueprint publication, and no Whop write has been performed.
   — the diagram, the access model, what Whop hosting provides versus what needs
   external persistence, and the exact init command.
 - [`docs/website-auth-spike.md`](docs/website-auth-spike.md) — how City answers
-  "is this visitor on this business's team?", and what the spike must prove.
+  "is this visitor on this business's team?", what the spike proved, and the
+  three questions it could not reach.
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) — the task plan
   that follows from both.
 
+## Running the spike
+
+[`scripts/auth-spike.mjs`](scripts/auth-spike.mjs) re-runs the read-only checks.
+It cannot mutate anything — every CLI call is checked against an allowlist of
+read-only verbs — and it scrubs the credential and e-mail local parts from
+everything it prints or saves.
+
+```
+WHOP_API_KEY=… node scripts/auth-spike.mjs
+```
+
+Pass the credential through the environment only: never on a command line, never
+in an `.env` file, never in a committed file. Reports are written to
+`probe-reports/`, which is git-ignored.
+
 ## Ground rules
 
-- The app type `website` is permanent once chosen. Do not run `whop apps init`
-  until the route, name, and test business are confirmed.
+- The app type `website` is permanent once chosen, and it has now been chosen:
+  `app_USXOBX9htLTka7` is a `website` on route `city-spike`.
+- A route may not contain the word "whop", so `whop-city` is not a claimable
+  subdomain. The current route is deliberately test-scoped so the throwaway
+  business does not squat whatever the real deployment wants.
 - A `whop.site` route is publicly browsable and has no automatic visitor
   identity. The public city shows a privacy-safe projection only; the operator
   surface requires a verified Whop identity that is on this deployment's team.
 - Browser code never receives a Whop API key or OAuth token. Server routes call
-  the Whop API through `process.env.WHOP_API_ORIGIN`, and Whop's proxy attaches
-  the key.
+  the Whop API through `WHOP_API_ORIGIN` when it is set, falling back to
+  `https://api.whop.com` — the binding is absent under `whop apps dev`, so it
+  cannot be required. On hosted Whop, the proxy attaches the key; in local dev
+  there is no proxy and the key is readable in `process.env`, so treat dev as
+  the weaker environment.
+- Business identity comes from `WHOP_ACCOUNT_ID` when set, and otherwise from
+  `account.id` on the public `GET /apps/{WHOP_APP_ID}`. That binding is also
+  absent in dev, and a Blueprint deployment gets a different business anyway.
 - No server route forwards an arbitrary path, method, or body to the Whop API.
 - Every meaningful change is review → explicit confirm → execute → receipt, and
   membership is re-checked at the write, not just at login.
