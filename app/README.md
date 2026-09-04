@@ -1,196 +1,212 @@
-Welcome to your new TanStack Start app!
+# Whop City
 
-# Getting Started
+A Whop Website that renders a business as a city. Three districts —
+Commerce Core, Offer Forge, Creator Quarter — physically reflect a
+server-derived projection of how the business is doing.
 
-To run this application:
+This increment is the **public, read-only vertical slice**. There is no
+operator mode, no write path, no OAuth flow, no leaderboard, and nothing is
+deployed.
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev            # http://localhost:3000
+pnpm build && pnpm preview --port 4173
 ```
 
-# Building For Production
+## The privacy boundary
 
-To build this application for production:
+The whole point of the architecture is that the browser learns what the
+business *looks like* without learning anything about the business.
+
+```
+Whop API ──► whop-client.ts ──► snapshot.ts ──► project.ts ──► PublicCityProjection
+             named GET readers   sensitive       the boundary   buckets and words
+             (server only)       (server only)                  (the only thing sent)
+```
+
+**The client is given only this:**
+
+```json
+{
+  "schema": "whop-city.public.v2",
+  "freshness": "live",
+  "seed": "4b09b5d4d445a397",
+  "districts": [
+    { "id": "commerce-core", "state": "healthy", "direction": "steady",
+      "signal": "thriving", "parcels": 5, "variant": 0 }
+  ]
+}
+```
+
+Four physical states (`healthy` / `rising` / `dormant` / `struggling`), coarse
+direction, signal and freshness words, an opaque seed, and two small bounded
+renderer integers. No revenue, no price, no product or offer title, no customer,
+no Whop identifier, no timestamp, no credential, no upstream response.
+
+Two mechanisms hold that, because a comment does not:
+
+- `PublicCityProjection` is a closed type of string-literal unions. Widening it
+  is a visible type change.
+- `serializeProjection` does **not** stringify the object it is handed. It
+  rebuilds one field by field from a whitelist and validates every value against
+  its allowed domain. A field added to the projection without also being added
+  there cannot reach the wire, and a value outside its domain throws rather than
+  being sent.
+
+`tests/projection.test.ts` plants sentinel values — an account id, a product
+title, a distinctive member count, a price — in a snapshot and proves none of
+them survive serialisation, that fields smuggled onto the projection object are
+dropped, and that no fractional number is ever emitted.
+
+### The layout seed
+
+The city must look the same every time a business opens it, which means the seed
+is a stable function of who they are. It must not be a way to learn who they
+are.
+
+`deriveLayoutSeed` is HMAC-SHA-256 over the account id, truncated to 64 bits and
+keyed with `CITY_SEED_SECRET` when the deployment provides one. The raw id never
+leaves `server/seed.ts`.
+
+**Set `CITY_SEED_SECRET` in any real deployment.** Without it the fallback is a
+domain-separated SHA-256, which is still one-way but is only as strong as the
+input space — account ids are short and structured, so a determined attacker who
+knows the format could grind an unkeyed digest. The keyed path removes that.
+
+### The one endpoint
+
+The browser may call exactly one same-origin path:
+
+```
+GET /api/city/snapshot
+```
+
+It is mounted in `src/server.ts` — a custom TanStack Start server entry — as a
+pathname **equality check** ahead of the router. There is no pattern, no
+parameter and no dispatch table, so the set of endpoints the browser can reach
+is that one literal.
+
+> `wrangler.jsonc` points `main` at `src/server.ts`. Pointing it back at
+> `@tanstack/react-start/server-entry` silently removes the endpoint.
+
+Account context comes only from the deployment binding (`server/env.ts`). The
+caller cannot choose an account, an origin, a path, a method, a header or a
+body; `tests/snapshotRoute.test.ts` attempts all of them and asserts the
+outbound call is unchanged.
+
+`whop-client.ts` has no non-GET function in it, so no product route can reach a
+payment, payout, transfer, account, team, OAuth-config or app-config action —
+not behind a flag, not behind a session. It holds no credential: the hosted
+runtime attaches the app key in an outbound proxy.
+
+### What is not claimed
+
+City controls its own payload; it does not control the platform's. Whop's
+hosting injects its own pixel into every HTML response and publishes the
+business id through it. See `docs/architecture-website-blueprint.md`. The
+boundary above is about what *City* sends.
+
+## Data source
+
+Fixture-backed in this increment. `server/fixtures.ts` builds five deterministic
+`BusinessSnapshot`s, so they run through the real projection rather than around
+it — what reaches the browser has crossed exactly the same boundary live data
+would.
+
+| scenario | what it is | resulting city |
+| --- | --- | --- |
+| `balanced` *(default)* | established shopfront, freshly reworked pricing | Core healthy, Forge rising, Quarter healthy |
+| `launch` | days old, nothing sold yet | everything rising or unbuilt |
+| `thriving` | large catalogue, strong affiliate reach | all healthy, dense |
+| `struggling` | built then shuttered: nothing visible | struggling and dormant |
+| `unavailable` | the business could not be read | dark, every district dormant |
+
+`?scenario=` selects one. The server honours it **only when there is no live
+binding** and ignores the query string entirely otherwise, so it cannot
+influence a real read. Unknown values fall back to the default silently rather
+than echoing back.
+
+When a deployment provides `WHOP_API_ORIGIN`, `captureSnapshot` reads live
+instead. Without a binding **no outbound request is attempted at all** — not a
+failed one, not a timeout.
+
+## The renderer
+
+Ported from the approved full-city art spike into `src/render`. Copied and
+adapted, never imported: `art-spikes/` is isolated art evidence and is not a
+runtime dependency.
+
+Preserved as approved: the connected promontory composition, the fixed 45°
+three-quarter camera, the world-fixed sun and shadow volume, 2× supersampling,
+the physical progression grammar, merged static geometry and instanced props.
+
+Changed: the spike's hard-coded state table is gone, including its hand-placed
+struggling lot. `buildCity` takes a `PublicCityProjection`. The authored parcel
+layout stays fixed — it is the approved composition — and the projection decides
+how much of each district is built. The first `parcels` lots take the district's
+state and the rest stand as dormant ground, rotated by `variant` so two
+businesses in the same state do not develop the identical corner first.
+
+### Why the sun does not move
+
+`stage.frame()` moves the render camera and nothing else. The sun position, its
+target and the six shadow-camera planes are set once, in world space, and never
+touched again. Anything that varies them during a camera move remaps every
+shadow texel to a different patch of world, and the whole city shimmers under a
+dolly. `pnpm shadow-check` asserts the rig holds a single state across every
+framing and zoom on the fly path.
+
+### Budgets
+
+Measured on the built app, worst case across all eight captured states:
+
+| | measured | budget |
+| --- | --- | --- |
+| draw calls | 148 | 220 |
+| triangles | 213,110 | 250,000 |
+
+`artifacts/renderer-stats.json` carries the per-state figures.
+
+## The shell
+
+The world owns the viewport. What sits on it is a crest, a read-only marker,
+district navigation and camera controls, all edge-anchored.
+
+Selecting a district glides the camera into the neighbourhood and opens **one
+sentence about what is physically visible there** — no cards, no charts, no
+numbers, no generated text. The copy is a fixed line per district and state in
+`city/explain.ts`, written against what the renderer actually builds so the
+words and the world cannot drift apart. `tests/browser/shell.spec.ts` asserts
+there is no digit anywhere in the shell.
+
+## Verification
 
 ```bash
+pnpm typecheck
+pnpm test              # 27 node tests: the boundary and the route
 pnpm build
+pnpm preview --port 4173 &
+pnpm test:browser      # 18 browser tests: data safety, the world, the shell
+pnpm leak-check        # texture count returns to baseline after a state cycle
+pnpm shadow-check      # shadow rig holds one state across the fly path
+pnpm aliasing-check    # sub-pixel camera walk over the road network
+pnpm capture           # stills + renderer stats -> ./artifacts
+pnpm capture:fly       # deterministic fly-through -> ./artifacts
 ```
 
-## Styling
+Captures target the **preview server**, so the evidence is of the built app
+rather than a dev bundle. `CITY_URL` points them elsewhere; `ART_OUT` moves the
+output; `SS` pins the supersampling factor.
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
+The capture harness needs a Chrome or Chromium. It looks in the usual places and
+falls back to Playwright's bundled build; `CHROME_PATH` overrides. Screenshots
+are slow here because the city renders through SwiftShader at twice display
+resolution — `SHOT_TIMEOUT` is generous for that reason.
 
-### Removing Tailwind CSS
+## Not in this increment
 
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Remove `@tailwindcss/vite` and `tailwindcss` from `package.json`
-
-
-## Deploy to Cloudflare Workers
-
-This project uses the Cloudflare Vite plugin (configured in `vite.config.ts`) and `wrangler.jsonc`:
-
-1. Install Wrangler: `npm install -g wrangler`
-2. Authenticate: `wrangler login`
-3. Deploy: `npx wrangler deploy`
-
-For production env vars, run `wrangler secret put MY_VAR` for each secret listed in `.env.example`. Public (non-secret) vars go in `wrangler.jsonc` under `vars`.
-
-KV, D1, R2, and Durable Object bindings are configured in `wrangler.jsonc` — see https://developers.cloudflare.com/workers/wrangler/configuration/.
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+No operator mode, no writes, no OAuth or team-role flow, no generic API proxy,
+no leaderboard or manual claims, and no deployment. Live Whop reads are wired
+but unexercised: the code path exists and is typed, and nothing calls it without
+a binding.

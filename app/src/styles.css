@@ -36,17 +36,20 @@ body {
   background: radial-gradient(120% 90% at 50% 0%, #21324a 0%, #0d1420 70%);
 }
 
-.city-canvas canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 100vh;
-}
-
+/*
+ * The renderer sets the canvas element's own width and height so the drawing
+ * buffer and the displayed size agree exactly. Overriding either here would
+ * stretch the city, so this only positions it.
+ */
 .city-canvas {
-  width: 100%;
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
+}
+
+.city-canvas canvas {
+  display: block;
 }
 
 /* ------------------------------------------------------------- first load */

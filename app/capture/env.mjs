@@ -105,8 +105,10 @@ export function artifactPath(name) {
  * `ss` pins the supersampling factor so a capture is reproducible rather than
  * dependent on the display it ran on.
  */
-export async function openCity(browser, { scenario, capture = true, ss = 2, view = VIEW } = {}) {
-  const page = await browser.newPage({ viewport: view, deviceScaleFactor: 1 });
+export async function openCity(browser, { scenario, capture = true, ss = 2, view = VIEW, context } = {}) {
+  const page = context
+    ? await context.newPage()
+    : await browser.newPage({ viewport: view, deviceScaleFactor: 1 });
   const params = new URLSearchParams();
   if (capture) params.set("capture", "1");
   params.set("ss", String(ss));

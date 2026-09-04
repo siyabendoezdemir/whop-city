@@ -32,6 +32,9 @@ function ease(t: number): number {
   return t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
 }
 
+/** How fast the camera settles on a new framing, in inverse seconds. */
+const GLIDE_RATE = 3.2;
+
 /**
  * Render scale.
  *
@@ -72,21 +75,55 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
     let raf = 0;
     const timer = new THREE.Clock();
 
-    const applyFraming = (t: number) => {
+    /**
+     * The camera glides.
+     *
+     * Selecting a district should feel like arriving somewhere, so the focus
+     * and the zoom are eased toward the new framing over a beat rather than
+     * cutting. Held in the loop's own state, not in React's: a tween that
+     * re-rendered the component sixty times a second would rebuild the shell
+     * for no reason.
+     */
+    const held = { focus: new THREE.Vector3(), height: 0 };
+    {
+      const initial = framingFor(viewRef.current.framing);
+      held.focus.set(...initial.focus);
+      held.height = initial.height * viewRef.current.zoom;
+    }
+
+    const glide = (dt: number) => {
       const { framing: key, zoom: bias } = viewRef.current;
-      const f = framingFor(key);
-      stage.frame(new THREE.Vector3(...f.focus), f.height * bias);
-      cityRef.current?.update(t);
+      const target = framingFor(key);
+      // Exponential approach, framerate-independent. Roughly nine tenths of the
+      // way there in three quarters of a second.
+      const k = 1 - Math.exp(-dt * GLIDE_RATE);
+      held.focus.lerp(new THREE.Vector3(...target.focus), k);
+      held.height += (target.height * bias - held.height) * k;
+      stage.frame(held.focus, held.height);
     };
 
+    /**
+     * Fit the authored aspect into whatever space there is.
+     *
+     * The composition is authored for 1440x900 and every framing is tuned to
+     * it, so the canvas keeps that ratio and is letterboxed rather than
+     * stretched or cropped. Scaling to the smaller of the two axes is what
+     * makes the city fill the frame on a viewport of any shape.
+     */
     const fit = () => {
-      const width = Math.min(mount.clientWidth || VIEW.width, VIEW.width);
-      stage.resize(width, Math.round((width * VIEW.height) / VIEW.width));
+      const availableWidth = mount.clientWidth || window.innerWidth;
+      const availableHeight = mount.clientHeight || window.innerHeight;
+      const scale = Math.min(availableWidth / VIEW.width, availableHeight / VIEW.height);
+      stage.resize(
+        Math.max(320, Math.round(VIEW.width * scale)),
+        Math.max(200, Math.round(VIEW.height * scale)),
+      );
     };
 
     const loop = () => {
-      clock += timer.getDelta();
-      applyFraming(clock);
+      const dt = timer.getDelta();
+      clock += dt;
+      glide(dt);
       cityRef.current?.update(clock);
       stage.renderer.render(stage.scene, stage.camera);
       raf = requestAnimationFrame(loop);

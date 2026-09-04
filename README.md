@@ -10,12 +10,18 @@ or business picker.
 
 ## Status
 
-Architecture revision, before any product code. The app is registered and
-scaffolded in [`app/`](app) against a dedicated test business, and the read-only
-operator-auth spike has been run. **No deploy, no Blueprint publication, and no
-business-data write has been performed.**
+The public read-only city runs locally in [`app/`](app): a Whop Website route
+that renders three districts from a safe server-derived projection, fixture
+backed. **No deploy, no Blueprint publication, and no business-data write has
+been performed.**
+
+The operator surface — identity, team-role gating, and any write — is not
+started.
 
 ## Start here
+
+- [`app/README.md`](app/README.md) — the running product: the privacy boundary,
+  the single endpoint, the renderer, and how to verify all of it.
 
 - [`docs/architecture-website-blueprint.md`](docs/architecture-website-blueprint.md)
   — the diagram, the access model, what Whop hosting provides versus what needs
