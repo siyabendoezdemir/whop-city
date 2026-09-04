@@ -105,5 +105,8 @@ test("the rendered city is the unavailable one, and still safe", async ({ page }
 
   await expect(page.locator(".city-crest__state")).toHaveAttribute("data-freshness", "unavailable");
   await page.click('.city-jump button[data-district="commerce-core"]');
-  await expect(page.locator(".city-place")).toHaveAttribute("data-state", "dormant");
+  await expect(page.locator(".city-brief")).toHaveAttribute("data-state", "dormant");
+  // An unreadable city offers no work: recommending moves off a failed reading
+  // would be inventing the reading.
+  await expect(page.locator(".city-move__mark")).toHaveCount(0);
 });

@@ -43,7 +43,17 @@ export type Marker = {
   dispose: () => void;
 };
 
-const MAST_HEIGHT = 13;
+/**
+ * Tall enough to clear the district it stands in.
+ *
+ * Commerce Core has towers, and a marker hidden behind one is a district that
+ * cannot be picked. The mast is physical and depth-tested like everything else;
+ * the lamp on top is not, so a beacon is always findable even when the mast is
+ * behind a roof. That is the objective-marker convention and it is worth the
+ * small break from strict physicality — an operator has to be able to see what
+ * is asking for them.
+ */
+const MAST_HEIGHT = 26;
 const LAMP_RADIUS = 1.15;
 
 export function createMarker(districtId: DistrictId): Marker {
@@ -61,9 +71,14 @@ export function createMarker(districtId: DistrictId): Marker {
   mast.castShadow = true;
   group.add(mast);
 
-  const lampMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false });
+  const lampMaterial = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    toneMapped: false,
+    depthTest: false,
+  });
   const lamp = new THREE.Mesh(new THREE.SphereGeometry(LAMP_RADIUS, 16, 12), lampMaterial);
   lamp.position.y = MAST_HEIGHT + 0.6;
+  lamp.renderOrder = 10;
   group.add(lamp);
 
   // The glow is a second, larger, additive shell. Cheap, and it survives the
@@ -75,9 +90,11 @@ export function createMarker(districtId: DistrictId): Marker {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     toneMapped: false,
+    depthTest: false,
   });
   const glow = new THREE.Mesh(new THREE.SphereGeometry(LAMP_RADIUS * 2.4, 16, 12), glowMaterial);
   glow.position.copy(lamp.position);
+  glow.renderOrder = 9;
   group.add(glow);
 
   // A wide invisible cylinder so the whole mast is clickable, not just its
@@ -85,6 +102,9 @@ export function createMarker(districtId: DistrictId): Marker {
   const targetMaterial = new THREE.MeshBasicMaterial({ visible: false });
   const target = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, MAST_HEIGHT + 4, 8), targetMaterial);
   target.position.y = (MAST_HEIGHT + 4) / 2;
+  // Pickable through the architecture, for the same reason the lamp is visible
+  // through it: the marker is the affordance, and it has to be reachable.
+  target.renderOrder = 11;
   target.userData.districtId = districtId;
   group.add(target);
 

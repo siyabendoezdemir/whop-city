@@ -323,17 +323,67 @@ Measured on the built app, worst case across all eight captured states:
 
 `artifacts/renderer-stats.json` carries the per-state figures.
 
-## The shell
+## The operator loop
 
-The world owns the viewport. What sits on it is a crest, a read-only marker,
-district navigation and camera controls, all edge-anchored.
+The world owns the viewport. Everything else is edge-anchored and exists to
+answer three questions in order: what needs attention, why, and what to do next.
 
-Selecting a district glides the camera into the neighbourhood and opens **one
-sentence about what is physically visible there** — no cards, no charts, no
-numbers, no generated text. The copy is a fixed line per district and state in
-`city/explain.ts`, written against what the renderer actually builds so the
-words and the world cannot drift apart. `tests/browser/shell.spec.ts` asserts
-there is no digit anywhere in the shell.
+```
+signal  ──►  focus  ──►  review  ──►  progression
+markers      briefing     moves        resolved, and change noticed
++ queue      + camera     ticked       next time the city reads differently
+```
+
+**Signal.** Every district carries a lit mast in the world. The lamp's colour
+and pulse say how much it wants looking at, and `city/attention.ts` decides
+that from the projection's existing `state`, `direction` and `signal` — a
+shuttered district is `urgent`, an unbuilt one an `opportunity`, one under
+construction `watch`, a healthy one that is cooling `watch` too. Nothing was
+added to the wire for this. The same ranking drives the queue at the edge of the
+screen, so the city and the interface never disagree about what matters.
+
+The mast is physical and depth-tested; the lamp on top is not. A marker hidden
+behind a tower is a district that cannot be picked, and an operator has to be
+able to see what is asking for them.
+
+**Focus.** Clicking the mast selects the district — a raycast against the
+markers, not the architecture, which is merged per material and could only say
+which *material* was hit. The camera glides in and the briefing opens. The
+queue, the keys `1`–`3`, and `F` for the next thing asking all reach the same
+place.
+
+**Review.** A briefing is what the city shows, what the district is for, and two
+to four moves. `city/playbook.ts` holds them, and the discipline of that file is
+that **every move is a check the operator runs in Whop themselves**. City knows
+a district is struggling and has never seen a product title, a price, a member
+count or a date. So a move may say *"open your plans and confirm at least one is
+visible"*. It may never say *"your plans are hidden"* — that would be City
+asserting a fact about a business it cannot see. `tests/playbook.test.ts`
+asserts no digit, no currency and no count appears anywhere in that copy.
+
+**Progression.** Marking moves fills a district and then resolves it: the mast
+stops asking, the queue says reviewed, a pip fills. The log is local to the
+browser and keyed by the opaque seed, so two businesses opened in the same
+browser stay apart. It says *"kept in this browser, not sent to Whop, and not a
+record that the work was done"* at the point of the click. If the city later
+reads a district differently than when it was reviewed, the briefing says so —
+and says City cannot tell you why, because it cannot.
+
+### What the numbers rule is now
+
+`tests/browser/shell.spec.ts` used to assert no digit appeared anywhere in the
+shell. It now asserts something more precise: **nothing derived from the
+business may carry a number**, and the only digits in the interface are the
+operator's own review count, which is marked `data-local="true"` and asserted to
+be the sole exception. The projection still carries no numbers for the interface
+to show.
+
+### Without WebGL
+
+`components/CityFallback.tsx` renders the whole briefing as text — the same
+queue, states, moves and local review marks. The world is the product and losing
+it is a real loss, but the part an operator came for is the reading and the
+moves, and those are words.
 
 ## Verification
 

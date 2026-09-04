@@ -82,9 +82,15 @@ test("no number in the shell comes from the business", async ({ page }) => {
   const localText = await page.locator("[data-local='true']").allInnerTexts();
   expect(localText.join(" ")).toMatch(/\d/);
 
-  for (const selector of ["table", "svg.chart", ".metric", ".card", ".kpi", "header", "nav.tabs"]) {
+  // No dashboard furniture. The header/footer check is scoped to page level:
+  // a <header> inside the briefing panel is the right element for a panel
+  // title, and forbidding it outright would be forbidding correct semantics
+  // rather than the SaaS chrome this is guarding against.
+  for (const selector of ["table", "svg.chart", ".metric", ".card", ".kpi", "nav.tabs"]) {
     await expect(page.locator(selector)).toHaveCount(0);
   }
+  await expect(page.locator("main.city > header")).toHaveCount(0);
+  await expect(page.locator("main.city > footer")).toHaveCount(0);
 });
 
 test("there is no write affordance and no operator mode", async ({ page }) => {

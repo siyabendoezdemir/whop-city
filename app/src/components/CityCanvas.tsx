@@ -299,7 +299,7 @@ export function CityCanvas({
           if (!marker) return null;
           const rect = stage.renderer.domElement.getBoundingClientRect();
           const world = marker.group.position.clone();
-          world.y += 13.5; // the lamp, not the foot of the mast
+          world.y += 26.6; // the lamp, not the foot of the mast
           world.project(stage.camera);
           return {
             x: rect.left + ((world.x + 1) / 2) * rect.width,

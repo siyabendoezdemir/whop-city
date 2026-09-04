@@ -4,6 +4,23 @@ Captured against the built app on the preview server (`pnpm build && pnpm
 preview`), not the dev bundle, with WebGL through SwiftShader. Regenerate with
 `pnpm capture`, `pnpm capture:fly` and `pnpm aliasing-check` from `app/`.
 
+### The operator loop
+
+Captured with `pnpm capture:loop` against a fixtures build, by clicking markers
+in the world rather than by calling the camera hook — so what is photographed is
+the product being used.
+
+| file | what it shows |
+| --- | --- |
+| `operator-1-signal.jpg` | Two districts asking urgently and one unbuilt. Lit masts in the world, the same ranking in the queue. Nothing selected yet. |
+| `operator-2-focus.jpg` | Commerce Core, selected by clicking its mast. Camera glided in, briefing open with three moves. |
+| `operator-3-resolved.jpg` | Every move reviewed. The queue says Reviewed, the progression pip filled, the mast stopped asking. |
+| `operator-4-changed.jpg` | Reviewed while shuttered, reopened when the city read healthy: "reads differently than when you reviewed it", and City cannot say why. |
+| `operator-5-unavailable.jpg` | No reading. Grey markers, no ranking, no moves, and the reason stated. |
+| `operator-6-default.jpg` | The approved world with markers, at the default framing. 157 draw calls, 221,184 triangles. |
+
+### The world
+
 | file | what it shows |
 | --- | --- |
 | `city-default.jpg` | The default city. Commerce Core healthy, Offer Forge rising, Creator Quarter healthy — the states the default fixture projects. |
