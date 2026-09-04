@@ -1,0 +1,8 @@
+# Generated capture output. Regenerate with `pnpm capture`.
+artifacts/
+.frames/
+
+# Vite dependency cache.
+.vite/
+dist/
+node_modules/

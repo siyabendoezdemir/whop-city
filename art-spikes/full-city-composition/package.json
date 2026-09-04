@@ -1,0 +1,28 @@
+{
+  "name": "whop-city-art-spike-full-city",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Full-city composition spike: one contiguous waterfront city in the approved Offer Forge rendering grammar.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5190",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "capture": "node capture/capture.mjs",
+    "preview": "node capture/preview.mjs",
+    "leak-check": "node capture/leak-check.mjs",
+    "stats": "node capture/stats.mjs",
+    "shadow-check": "node capture/shadow-check.mjs",
+    "aliasing-check": "node capture/aliasing-check.mjs",
+    "zfight-check": "node capture/zfight-check.mjs"
+  },
+  "dependencies": {
+    "three": "^0.182.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/three": "^0.182.0",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5"
+  }
+}

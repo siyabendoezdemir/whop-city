@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Whop City — full-city composition</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #0d1117; overflow: hidden; }
+      #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+      canvas { display: block; }
+
+      /*
+        The quiet game shell. Edge-anchored, low contrast, and small enough that
+        the world is unambiguously the subject. Hidden entirely under ?bare=1.
+      */
+      .shell { position: fixed; z-index: 10; font: 500 12px/1 ui-sans-serif, system-ui, sans-serif; }
+      body[data-bare="1"] .shell { display: none; }
+
+      #crest {
+        left: 20px; top: 18px;
+        display: flex; align-items: center; gap: 9px;
+        padding: 8px 13px 8px 9px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.62);
+        backdrop-filter: blur(14px) saturate(160%);
+        color: #23303f;
+      }
+      #crest .mark {
+        width: 22px; height: 22px; border-radius: 7px;
+        background: linear-gradient(150deg, #ffa06b, #ff6a3d);
+        box-shadow: 0 1px 5px rgba(255,106,61,0.45);
+      }
+      #crest .tier { font-weight: 680; letter-spacing: -0.01em; }
+      #crest .sep { width: 1px; height: 13px; background: rgba(35,48,63,0.2); }
+      #crest .privacy { display: flex; align-items: center; gap: 6px; opacity: 0.78; }
+      #crest .dot { width: 6px; height: 6px; border-radius: 999px; background: #16a34a; }
+
+      #controls {
+        right: 20px; bottom: 20px;
+        display: flex; flex-direction: column; gap: 5px;
+        padding: 5px;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.6);
+        backdrop-filter: blur(14px) saturate(160%);
+      }
+      #controls button {
+        width: 32px; height: 32px;
+        display: grid; place-items: center;
+        border: 0; border-radius: 8px; cursor: pointer;
+        background: transparent; color: #23303f;
+        font: inherit; font-size: 15px; font-weight: 600;
+      }
+      #controls button:hover { background: rgba(35,48,63,0.09); }
+
+      /* Spike-only district jump. Not part of the proposed product shell. */
+      #jump {
+        left: 50%; bottom: 20px; transform: translateX(-50%);
+        display: flex; gap: 4px; padding: 5px;
+        border-radius: 12px;
+        background: rgba(255,255,255,0.6);
+        backdrop-filter: blur(14px) saturate(160%);
+      }
+      #jump button {
+        border: 0; border-radius: 8px; cursor: pointer;
+        padding: 8px 13px; background: transparent; color: #33404f; font: inherit;
+      }
+      #jump button[aria-pressed="true"] { background: #23303f; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+
+    <div class="shell" id="crest">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="tier">Whop City</span>
+      <span class="sep" aria-hidden="true"></span>
+      <span class="privacy"><span class="dot" aria-hidden="true"></span>Public view</span>
+    </div>
+
+    <div class="shell" id="controls">
+      <button type="button" data-cam="in" aria-label="Zoom in">+</button>
+      <button type="button" data-cam="out" aria-label="Zoom out">−</button>
+      <button type="button" data-cam="reset" aria-label="Reset camera">⌂</button>
+    </div>
+
+    <div class="shell" id="jump"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
