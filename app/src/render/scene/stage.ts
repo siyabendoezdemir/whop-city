@@ -150,6 +150,14 @@ function placeOnSphere(target: THREE.Object3D, azimuth: number, elevation: numbe
 export type StageOptions = {
   /** Render scale. The capture harness pins this for reproducibility. */
   supersample?: number;
+  /**
+   * Keep the drawing buffer after presentation.
+   *
+   * Only the capture harness needs this, and it is expensive: it denies the
+   * browser the fast swap path, so every presented frame costs a full copy of
+   * the buffer. On software WebGL that copy dominates everything else.
+   */
+  preserveDrawingBuffer?: boolean;
 };
 
 export function createStage(mount: HTMLElement, options: StageOptions = {}): Stage {
@@ -160,7 +168,7 @@ export function createStage(mount: HTMLElement, options: StageOptions = {}): Sta
 
   const renderer = new THREE.WebGLRenderer({
     antialias: true,
-    preserveDrawingBuffer: true, // capture harness reads pixels back
+    preserveDrawingBuffer: options.preserveDrawingBuffer ?? false,
     powerPreference: "high-performance",
   });
   renderer.setPixelRatio(supersample);

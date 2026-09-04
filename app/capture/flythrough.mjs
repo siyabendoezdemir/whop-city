@@ -1,124 +1,127 @@
 import { execFileSync } from "node:child_process";
-import { readdirSync, renameSync, rmSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { resolve } from "node:path";
 import { chromium } from "@playwright/test";
 
-import { APP_URL, artOut, artifactPath, framesDir, launchOptions, openCity } from "./env.mjs";
+import { APP_URL, artifactPath, framesDir, launchOptions, openCity } from "./env.mjs";
 
 /**
- * The fly-through, recorded as a real visit.
+ * The deterministic fly-through.
  *
- * Not screenshotted frame by frame. Rendering a frame of this city costs about
- * six milliseconds even under software WebGL, but reading one back out of a
- * supersampled buffer costs eleven to twenty-four *seconds* — through
- * Playwright's screenshot and through canvas.toDataURL alike, because the
- * expense is the readback itself. Frame by frame, a 350-frame film is an
- * afternoon.
+ * Recorded frame by frame, which on this machine is the only honest option.
+ * Rendering a frame of this city costs about six milliseconds under software
+ * WebGL, but *presenting* one costs seven to fourteen seconds — the same cost
+ * whether it is reached through Playwright's screenshot, through
+ * canvas.toDataURL, or by simply letting the page's own animation loop run,
+ * which manages 0.1 frames per second here. A live screencast of an animated
+ * WebGL canvas is therefore not available on a machine without a GPU: the first
+ * attempt at one produced a film with no camera motion and no ambient life in
+ * it, because barely a dozen distinct frames ever reached the compositor.
  *
- * So the page runs its own animation loop and the browser's compositor records
- * it, and the camera is driven the way a visitor drives it: by clicking the
- * district buttons. What comes out is the product being used — the world in
- * motion, the camera gliding between neighbourhoods, and the contextual panel
- * opening on arrival — rather than a camera path with the interface removed.
+ * So each frame is composed and photographed deliberately. Every frame is a
+ * pure function of its index — the animation clock and the camera
+ * interpolation both — so the same film comes out of every run.
  *
- * The script is fixed, so two runs visit the same places for the same beats.
+ * Recorded at 960x600 rather than the authored 1440x900: same 16:10 aspect, so
+ * the composition and every framing are unchanged, and supersampling still
+ * applies on top. It is purely a cost decision. Presenting a frame is 7.7s
+ * there against 13.2s at full size, which is the difference between a
+ * half-hour recording and an hour.
+ *
+ * The districts are selected by clicking their buttons, not by calling the
+ * camera hook, so the contextual panel opens as the camera arrives and the film
+ * shows the product rather than a camera path with the interface removed.
  */
 
 const SS = Number(process.env.SS ?? 2);
-const FPS = Number(process.env.FPS ?? 30);
+const FPS = Number(process.env.FPS ?? 20);
 const VIEW = {
-  width: Number(process.env.FLY_WIDTH ?? 1280),
-  height: Number(process.env.FLY_HEIGHT ?? 800),
+  width: Number(process.env.FLY_WIDTH ?? 960),
+  height: Number(process.env.FLY_HEIGHT ?? 600),
 };
 
-/** Beats, in milliseconds. Sums to the intended length of the film. */
-const SCRIPT = [
-  { hold: 2600, label: "the city" },
-  { click: "commerce-core", hold: 2600 },
-  { click: "offer-forge", hold: 2600 },
-  { click: "creator-quarter", hold: 2600 },
-  { click: "city", hold: 1800 },
+const TIMELINE = [
+  { kind: "hold", at: "city", seconds: 2.2 },
+  { kind: "fly", from: "city", at: "commerce-core", seconds: 1.2, select: "commerce-core" },
+  { kind: "hold", at: "commerce-core", seconds: 1.5 },
+  { kind: "fly", from: "commerce-core", at: "offer-forge", seconds: 1.2, select: "offer-forge" },
+  { kind: "hold", at: "offer-forge", seconds: 1.5 },
+  { kind: "fly", from: "offer-forge", at: "creator-quarter", seconds: 1.2, select: "creator-quarter" },
+  { kind: "hold", at: "creator-quarter", seconds: 1.5 },
+  { kind: "fly", from: "creator-quarter", at: "city", seconds: 1.2, select: "city" },
+  { kind: "hold", at: "city", seconds: 0.9 },
 ];
-const DURATION_MS = SCRIPT.reduce((total, beat) => total + beat.hold, 0);
+const DURATION = TIMELINE.reduce((total, step) => total + step.seconds, 0);
 
-const RAW = framesDir();
-for (const file of readdirSync(RAW)) rmSync(resolve(RAW, file), { recursive: true });
+const FRAMES = framesDir();
+for (const file of readdirSync(FRAMES)) rmSync(resolve(FRAMES, file), { recursive: true });
+mkdirSync(FRAMES, { recursive: true });
 
 const browser = await chromium.launch(launchOptions());
-const context = await browser.newContext({
-  viewport: VIEW,
-  deviceScaleFactor: 1,
-  recordVideo: { dir: RAW, size: VIEW },
-});
-// Recording starts when the page does, so the load has to be timed and trimmed
-// off the front. The webm's own timestamps are not wall clock, so the cut is
-// computed as a proportion of the session rather than in seconds.
-const openedAt = Date.now();
-// Not capture mode: the page has to run its own loop for there to be motion.
-const page = await openCity(browser, { ss: SS, view: VIEW, context, capture: false });
-const readyAt = Date.now();
-console.log(`  city ready after ${((readyAt - openedAt) / 1000).toFixed(1)}s of load`);
+const page = await openCity(browser, { ss: SS, view: VIEW });
 page.on("pageerror", (error) => console.log("PAGE ERROR:", String(error).slice(0, 200)));
 
+const clip = await page.locator("canvas").boundingBox();
+const total = Math.round(DURATION * FPS);
 console.log(
-  `recording ${(DURATION_MS / 1000).toFixed(1)}s of ${APP_URL} ` +
-    `at ${VIEW.width}x${VIEW.height} ss=${SS}`,
+  `recording ${DURATION.toFixed(1)}s of ${APP_URL} -> ${total} frames ` +
+    `at ${VIEW.width}x${VIEW.height} ss=${SS} ${FPS}fps`,
 );
 
-for (const beat of SCRIPT) {
-  if (beat.click) {
-    await page.click(`.city-jump button[data-district="${beat.click}"]`);
-    console.log(`  -> ${beat.click}`);
+let frame = 0;
+let elapsed = 0;
+const started = Date.now();
+
+for (const step of TIMELINE) {
+  if (step.select) {
+    // The product interaction: opens the panel and marks the button pressed.
+    await page.click(`.city-jump button[data-district="${step.select}"]`);
   }
-  await page.waitForTimeout(beat.hold);
+
+  const steps = Math.round(step.seconds * FPS);
+  for (let i = 0; i < steps; i++) {
+    const t = elapsed + i / FPS;
+    if (step.kind === "hold") {
+      await page.evaluate(([at, clock]) => window.__city.frame(at, clock), [step.at, t]);
+    } else {
+      await page.evaluate(
+        ([to, from, progress, clock]) => window.__city.flyTo(to, from, progress, clock),
+        [step.at, step.from, (i + 1) / steps, t],
+      );
+    }
+    await page.screenshot({
+      path: resolve(FRAMES, `f${String(frame).padStart(5, "0")}.png`),
+      clip,
+      timeout: 180_000,
+      animations: "disabled",
+    });
+    frame++;
+    if (frame % 20 === 0) {
+      const rate = (Date.now() - started) / frame;
+      const left = Math.round(((total - frame) * rate) / 1000);
+      console.log(`  ${frame}/${total}  ~${Math.floor(left / 60)}m${String(left % 60).padStart(2, "0")}s left`);
+    }
+  }
+  elapsed += step.seconds;
 }
 
-// Let the screencast flush the tail before the context closes.
-await page.waitForTimeout(800);
-const endedAt = Date.now();
-await context.close();
 await browser.close();
 
-const recorded = readdirSync(RAW).filter((file) => file.endsWith(".webm"));
-if (recorded.length === 0) throw new Error("no video was recorded");
-const source = resolve(RAW, recorded[0]);
-
-const probed = Number(
-  execFileSync("ffprobe", [
-    "-v", "error",
-    "-show_entries", "format=duration",
-    "-of", "default=noprint_wrappers=1:nokey=1",
-    source,
-  ]).toString().trim(),
-);
-
-const session = endedAt - openedAt;
-const trimStart = probed * ((readyAt - openedAt) / session);
-const kept = probed - trimStart;
-// The page renders slower than real time under software WebGL, so what is left
-// still runs long. Retime it to the scripted length.
-const speed = kept / (DURATION_MS / 1000);
 const out = artifactPath("city-flythrough.mp4");
-
 execFileSync(
   "ffmpeg",
   [
     "-y",
-    "-ss", trimStart.toFixed(3),
-    "-i", source,
-    "-filter:v", `setpts=PTS/${speed.toFixed(6)},scale=trunc(iw/2)*2:trunc(ih/2)*2`,
-    "-r", String(FPS),
+    "-framerate", String(FPS),
+    "-i", resolve(FRAMES, "f%05d.png"),
     "-an",
     "-c:v", "libx264",
     "-pix_fmt", "yuv420p",
-    "-crf", "20",
+    "-crf", "18",
+    "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",
     out,
   ],
   { stdio: ["ignore", "ignore", "inherit"] },
 );
 
-renameSync(source, resolve(artOut(), "city-flythrough-raw.webm"));
-console.log(
-  `recorded ${probed.toFixed(1)}s, trimmed ${trimStart.toFixed(1)}s of load, ` +
-    `retimed ${kept.toFixed(1)}s -> ${(DURATION_MS / 1000).toFixed(1)}s at ${out}`,
-);
+console.log(`wrote ${out}: ${DURATION.toFixed(1)}s, ${total} frames at ${FPS}fps`);

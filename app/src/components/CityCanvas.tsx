@@ -53,6 +53,17 @@ function isCaptureMode(): boolean {
   return typeof location !== "undefined" && new URLSearchParams(location.search).has("capture");
 }
 
+/**
+ * Whether pixels will be read back out of the canvas.
+ *
+ * Only the capture harness does that, and preserving the drawing buffer to
+ * allow it denies the browser the fast swap path, so every presented frame
+ * costs a full copy. Off outside capture, where nothing needs it.
+ */
+function needsReadback(): boolean {
+  return isCaptureMode();
+}
+
 export function CityCanvas({ projection, framing, zoom }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<ReturnType<typeof createStage> | null>(null);
@@ -67,7 +78,10 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
     const mount = mountRef.current;
     if (!mount) return;
 
-    const stage = createStage(mount, { supersample: supersampleFromLocation() });
+    const stage = createStage(mount, {
+      supersample: supersampleFromLocation(),
+      preserveDrawingBuffer: needsReadback(),
+    });
     applySurfaceDetail();
     stageRef.current = stage;
 

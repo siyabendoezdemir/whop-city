@@ -200,9 +200,25 @@ rather than a dev bundle. `CITY_URL` points them elsewhere; `ART_OUT` moves the
 output; `SS` pins the supersampling factor.
 
 The capture harness needs a Chrome or Chromium. It looks in the usual places and
-falls back to Playwright's bundled build; `CHROME_PATH` overrides. Screenshots
-are slow here because the city renders through SwiftShader at twice display
-resolution — `SHOT_TIMEOUT` is generous for that reason.
+falls back to Playwright's bundled build; `CHROME_PATH` overrides.
+
+### Why capture is slow without a GPU
+
+Rendering a frame of this city costs about six milliseconds under software
+WebGL. *Presenting* one costs seven to fourteen seconds, and that cost is the
+same whether the frame is reached through Playwright's screenshot, through
+`canvas.toDataURL`, or by simply letting the page's own animation loop run —
+which manages about 0.1 frames per second on a machine with no GPU. It is not
+the resolution, the shell's blurred panels, or `preserveDrawingBuffer`; all
+three were measured and none of them account for it.
+
+The practical consequences: `SHOT_TIMEOUT` is generous, the fly-through is
+composed and photographed frame by frame rather than screencast live, and it is
+recorded at 960x600 (same 16:10 aspect, so the composition is unchanged) because
+presenting a frame there is 7.7s against 13.2s at full size.
+
+`preserveDrawingBuffer` is enabled only in capture mode, since only the harness
+reads pixels back and the flag denies the browser its fast swap path.
 
 ## Not in this increment
 
