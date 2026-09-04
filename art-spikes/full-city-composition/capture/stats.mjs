@@ -1,6 +1,9 @@
 import { chromium } from "@playwright/test";
 import { DEV_URL, launchOptions } from "./env.mjs";
 
+/** Supersampling factor, pinned so captures are reproducible. */
+const SS = Number(process.env.SS ?? 1);
+
 /**
  * Renderer accounting.
  *
@@ -10,7 +13,7 @@ import { DEV_URL, launchOptions } from "./env.mjs";
  */
 const browser = await chromium.launch(launchOptions());
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-await page.goto(`${DEV_URL}/?bare=1&capture=1`, { waitUntil: "load" });
+await page.goto(`${DEV_URL}/?bare=1&capture=1&ss=${SS}`, { waitUntil: "load" });
 await page.waitForFunction(() => window.__ready === true, { timeout: 90000 });
 await page.waitForTimeout(800);
 const out = await page.evaluate(() => {

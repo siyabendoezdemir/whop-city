@@ -4,6 +4,9 @@ import { execFileSync } from "node:child_process";
 import { chromium } from "@playwright/test";
 import { DEV_URL, artOut, launchOptions } from "./env.mjs";
 
+/** Supersampling factor, pinned so captures are reproducible. */
+const SS = Number(process.env.SS ?? 1);
+
 /**
  * Shadow anchoring check.
  *
@@ -52,7 +55,7 @@ const browser = await chromium.launch(launchOptions());
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 page.on("pageerror", (e) => console.log("PAGE ERROR:", String(e).slice(0, 300)));
 
-await page.goto(`${DEV_URL}/?bare=1&capture=1`, { waitUntil: "load" });
+await page.goto(`${DEV_URL}/?bare=1&capture=1&ss=${SS}`, { waitUntil: "load" });
 await page.waitForFunction(() => window.__ready === true, { timeout: 120000 });
 await page.waitForTimeout(1200);
 

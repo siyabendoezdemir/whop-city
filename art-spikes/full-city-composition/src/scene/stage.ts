@@ -18,6 +18,29 @@ import * as THREE from "three";
 
 export const VIEW = { width: 1440, height: 900 } as const;
 
+/**
+ * Supersampling factor.
+ *
+ * MSAA alone was not enough for this subject. A city seen from a fixed
+ * isometric angle is mostly very long, very straight, high-contrast edges —
+ * kerb against asphalt, footway against carriageway, lane markings — and a long
+ * straight near-diagonal edge aliases into a stair pattern that crawls along
+ * its own length as the camera creeps. The eye tracks that far more readily
+ * than the same error on a short edge, which is why the roads shimmered while
+ * the buildings looked acceptable.
+ *
+ * Rendering above display resolution and letting the downsample average the
+ * result is the fix. It also repairs the HiDPI case, where a pinned ratio of 1
+ * meant the canvas was drawn at CSS resolution and stretched up by the browser.
+ *
+ * `?ss=<n>` overrides, so the capture harness can pin it for reproducibility.
+ */
+const SUPERSAMPLE = (() => {
+  const requested = Number(new URLSearchParams(location.search).get("ss"));
+  if (Number.isFinite(requested) && requested > 0) return Math.min(requested, 4);
+  return Math.min(window.devicePixelRatio || 1, 2);
+})();
+
 /** Sun azimuth/elevation chosen so the sawtooth roof self-shadows and the street reads. */
 const SUN_AZIMUTH = THREE.MathUtils.degToRad(128);
 const SUN_ELEVATION = THREE.MathUtils.degToRad(27);
@@ -117,7 +140,7 @@ export function createStage(mount: HTMLElement): Stage {
     preserveDrawingBuffer: true, // capture harness reads pixels back
     powerPreference: "high-performance",
   });
-  renderer.setPixelRatio(1);
+  renderer.setPixelRatio(SUPERSAMPLE);
   renderer.setSize(VIEW.width, VIEW.height);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;

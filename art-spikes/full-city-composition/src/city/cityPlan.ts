@@ -77,6 +77,14 @@ export const ROADS: Road[] = [
 ];
 
 const KERB_H = 0.15;
+/**
+ * Carriageway marking width.
+ *
+ * The default framing shows about 9.5 pixels per world unit, so anything under
+ * roughly 0.25m is sub-pixel and cannot be rasterised stably — it crawls as the
+ * camera moves. This is the floor for painted road detail.
+ */
+const MARKING_W = 0.3;
 
 function inGap(road: Road, t: number): boolean {
   return Boolean(road.gaps?.some(([a, b]) => t > a && t < b));
@@ -92,7 +100,14 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
 
   // -------------------------------------------------------------- landmass
   // One quadrant of land. The two bays are the space it does not occupy.
-  b.add(M.concreteDark, box(300, 1.6, 300), [W + 150, WORLD.ground - 0.8, N + 150]);
+  //
+  // Its top sits just below WORLD.ground rather than exactly on it. Every
+  // carriageway's top face is at WORLD.ground, and two coplanar surfaces are
+  // two surfaces with an equal claim on the same depth values. It happens to
+  // resolve consistently under an orthographic camera looking at horizontal
+  // planes, because the interpolated depth is constant across both, but that is
+  // luck rather than design and it would not survive a perspective camera.
+  b.add(M.concreteDark, box(300, 1.6, 300), [W + 150, WORLD.ground - 0.88, N + 150]);
 
   // Bays. Two planes at the same level so they read as one body of water.
   b.add(M.water, box(420, 0.12, N - WORLD.northFar), [10, WORLD.ground - 1.8, (N + WORLD.northFar) / 2]);
@@ -205,14 +220,12 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
         kerbY - 0.09,
         wp[2],
       ]);
-      for (let t = road.from; t < road.to; t += 2.6) {
-        const jp = place(t, side * (half + 0.34 + walkW / 2));
-        b.add(M.sidewalkWorn, box(alongX ? 0.05 : walkW, 0.012, alongX ? walkW : 0.05), [
-          jp[0],
-          kerbY + 0.007,
-          jp[2],
-        ]);
-      }
+      // Paving joints used to be modelled here as 5cm plates. At the default
+      // framing 5cm is under half a pixel, so every one of them landed on a
+      // different part of the pixel grid as the camera crept along and popped
+      // in and out — the footways crawled. M.sidewalk already carries a
+      // procedural paving-seam texture, which is the right place for detail
+      // this fine, so the geometry is gone and nothing is lost.
     }
 
     if (road.grade === "boulevard") {
@@ -231,10 +244,17 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
         Prop.tree(kit, [p[0], WORLD.ground + 0.24, p[2]], rng.range(0, 6.2), rng.range(0.92, 1.2));
       }
     } else if (road.grade !== "lane") {
+      // A real lane marking is about 15cm, which is 1.4 pixels here and
+      // therefore crawls. Widened until it survives the pixel grid: at this
+      // scale the line still reads as a lane marking and it stops flickering.
       for (let t = road.from + 2; t < road.to; t += 6) {
         if (inGap(road, t)) continue;
         const p = place(t, 0);
-        b.add(M.roadLine, box(alongX ? 3 : 0.16, 0.02, alongX ? 0.16 : 3), [p[0], WORLD.ground + 0.006, p[2]]);
+        b.add(M.roadLine, box(alongX ? 3 : MARKING_W, 0.02, alongX ? MARKING_W : 3), [
+          p[0],
+          WORLD.ground + 0.006,
+          p[2],
+        ]);
       }
     }
 
