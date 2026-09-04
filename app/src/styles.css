@@ -83,7 +83,8 @@ body {
 .city-crest,
 .city-jump,
 .city-camera,
-.city-place {
+.city-queue,
+.city-brief {
   position: absolute;
   z-index: 2;
   /* Quiet, glassy, and never a card with a metric in it. */
@@ -179,58 +180,460 @@ body {
   background: color-mix(in srgb, #7ea3d4 16%, transparent);
 }
 
-/* ---------------------------------------------------- the selected place */
+/* ------------------------------------------------- the attention queue */
 
-.city-place {
+.city-queue {
+  top: 96px;
   left: 18px;
-  bottom: 74px;
-  max-width: 24rem;
-  padding: 14px 16px;
+  width: 15.5rem;
+  padding: 12px 12px 10px;
   display: grid;
-  gap: 4px;
-  /* A left rule tinted by the district's physical state: the one place the
-     state is named in the interface rather than only shown in the world. */
-  border-left: 3px solid var(--state-colour, #7ea3d4);
+  gap: 8px;
 }
 
-.city-place[data-state="healthy"] {
-  --state-colour: #6fd39a;
-}
-.city-place[data-state="rising"] {
-  --state-colour: #ffb457;
-}
-.city-place[data-state="struggling"] {
-  --state-colour: #e2806a;
-}
-.city-place[data-state="dormant"] {
-  --state-colour: #7c8ba1;
-}
-
-.city-place__subtitle {
+.city-queue__title {
   margin: 0;
   font-size: 0.7rem;
+  font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: #8ea4c0;
 }
 
-.city-place__name {
+.city-queue__list {
   margin: 0;
-  font-size: 1.12rem;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+.city-queue__item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #cddcef;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.city-queue__item:hover {
+  background: color-mix(in srgb, #7ea3d4 14%, transparent);
+}
+
+.city-queue__item[aria-pressed="true"] {
+  background: color-mix(in srgb, #7ea3d4 22%, transparent);
+}
+
+/* The lamp, mirrored from the world so the queue and the city agree. */
+.city-queue__level {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--level, #8ea4c0);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--level, #8ea4c0) 22%, transparent);
+}
+
+.city-queue__item[data-level="urgent"] { --level: #ff6b4a; }
+.city-queue__item[data-level="opportunity"] { --level: #7fc4ff; }
+.city-queue__item[data-level="watch"] { --level: #ffb457; }
+.city-queue__item[data-level="steady"] { --level: #6fd39a; }
+.city-queue__item[data-level="unknown"] { --level: #7c8ba1; }
+
+.city-queue__item[data-level="urgent"][data-resolved="false"] .city-queue__level {
+  animation: city-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes city-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--level) 20%, transparent); }
+  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--level) 8%, transparent); }
+}
+
+.city-queue__item[data-resolved="true"] .city-queue__level {
+  background: #6fd39a;
+  box-shadow: none;
+}
+
+.city-queue__text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.city-queue__name {
+  font-size: 0.82rem;
+  font-weight: 550;
+  color: #f4f7fb;
+}
+
+.city-queue__status {
+  font-size: 0.68rem;
+  color: #8ea4c0;
+}
+
+.city-queue__hint {
+  margin: 2px 0 0;
+  font-size: 0.66rem;
+  color: #7c8ba1;
+}
+
+.city-queue__hint kbd {
+  font: inherit;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid color-mix(in srgb, #7ea3d4 30%, transparent);
+  color: #cddcef;
+}
+
+/* -------------------------------------------------------- the briefing */
+
+.city-brief {
+  right: 18px;
+  top: 18px;
+  width: 25rem;
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  padding: 16px 18px 14px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+  /* A left rule tinted by attention: the one place the level is named in the
+     interface rather than only shown in the world. */
+  border-left: 3px solid var(--level, #7ea3d4);
+}
+
+.city-brief[data-level="urgent"] { --level: #ff6b4a; }
+.city-brief[data-level="opportunity"] { --level: #7fc4ff; }
+.city-brief[data-level="watch"] { --level: #ffb457; }
+.city-brief[data-level="steady"] { --level: #6fd39a; }
+.city-brief[data-level="unknown"] { --level: #7c8ba1; }
+
+/* The panel takes focus when a district is selected so a keyboard user lands on
+   the content. A container ring is quieter than a control's on purpose. */
+.city-brief:focus-visible {
+  outline: 1px solid color-mix(in srgb, #ffb457 55%, transparent);
+  outline-offset: -1px;
+}
+
+.city-brief__head {
+  display: grid;
+  gap: 3px;
+}
+
+.city-brief__subtitle {
+  margin: 0;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8ea4c0;
+}
+
+.city-brief__name {
+  margin: 0;
+  font-size: 1.2rem;
   font-weight: 640;
   color: #f4f7fb;
 }
 
-.city-place__explain {
-  margin: 2px 0 0;
-  font-size: 0.84rem;
+.city-brief__reading {
+  margin: 4px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #dfe9f6;
+}
+
+.city-brief__signal {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: var(--level, #8ea4c0);
+}
+
+.city-brief__changed {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, #ffb457 14%, transparent);
+  border: 1px solid color-mix(in srgb, #ffb457 30%, transparent);
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: #ffd9a0;
+}
+
+.city-brief__stake {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: #9fb2ca;
+}
+
+.city-brief__moves {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+  counter-reset: move;
+}
+
+.city-move__mark {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: start;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, #7ea3d4 16%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, #16233a 60%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.city-move__mark:hover {
+  border-color: color-mix(in srgb, #7ea3d4 34%, transparent);
+}
+
+.city-move__mark:focus-visible {
+  outline: 2px solid #ffb457;
+  outline-offset: 1px;
+}
+
+.city-move__tick {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  border-radius: 5px;
+  border: 1.5px solid color-mix(in srgb, #7ea3d4 45%, transparent);
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  line-height: 1;
+  color: #0f1a2b;
+}
+
+.city-move[data-reviewed="true"] .city-move__tick,
+.city-move__mark[aria-pressed="true"] .city-move__tick {
+  background: #6fd39a;
+  border-color: #6fd39a;
+}
+
+.city-move[data-reviewed="true"] .city-move__title {
+  color: #8ea4c0;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, #8ea4c0 55%, transparent);
+}
+
+.city-move__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.city-move__title {
+  font-size: 0.82rem;
+  font-weight: 560;
+  color: #f4f7fb;
+}
+
+.city-move__detail {
+  font-size: 0.74rem;
+  line-height: 1.45;
+  color: #9fb2ca;
+}
+
+.city-brief__foot {
+  display: grid;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+.city-brief__progress {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 560;
+  color: #cddcef;
+}
+
+.city-brief__local {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: #7c8ba1;
+}
+
+/* ------------------------------------------------------- progression */
+
+.city-progress {
+  position: absolute;
+  z-index: 2;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: color-mix(in srgb, #0d1726 78%, transparent);
+  border: 1px solid color-mix(in srgb, #7ea3d4 22%, transparent);
+  backdrop-filter: blur(9px);
+}
+
+.city-camera {
+  right: 18px;
+  bottom: 64px;
+}
+
+.city-progress__label {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #8ea4c0;
+}
+
+.city-progress__pips {
+  display: flex;
+  gap: 5px;
+}
+
+.city-progress__pip {
+  width: 16px;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, #7ea3d4 24%, transparent);
+  transition: background 220ms ease;
+}
+
+.city-progress__pip[data-filled="true"] {
+  background: #6fd39a;
+}
+
+/* ------------------------------------------- the world could not be drawn */
+
+.city-flat {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  padding: 96px 18px 96px 17.5rem;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  z-index: 1;
+}
+
+.city-flat__note {
+  margin: 0;
+  max-width: 44rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #9fb2ca;
+}
+
+.city-flat__districts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  max-width: 44rem;
+}
+
+.city-flat__district {
+  border: 1px solid color-mix(in srgb, #7ea3d4 20%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, #0d1726 72%, transparent);
+  overflow: hidden;
+}
+
+.city-flat__head {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 0;
+  background: transparent;
+  color: #f4f7fb;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 560;
+  text-align: left;
+  cursor: pointer;
+}
+
+.city-flat__status {
+  color: #8ea4c0;
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+.city-flat__body {
+  display: grid;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.city-flat__body p {
+  margin: 0;
+  font-size: 0.8rem;
   line-height: 1.5;
   color: #c6d5e8;
 }
 
+.city-flat__subtitle {
+  font-size: 0.68rem !important;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8ea4c0 !important;
+}
+
+.city-flat__moves {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+
+/* Announcements for screen readers, off-screen but not display:none. */
+.city-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:where(.city button):focus-visible {
+  outline: 2px solid #ffb457;
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .city-jump button,
-  .city-camera button {
+  .city-camera button,
+  .city-queue__item,
+  .city-move__mark,
+  .city-progress__pip {
     transition: none;
+  }
+
+  .city-queue__item[data-level="urgent"][data-resolved="false"] .city-queue__level {
+    animation: none;
   }
 }

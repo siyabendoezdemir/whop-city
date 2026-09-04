@@ -1,8 +1,10 @@
 import * as THREE from "three";
 import { useEffect, useRef } from "react";
 
-import type { PublicCityProjection } from "../city/projection";
+import { attentionFor } from "../city/attention";
+import type { DistrictId, PublicCityProjection } from "../city/projection";
 import { buildCity, disposeCity, type City } from "../render/city/city";
+import { createMarkers } from "../render/city/markers";
 import { applySurfaceDetail } from "../render/scene/materials";
 import { SUPERSAMPLE_DEFAULT, VIEW, createStage } from "../render/scene/stage";
 import { FRAMING_ORDER, framingFor, type FramingKey } from "./framings";
@@ -25,6 +27,12 @@ type Props = {
   framing: FramingKey;
   /** 1 is the framing's own height; below 1 is closer. */
   zoom: number;
+  /** Districts whose moves have all been reviewed. Their markers stop asking. */
+  resolved: readonly DistrictId[];
+  /** A district was picked in the world. The shell decides what that means. */
+  onSelectDistrict: (districtId: DistrictId) => void;
+  /** WebGL could not start. The shell swaps in the readable fallback. */
+  onUnavailable: () => void;
 };
 
 /** Eased so a scripted fly-through is reproducible frame for frame. */
@@ -64,24 +72,46 @@ function needsReadback(): boolean {
   return isCaptureMode();
 }
 
-export function CityCanvas({ projection, framing, zoom }: Props) {
+export function CityCanvas({
+  projection,
+  framing,
+  zoom,
+  resolved,
+  onSelectDistrict,
+  onUnavailable,
+}: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<ReturnType<typeof createStage> | null>(null);
   const cityRef = useRef<City | null>(null);
+  const markersRef = useRef<ReturnType<typeof createMarkers> | null>(null);
   // Kept in refs so the animation loop reads the current value without being
   // torn down and restarted on every camera change.
   const viewRef = useRef({ framing, zoom });
   viewRef.current = { framing, zoom };
+  // Same reason: the pick handler is installed once and must see current props.
+  const selectRef = useRef(onSelectDistrict);
+  selectRef.current = onSelectDistrict;
+  const unavailableRef = useRef(onUnavailable);
+  unavailableRef.current = onUnavailable;
 
   // --------------------------------------------------------------- the stage
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
-    const stage = createStage(mount, {
-      supersample: supersampleFromLocation(),
-      preserveDrawingBuffer: needsReadback(),
-    });
+    let stage: ReturnType<typeof createStage>;
+    try {
+      stage = createStage(mount, {
+        supersample: supersampleFromLocation(),
+        preserveDrawingBuffer: needsReadback(),
+      });
+    } catch {
+      // No WebGL, a lost context at construction, or a blocked canvas. The
+      // shell has a readable version of the same briefing; hand over to it
+      // rather than leaving a blank rectangle where the city should be.
+      unavailableRef.current();
+      return;
+    }
     applySurfaceDetail();
     stageRef.current = stage;
 
@@ -139,9 +169,57 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
       clock += dt;
       glide(dt);
       cityRef.current?.update(clock);
+      markersRef.current?.update(clock);
       stage.renderer.render(stage.scene, stage.camera);
       raf = requestAnimationFrame(loop);
     };
+
+    // ------------------------------------------------------- picking
+    // A district is selected by clicking its marker in the world. The raycast
+    // runs against the markers only: the city is one merged mesh per material,
+    // so hit-testing the architecture would tell us which *material* was
+    // clicked, not which district.
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let pressedAt: { x: number; y: number } | null = null;
+
+    const pick = (event: PointerEvent): DistrictId | null => {
+      const markers = markersRef.current;
+      if (!markers) return null;
+      const rect = stage.renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, stage.camera);
+      const hits = raycaster.intersectObjects(
+        markers.markers.map((marker) => marker.target),
+        false,
+      );
+      const districtId = hits[0]?.object.userData.districtId;
+      return typeof districtId === "string" ? (districtId as DistrictId) : null;
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      pressedAt = { x: event.clientX, y: event.clientY };
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      // Ignore drags: a click that travelled is someone moving the page, not
+      // someone choosing a district.
+      const start = pressedAt;
+      pressedAt = null;
+      if (!start) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
+      const districtId = pick(event);
+      if (districtId) selectRef.current(districtId);
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      stage.renderer.domElement.style.cursor = pick(event) ? "pointer" : "default";
+    };
+
+    stage.renderer.domElement.addEventListener("pointerdown", onPointerDown);
+    stage.renderer.domElement.addEventListener("pointerup", onPointerUp);
+    stage.renderer.domElement.addEventListener("pointermove", onPointerMove);
 
     window.addEventListener("resize", fit);
     fit();
@@ -157,6 +235,7 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
       clock = t;
       stage.frame(focus, height);
       cityRef.current?.update(t);
+      markersRef.current?.update(t);
       stage.renderer.render(stage.scene, stage.camera);
     };
 
@@ -207,6 +286,27 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
          * any of it changes while the camera moves, every texel remaps to a
          * different world position and the whole map shimmers.
          */
+        /**
+         * Where a district's marker is on screen, in CSS pixels.
+         *
+         * For tests and the capture harness: clicking the world is the primary
+         * way to select a district, and a test that cannot find the target
+         * cannot prove that works.
+         */
+        markerPoint: (districtId: string) => {
+          const markers = markersRef.current;
+          const marker = markers?.markers.find((m) => m.districtId === districtId);
+          if (!marker) return null;
+          const rect = stage.renderer.domElement.getBoundingClientRect();
+          const world = marker.group.position.clone();
+          world.y += 13.5; // the lamp, not the foot of the mast
+          world.project(stage.camera);
+          return {
+            x: rect.left + ((world.x + 1) / 2) * rect.width,
+            y: rect.top + ((1 - world.y) / 2) * rect.height,
+          };
+        },
+
         shadowRig: () => {
           const c = stage.sun.shadow.camera;
           return [
@@ -271,8 +371,16 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
 
     return () => {
       cancelAnimationFrame(raf);
+      stage.renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+      stage.renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      stage.renderer.domElement.removeEventListener("pointermove", onPointerMove);
       window.removeEventListener("resize", fit);
       delete (window as { __city?: unknown }).__city;
+      if (markersRef.current) {
+        stage.scene.remove(markersRef.current.group);
+        markersRef.current.dispose();
+        markersRef.current = null;
+      }
       black.dispose();
       stage.renderer.dispose();
       mount.removeChild(stage.renderer.domElement);
@@ -298,12 +406,40 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
     cityRef.current = city;
     stage.scene.add(city.group);
 
+    // Markers live alongside the city rather than inside it, so a rebuild does
+    // not have to recreate them and picking survives a projection change.
+    if (!markersRef.current) {
+      const markers = createMarkers(projection.districts.map((district) => district.id));
+      markersRef.current = markers;
+      stage.scene.add(markers.group);
+    }
+
     const f = framingFor(viewRef.current.framing);
     stage.frame(new THREE.Vector3(...f.focus), f.height * viewRef.current.zoom);
     city.update(0);
     stage.renderer.render(stage.scene, stage.camera);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectionKey]);
+
+  // ------------------------------------------------- markers follow the state
+  const resolvedKey = [...resolved].sort().join(",");
+  useEffect(() => {
+    const stage = stageRef.current;
+    const markers = markersRef.current;
+    if (!stage || !markers) return;
+
+    for (const marker of markers.markers) {
+      const district = projection.districts.find((d) => d.id === marker.districtId);
+      if (!district) continue;
+      marker.setLevel(attentionFor(district), resolved.includes(marker.districtId));
+      marker.setSelected(framing === marker.districtId);
+    }
+    if (isCaptureMode()) {
+      markers.update(0);
+      stage.renderer.render(stage.scene, stage.camera);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectionKey, resolvedKey, framing]);
 
   // ------------------------------------------------------- camera, on demand
   // In capture mode there is no loop, so a framing change has to draw itself.
