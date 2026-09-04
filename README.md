@@ -29,6 +29,9 @@ started.
 - [`docs/website-auth-spike.md`](docs/website-auth-spike.md) — how City answers
   "is this visitor on this business's team?", what the spike proved, and the
   three questions it could not reach.
+- [`docs/design-brief.md`](docs/design-brief.md) — why the first visual
+  implementation was rejected, and the specification the Paper artboard must
+  realise before any production world code is written.
 - [`docs/implementation-plan.md`](docs/implementation-plan.md) — the task plan
   that follows from both.
 
