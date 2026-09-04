@@ -15,7 +15,10 @@ const config = defineConfig({
     devtools(),
     cloudflare({ viteEnvironment: { name: 'ssr' } }),
     tailwindcss(),
-    tanstackStart(),
+    // The custom server entry is what gives City exactly one fixed API path.
+    // Naming it explicitly rather than relying on filename discovery, so the
+    // endpoint cannot quietly stop existing if that convention changes.
+    tanstackStart({ server: { entry: './server.ts' } }),
     viteReact(),
   ],
 })

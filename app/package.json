@@ -11,7 +11,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "whop apps deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -34,7 +37,9 @@
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
     "wrangler": "^4.70.0",
-    "@whop/cli": "latest"
+    "@whop/cli": "latest",
+    "@playwright/test": "^1.62.1",
+    "vitest": "^3.2.7"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
