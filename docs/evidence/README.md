@@ -10,6 +10,7 @@ preview`), not the dev bundle, with WebGL through SwiftShader. Regenerate with
 | `city-offer-forge-selected.jpg` | Offer Forge selected by clicking the district button: the camera has glided in and the contextual explanation has opened. |
 | `city-states.jpg` | The same city under three different projections. Nothing but the projection changed. |
 | `city-silhouette.jpg` | Flat black, context removed, to check the landmarks read without material help. |
+| `city-unavailable.jpg` | What a business that cannot be read looks like: districts unbuilt, and the crest says so. The surrounding city context is authored and does not belong to any district, so it stays. |
 | `city-flythrough.mp4` | 12.3s: the city, then each district in turn, then back out. Driven by clicking the buttons, so the panels and the camera glide are part of the recording. |
 | `renderer-stats.json` | Draw calls, triangles, geometries and textures for each captured state. |
 | `aliasing-check.json` | Sub-pixel camera walk over the road network. |

@@ -90,7 +90,7 @@ test("there is no write affordance and no operator mode", async ({ page }) => {
   await expect(page.locator("main.city")).toContainText("read-only");
 });
 
-test("the city renders honestly dark when the business cannot be read", async ({ page }) => {
+test("the city stands unbuilt when the business cannot be read", async ({ page }) => {
   await open(page, "unavailable");
 
   await expect(page.locator(".city-crest__state")).toHaveAttribute("data-freshness", "unavailable");

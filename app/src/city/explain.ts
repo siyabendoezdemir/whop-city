@@ -55,5 +55,5 @@ export const FRESHNESS_NOTE = {
   live: "Reading the business now.",
   recent: "Reading from a few minutes ago.",
   stale: "Reading from over an hour ago.",
-  unavailable: "The business could not be read, so the city is shown dark.",
+  unavailable: "The business could not be read. Its districts are shown unbuilt.",
 } as const;

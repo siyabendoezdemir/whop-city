@@ -120,7 +120,7 @@ would.
 | `launch` | days old, nothing sold yet | everything rising or unbuilt |
 | `thriving` | large catalogue, strong affiliate reach | all healthy, dense |
 | `struggling` | built then shuttered: nothing visible | struggling and dormant |
-| `unavailable` | the business could not be read | dark, every district dormant |
+| `unavailable` | the business could not be read | every district unbuilt, and the crest says so |
 
 `?scenario=` selects one. The server honours it **only when there is no live
 binding** and ignores the query string entirely otherwise, so it cannot

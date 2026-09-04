@@ -62,7 +62,7 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
     return jsonResponse(serializeProjection(toPublicProjection(snapshot, seed, now)));
   } catch {
     // Never surface the reason. An error string can carry a URL, an id, or a
-    // fragment of an upstream response. The city renders honestly dark.
+    // fragment of an upstream response. The city renders honestly dormant.
     try {
       const seed = await deriveLayoutSeed(null, secret);
       return jsonResponse(serializeProjection(unavailableProjection(seed)));
