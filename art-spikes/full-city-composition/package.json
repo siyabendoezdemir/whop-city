@@ -12,7 +12,9 @@
     "preview": "node capture/preview.mjs",
     "leak-check": "node capture/leak-check.mjs",
     "stats": "node capture/stats.mjs",
-    "shadow-check": "node capture/shadow-check.mjs"
+    "shadow-check": "node capture/shadow-check.mjs",
+    "aliasing-check": "node capture/aliasing-check.mjs",
+    "zfight-check": "node capture/zfight-check.mjs"
   },
   "dependencies": {
     "three": "^0.182.0"

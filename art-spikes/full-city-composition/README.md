@@ -136,8 +136,8 @@ estimated. Run `pnpm stats` to reproduce.
 
 | | Measured | Budget |
 | --- | --- | --- |
-| Draw calls | **159** | ≤ 220 |
-| Triangles | **220,316** | ≤ 250,000 |
+| Draw calls | **158** | ≤ 220 |
+| Triangles | **212,060** | ≤ 250,000 |
 | Geometries | 158 | — |
 | Textures | 15 | — |
 | Parcels | 11 | — |
@@ -146,7 +146,7 @@ estimated. Run `pnpm stats` to reproduce.
 Meshes by group: city ground 25, surroundings 11, parcel ground 7, structures
 45, instanced props 21, actors 49.
 
-Draw calls move between 156 and 159 across the animation cycle, because
+Draw calls move between 155 and 158 across the animation cycle, because
 vehicles are culled while they are crossing the gap the bridge leaves in the
 carriageway. The figure above is the peak, taken by `pnpm capture` and written
 to `artifacts/renderer-stats.json`.
@@ -180,8 +180,11 @@ probed, otherwise Playwright's bundled Chromium is used.
 ```bash
 pnpm capture                      # stills + silhouette + stats + 14.4s MP4
 ART_OUT=/tmp/proof pnpm capture   # same, written elsewhere
+SS=1 pnpm capture                 # without supersampling, for comparison
 pnpm stats                        # renderer figures and per-group breakdown
 pnpm leak-check                   # asserts repeated rebuilds return to baseline
+pnpm aliasing-check               # edge crawl under a sub-pixel camera walk
+pnpm shadow-check                 # shadow rig stability along the fly path
 pnpm preview city                 # one frame; also commerce | forge | creator
 pnpm preview forge out.png 9.5    # framing, path, animation time
 ```
@@ -218,6 +221,56 @@ and a zoom, never an orbit** — `stage.frame(focus, frustumHeight)` moves the
 focus point and the frustum height and nothing else. Every silhouette is
 authored against exactly one view direction, so an orbit would invalidate all of
 them at once.
+
+## Sampling, and why the roads shimmered
+
+Two separate defects made the city shimmer during camera movement. The shadow
+one is below; this is the other, and it was the one that showed on the roads.
+
+A city seen from a fixed isometric angle is mostly very long, very straight,
+high-contrast edges: kerb against asphalt, footway against carriageway, lane
+markings. A long straight near-diagonal edge aliases into a stair pattern that
+crawls along its own length as the camera creeps, and the eye tracks that far
+more readily than the same error on a short edge — which is why the roads
+shimmered while the buildings looked acceptable.
+
+The renderer was pinned to `setPixelRatio(1)`. That also meant a HiDPI display
+drew the canvas at CSS resolution and let the browser stretch it up. It now
+renders above display resolution and lets the downsample average the result,
+defaulting to the device pixel ratio capped at 2. `?ss=<n>` overrides it, and
+every capture script pins it so runs are reproducible.
+
+Two features were also thinner than a pixel at the default framing, which no
+amount of sampling makes stable — 1440×900 over a 95-unit frustum is 9.5 pixels
+per world unit, so anything under about 0.25m cannot be rasterised steadily:
+
+| | Width | On screen | |
+| --- | --- | --- | --- |
+| Paving joints | 0.05m | 0.47px | removed |
+| Lane markings | 0.16m | 1.52px | widened to 0.30m |
+
+The joints are gone rather than widened, because `M.sidewalk` already carries a
+procedural paving-seam texture and that is the right place for detail that fine.
+
+### Verifying it
+
+```bash
+pnpm aliasing-check                        # measure
+SS=1 node capture/aliasing-check.mjs ss1 --video   # and record a magnified clip
+```
+
+The camera is walked across exactly one pixel in eight sub-pixel steps with the
+world frozen, over a crop of a junction and its footways. It counts pixels that
+snap hard between neighbouring steps: an edge that slides through intermediate
+shades is correct, one that jumps is crawling.
+
+| | Hard snaps per step |
+| --- | --- |
+| Before, 1× | 684 px (1.68% of crop) |
+| After, 2× | **121 px (0.30%)** |
+
+It also records a magnified clip of a very slow dolly, which is what makes the
+difference legible rather than merely counted.
 
 ## Shadows are welded to the world, not to the camera
 
