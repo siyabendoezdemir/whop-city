@@ -146,13 +146,87 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
+/** A field the API declares nullable. Present, and either a string or null. */
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+/**
+ * A quantity, in either representation the API uses.
+ *
+ * `toNumber` in `snapshot.ts` accepts a number or a numeric string, so this
+ * accepts exactly those and null. Everything else is refused rather than
+ * normalised: `parseFloat` would quietly turn `"12 members"` into 12 and
+ * `{}` into 0, and a zero invented that way is indistinguishable from a real
+ * one by the time it reaches a district's state.
+ */
+function isNullableQuantity(value: unknown): value is number | string | null {
+  if (value === null) return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && Number.isFinite(Number(trimmed));
+}
+
+/**
+ * An RFC 3339 timestamp, or null.
+ *
+ * The shape is checked as well as the parse, because `Date.parse` is generous
+ * enough to accept `"2026"` and hand back a date a year wide, and the value
+ * decides whether a district reads as `rising`.
+ */
+const RFC3339 = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
+
+function isNullableTimestamp(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== "string") return false;
+  return RFC3339.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+/**
+ * Presence matters, not just type.
+ *
+ * A field the API declares as `string | null` and simply omits is a malformed
+ * response, not a null. Treating the two the same is how `{ id: "prod_1" }`
+ * used to become a complete product with an empty title, an invisible
+ * shopfront and no members — a live city built out of nothing.
+ */
+function has(body: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(body, key);
+}
+
+function field(
+  body: Record<string, unknown>,
+  key: string,
+  check: (value: unknown) => boolean,
+): boolean {
+  return has(body, key) && check(body[key]);
+}
+
+/** `{ id, plan_type }`, or null. Declared on every product. */
+function isDefaultPlan(value: unknown): boolean {
+  if (value === null) return true;
+  if (!isObject(value)) return false;
+  return field(value, "id", isNonEmptyString) && field(value, "plan_type", isNullableString);
+}
+
+/** `{ amount, currency }`, or null. The amount is what becomes a price. */
+function isInitialPrice(value: unknown): boolean {
+  if (value === null) return true;
+  if (!isObject(value)) return false;
+  return field(value, "amount", isNullableQuantity) && field(value, "currency", isNullableString);
+}
+
 /**
  * Validates a list response.
  *
  * The envelope must be an object with a `data` array on it — a missing `data`
  * is a malformed response, not a business with nothing in it — and every item
- * must carry the minimum City needs to identify it. `{ data: [] }` is valid and
- * means exactly what it says.
+ * must carry every field the snapshot reads, in a shape the snapshot can read.
+ * One malformed row fails the whole page: a partially-understood catalogue is
+ * not a smaller catalogue.
+ *
+ * `{ data: [] }` is valid and means exactly what it says.
  */
 function page<T>(read: Read<unknown>, item: (value: unknown) => value is T): Read<T[]> {
   if (!read.ok) return FAILED;
@@ -163,16 +237,31 @@ function page<T>(read: Read<unknown>, item: (value: unknown) => value is T): Rea
 }
 
 function isWhopProduct(value: unknown): value is WhopProduct {
-  return isObject(value) && isNonEmptyString(value.id);
+  if (!isObject(value)) return false;
+  return (
+    field(value, "id", isNonEmptyString) &&
+    field(value, "title", isNullableString) &&
+    field(value, "visibility", isNullableString) &&
+    field(value, "member_count", isNullableQuantity) &&
+    field(value, "created_at", isNullableTimestamp) &&
+    field(value, "default_plan", isDefaultPlan)
+  );
 }
 
 function isWhopPlan(value: unknown): value is WhopPlan {
-  return isObject(value) && isNonEmptyString(value.id);
+  if (!isObject(value)) return false;
+  return (
+    field(value, "id", isNonEmptyString) &&
+    field(value, "plan_type", isNullableString) &&
+    field(value, "visibility", isNullableString) &&
+    field(value, "created_at", isNullableTimestamp) &&
+    field(value, "initial_price", isInitialPrice)
+  );
 }
 
 /**
- * A product detail is only usable if it identifies itself and says something
- * about affiliate state.
+ * A product detail is only usable if it is the product that was asked for and
+ * it says something about affiliate state.
  *
  * The affiliate fields are the entire reason this read exists. A detail that
  * omits `global_affiliate_status` cannot distinguish "affiliates are off" from
@@ -180,9 +269,14 @@ function isWhopPlan(value: unknown): value is WhopPlan {
  * renders Creator Quarter dormant on no evidence.
  */
 function isWhopProductDetail(value: unknown, expectedId: string): value is WhopProductDetail {
-  if (!isObject(value)) return false;
-  if (!isNonEmptyString(value.id) || value.id !== expectedId) return false;
-  return "global_affiliate_status" in value && "member_affiliate_status" in value;
+  if (!isWhopProduct(value)) return false;
+  const body = value as unknown as Record<string, unknown>;
+  if (body.id !== expectedId) return false;
+  return (
+    field(body, "global_affiliate_status", isNullableString) &&
+    field(body, "global_affiliate_percentage", isNullableQuantity) &&
+    field(body, "member_affiliate_status", isNullableString)
+  );
 }
 
 /**

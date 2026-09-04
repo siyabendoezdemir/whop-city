@@ -748,3 +748,259 @@ describe("the scenario allowlist", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// The row schema: every field the snapshot consumes, or the read is refused.
+// ---------------------------------------------------------------------------
+
+describe("upstream rows are validated field by field", () => {
+  const expectUnavailable = async (env: Env = LIVE_ENV) => {
+    const body = await read(env);
+    expect(body.freshness).toBe("unavailable");
+    for (const district of body.districts) {
+      expect(district.state).toBe("dormant");
+      expect(district.signal).toBe("unreadable");
+    }
+  };
+
+  const expectLive = async (env: Env = LIVE_ENV) => {
+    const body = await read(env);
+    expect(body.freshness).toBe("live");
+    return body;
+  };
+
+  function upstream(overrides: { products?: unknown; plans?: unknown; detail?: unknown }) {
+    const pick = (key: keyof typeof overrides, fallback: unknown) =>
+      key in overrides ? overrides[key] : fallback;
+    return async (input: unknown) => {
+      const requested = String(input);
+      if (requested.includes("/products/")) return json(pick("detail", PRODUCT));
+      if (requested.includes("/products")) return json(pick("products", { data: [PRODUCT] }));
+      if (requested.includes("/plans")) return json(pick("plans", { data: [PLAN] }));
+      return json({});
+    };
+  }
+
+  /** Serves one product row, everything else healthy. */
+  const withProduct = (product: unknown) => upstream({ products: { data: [product] }, detail: product });
+  /** Serves one plan row, everything else healthy. */
+  const withPlan = (plan: unknown) => upstream({ plans: { data: [plan] } });
+
+  const refusesProduct = async (label: string, product: unknown) => {
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(withProduct(product));
+    const body = await read(LIVE_ENV);
+    expect(body.freshness, `${label} was accepted`).toBe("unavailable");
+  };
+
+  const refusesPlan = async (label: string, plan: unknown) => {
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(withPlan(plan));
+    const body = await read(LIVE_ENV);
+    expect(body.freshness, `${label} was accepted`).toBe("unavailable");
+  };
+
+  it("refuses the id-only row from the audit", async () => {
+    // The exact reported payload. It used to pass and render a live city out of
+    // a product with no title, no visibility, no members and no date.
+    fetchSpy.mockImplementation(upstream({ products: { data: [{ id: "prod_1" }] } }));
+    await expectUnavailable();
+  });
+
+  it("refuses a product missing any field the snapshot reads", async () => {
+    for (const key of ["id", "title", "visibility", "member_count", "created_at", "default_plan"]) {
+      const { [key]: _dropped, ...without } = PRODUCT as Record<string, unknown>;
+      void _dropped;
+      await refusesProduct(`product without ${key}`, without);
+    }
+  });
+
+  it("refuses a plan missing any field the snapshot reads", async () => {
+    for (const key of ["id", "plan_type", "visibility", "created_at", "initial_price"]) {
+      const { [key]: _dropped, ...without } = PLAN as Record<string, unknown>;
+      void _dropped;
+      await refusesPlan(`plan without ${key}`, without);
+    }
+  });
+
+  it("refuses a non-numeric value where a quantity is read", async () => {
+    // parseFloat would turn each of these into a number and the district state
+    // would follow it.
+    for (const memberCount of [{}, [], true, false, "many", "", "  ", "12 members", "NaN"]) {
+      await refusesProduct(`member_count ${JSON.stringify(memberCount)}`, {
+        ...PRODUCT,
+        member_count: memberCount,
+      });
+    }
+  });
+
+  it("accepts a quantity in either representation the api uses", async () => {
+    for (const memberCount of [12, 0, "12", "12.5", null]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(withProduct({ ...PRODUCT, member_count: memberCount }));
+      const body = await read(LIVE_ENV);
+      expect(body.freshness, `member_count ${JSON.stringify(memberCount)} was refused`).toBe("live");
+    }
+  });
+
+  it("refuses a malformed date where a timestamp is read", async () => {
+    for (const createdAt of ["", "not a date", "2026", "2026-13-45T99:99:99Z", 1767225600000, {}, true]) {
+      await refusesProduct(`created_at ${JSON.stringify(createdAt)}`, {
+        ...PRODUCT,
+        created_at: createdAt,
+      });
+    }
+  });
+
+  it("accepts a well-formed timestamp or null", async () => {
+    for (const createdAt of ["2026-01-01T00:00:00Z", "2026-01-01T00:00:00.123+02:00", null]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(withProduct({ ...PRODUCT, created_at: createdAt }));
+      const body = await read(LIVE_ENV);
+      expect(body.freshness, `created_at ${JSON.stringify(createdAt)} was refused`).toBe("live");
+    }
+  });
+
+  it("refuses a wrong type where a nullable string is read", async () => {
+    for (const key of ["title", "visibility"]) {
+      for (const value of [7, true, {}, [], undefined]) {
+        await refusesProduct(`${key} ${JSON.stringify(value)}`, { ...PRODUCT, [key]: value });
+      }
+    }
+  });
+
+  it("refuses a malformed default plan", async () => {
+    for (const defaultPlan of [
+      {},
+      { id: "" },
+      { id: 7, plan_type: null },
+      { id: "plan_1" },
+      { id: "plan_1", plan_type: 7 },
+      "plan_1",
+      [],
+      true,
+    ]) {
+      await refusesProduct(`default_plan ${JSON.stringify(defaultPlan)}`, {
+        ...PRODUCT,
+        default_plan: defaultPlan,
+      });
+    }
+  });
+
+  it("accepts a well-formed default plan or null", async () => {
+    for (const defaultPlan of [null, { id: "plan_1", plan_type: "renewal" }, { id: "plan_1", plan_type: null }]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(withProduct({ ...PRODUCT, default_plan: defaultPlan }));
+      expect((await read(LIVE_ENV)).freshness).toBe("live");
+    }
+  });
+
+  it("refuses a malformed initial price", async () => {
+    for (const initialPrice of [
+      {},
+      { amount: "10.00" },
+      { currency: "usd" },
+      { amount: {}, currency: "usd" },
+      { amount: "ten", currency: "usd" },
+      { amount: "10.00", currency: 7 },
+      "10.00",
+      [],
+      true,
+    ]) {
+      await refusesPlan(`initial_price ${JSON.stringify(initialPrice)}`, {
+        ...PLAN,
+        initial_price: initialPrice,
+      });
+    }
+  });
+
+  it("accepts a well-formed initial price or null", async () => {
+    for (const initialPrice of [
+      null,
+      { amount: "10.00", currency: "usd" },
+      { amount: 10, currency: null },
+      { amount: null, currency: "usd" },
+    ]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(withPlan({ ...PLAN, initial_price: initialPrice }));
+      expect((await read(LIVE_ENV)).freshness).toBe("live");
+    }
+  });
+
+  it("refuses a detail missing any affiliate field it exists to fetch", async () => {
+    for (const key of [
+      "global_affiliate_status",
+      "global_affiliate_percentage",
+      "member_affiliate_status",
+    ]) {
+      const { [key]: _dropped, ...without } = PRODUCT as Record<string, unknown>;
+      void _dropped;
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(upstream({ detail: without }));
+      const body = await read(LIVE_ENV);
+      expect(body.freshness, `detail without ${key} was accepted`).toBe("unavailable");
+    }
+  });
+
+  it("refuses a detail whose affiliate fields are the wrong type", async () => {
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(upstream({ detail: { ...PRODUCT, global_affiliate_status: 1 } }));
+    expect((await read(LIVE_ENV)).freshness).toBe("unavailable");
+
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(
+      upstream({ detail: { ...PRODUCT, global_affiliate_percentage: "twenty" } }),
+    );
+    expect((await read(LIVE_ENV)).freshness).toBe("unavailable");
+  });
+
+  it("refuses a detail for a different product", async () => {
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(upstream({ detail: { ...PRODUCT, id: "prod_SOMEONE_ELSE" } }));
+    expect((await read(LIVE_ENV)).freshness).toBe("unavailable");
+  });
+
+  it("refuses the whole page when one row of many is malformed", async () => {
+    // A partially-understood catalogue is not a smaller catalogue.
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(
+      upstream({ products: { data: [PRODUCT, { id: "prod_2" }, PRODUCT] } }),
+    );
+    expect((await read(LIVE_ENV)).freshness).toBe("unavailable");
+  });
+
+  it("keeps every nullable field nullable on a live read", async () => {
+    const sparse = {
+      ...PRODUCT,
+      title: null,
+      visibility: null,
+      member_count: null,
+      created_at: null,
+      default_plan: null,
+      global_affiliate_status: null,
+      global_affiliate_percentage: null,
+      member_affiliate_status: null,
+    };
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(
+      upstream({
+        products: { data: [sparse] },
+        detail: sparse,
+        plans: { data: [{ ...PLAN, plan_type: null, visibility: null, created_at: null, initial_price: null }] },
+      }),
+    );
+    const body = await expectLive();
+    // A real product nobody has bought, with nothing published about it.
+    expect(body.districts.every((d: { state: string }) => d.state !== "healthy")).toBe(true);
+  });
+
+  it("keeps a well-formed empty page live and genuinely empty", async () => {
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(async () => json({ data: [] }));
+    const body = await expectLive();
+    for (const district of body.districts) {
+      expect(district.state).toBe("dormant");
+      expect(district.signal).toBe("unbuilt");
+    }
+  });
+});

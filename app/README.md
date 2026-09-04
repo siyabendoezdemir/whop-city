@@ -182,18 +182,36 @@ account on it are all `ok: false`, and any one of them on a mandatory read makes
 the whole capture fail and the city render unavailable.
 
 **A 200 is not on its own a success.** Every mandatory response is checked
-against the shape City actually needs, because the failure modes that matter are
-quiet ones:
+against the shape City actually needs, envelope *and* rows, because the failure
+modes that matter are quiet ones.
 
-| response | why it is refused |
+The envelope must be an object with a `data` array on it — a missing `data` is
+malformed, not an empty business — and every row must carry every field the
+snapshot reads, in a shape the snapshot can read:
+
+| row | validated |
 | --- | --- |
-| `{}` from products or plans | a missing `data` array is malformed, not an empty business |
-| `data` that is not an array, or items with no `id` | nothing usable to identify |
-| `{}` from a product detail | the affiliate fields are the reason the read exists; without them "off" and "unknown" are indistinguishable, and the projection would quietly pick "off" |
-| a detail whose `id` is not the one asked for | one product's affiliate state would attach to another |
-| an app response with no `account.id` | the deployment is not wired to a business |
+| product | `id` non-empty string · `title`, `visibility` string or null · `member_count` quantity or null · `created_at` RFC 3339 or null · `default_plan` null or `{ id, plan_type }` |
+| plan | `id` non-empty string · `plan_type`, `visibility` string or null · `created_at` RFC 3339 or null · `initial_price` null or `{ amount, currency }` |
+| product detail | every product field, plus `global_affiliate_status` and `member_affiliate_status` string or null and `global_affiliate_percentage` quantity or null, and the `id` must be the one that was requested |
 
-`{ "data": [] }` is valid and stays a **live**, genuinely empty result.
+Presence is checked, not only type: a field the API declares as `string | null`
+and simply omits is a malformed response rather than a null. `{ id: "prod_1" }`
+would otherwise become a complete product with an empty title, an invisible
+shopfront and no members — a live city built out of nothing.
+
+A "quantity" is a finite number or a cleanly numeric string, matching what
+`toNumber` accepts. Everything else is refused rather than normalised:
+`parseFloat` would quietly turn `"12 members"` into 12 and `{}` into 0, and a
+zero invented that way is indistinguishable from a real one by the time it
+decides a district's state. Timestamps are shape-checked as well as parsed,
+because `Date.parse` accepts `"2026"` and hands back a date a year wide.
+
+One malformed row fails the whole page: a partially-understood catalogue is not
+a smaller catalogue.
+
+`{ "data": [] }` is valid and stays a **live**, genuinely empty result, and so
+is a row whose nullable fields are all genuinely null.
 
 A business that genuinely has nothing in it is the opposite: a successful read,
 a **live** city with every district `dormant` and signalling `unbuilt`. The
