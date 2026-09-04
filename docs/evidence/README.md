@@ -48,3 +48,40 @@ The reading is understandable though. At the wide framing a car is roughly
 twelve pixels across and a canopy sways two or three, so at a glance the city
 reads more still than it is. That is a composition question about the default
 zoom rather than a bug, and it is worth a decision rather than a silent tweak.
+
+## The operator session (`pnpm capture:play`)
+
+A recorded playthrough. Every scenario named below is a **fixture**, not a live
+business: `pnpm build:fixtures` serves deterministic states so each condition
+can be shown. A live deployment runs the same code with a real projection.
+
+Captured at 1440×900, supersampling 1.
+
+| Frame | Scenario | What it shows |
+| --- | --- | --- |
+| `play-1-orientation` | struggling | First visit: whose business the city depicts, and that local actions do not operate it |
+| `play-2-signal` | struggling | Two districts reading wrong, one never built on — before reading a word of panel |
+| `play-3-reading` | struggling | The reading, its ambiguity, and the limit of what City can know |
+| `play-4-finding` | struggling | A finding recorded; an action lands in the plan |
+| `play-5-worked` | struggling | **The key frame.** Worked and still reading wrong: two chips, and the hazard beacon still standing |
+| `play-6-optional` | struggling | Affiliates asked about rather than assumed |
+| `play-7-declined` | struggling | "Deliberately not" recorded as a decision |
+| `play-8-blank` | blank | A brand-new business gets a different session |
+| `play-9-decision` | blank | A branching pricing decision, not a checklist |
+| `play-10-branch` | blank | The answer chose what comes next |
+| `play-11-plan` | thriving | The round finishes; the plan is the payoff |
+| `play-12-return` | struggling | Returning to a changed reading: kept, flagged, not claimed as caused |
+| `play-13-unavailable` | unavailable | No reading, so no work proposed |
+
+`city-playthrough.mp4` — 33.6s, the thirteen beats in order.
+
+### Renderer, measured at the default framing
+
+| Scenario | Draw calls | Triangles |
+| --- | --- | --- |
+| struggling | 133 | 151,530 |
+| thriving | 152 | 213,910 |
+| blank | 136 | 152,178 |
+| unavailable | 121 | 151,602 |
+
+Budgets are 220 draw calls and 250,000 triangles.

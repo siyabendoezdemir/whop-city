@@ -323,53 +323,73 @@ Measured on the built app, worst case across all eight captured states:
 
 `artifacts/renderer-stats.json` carries the per-state figures.
 
-## The operator loop
+## The session
 
-The world owns the viewport. Everything else is edge-anchored and exists to
-answer three questions in order: what needs attention, why, and what to do next.
+The city is played in rounds. A round is named after what the city is actually
+showing — "Find what is not adding up" over a business reading wrong, "Build out
+the city" over an empty one — and joins the districts into one objective.
 
-```
-signal  ──►  focus  ──►  review  ──►  progression
-markers      briefing     moves        resolved, and change noticed
-+ queue      + camera     ticked       next time the city reads differently
-```
+**Signal.** Every district carries two marks. A *condition mark* is what Whop
+reported: survey stakes and a string line where nothing was built, a strobing
+mast with a hazard chevron where a district reads wrong, a turning scaffold ring
+over recent work, a low steady lamp where nothing is wrong, a blank question
+plate where City could not read at all. A *progress mark* is what the player did:
+a check plate, a cross plate for a deliberate no, a question pennant when the
+reading has changed since. They are separate objects, so local progress can never
+make a struggling business look healthy. Districts are selectable by their whole
+area, through an invisible ground proxy; the architecture stays merged.
 
-**Signal.** Every district carries a lit mast in the world. The lamp's colour
-and pulse say how much it wants looking at, and `city/attention.ts` decides
-that from the projection's existing `state`, `direction` and `signal` — a
-shuttered district is `urgent`, an unbuilt one an `opportunity`, one under
-construction `watch`, a healthy one that is cooling `watch` too. Nothing was
-added to the wire for this. The same ranking drives the queue at the edge of the
-screen, so the city and the interface never disagree about what matters.
+**Focus.** Click a district in the world, pick it from the queue, or press its
+number. `F` jumps to the next one asking for attention. `P` opens the plan.
 
-The mast is physical and depth-tested; the lamp on top is not. A marker hidden
-behind a tower is a district that cannot be picked, and an operator has to be
-able to see what is asking for them.
+**Work.** Each district has its own mechanic, chosen for its subject.
+Commerce Core runs guided audits that record findings. Offer Forge asks branching
+questions about the shape of the pricing surface, because pricing is easier to
+decide than to change. Creator Quarter opens by asking whether affiliates are
+wanted at all — "deliberately not" ends the district as decided, not skipped.
+Answers are the operator's own report: unverified, and never sent anywhere.
 
-**Focus.** Clicking the mast selects the district — a raycast against the
-markers, not the architecture, which is merged per material and could only say
-which *material* was hit. The camera glides in and the briefing opens. The
-queue, the keys `1`–`3`, and `F` for the next thing asking all reach the same
-place.
+**Payoff.** Finishing produces a plan — the actions, decisions, findings and
+passed checks from the round, grouped by district, copyable as text with every
+line marked as reported rather than observed.
 
-**Review.** A briefing is what the city shows, what the district is for, and two
-to four moves. `city/playbook.ts` holds them, and the discipline of that file is
-that **every move is a check the operator runs in Whop themselves**. City knows
-a district is struggling and has never seen a product title, a price, a member
-count or a date. So a move may say *"open your plans and confirm at least one is
-visible"*. It may never say *"your plans are hidden"* — that would be City
-asserting a fact about a business it cannot see. `tests/playbook.test.ts`
-asserts no digit, no currency and no count appears anywhere in that copy.
+**Return.** Come back and the city may read differently. Notes are kept and
+flagged as recorded under an older reading. Nothing claims the work caused the
+change, because City cannot know that.
 
-**Progression.** Marking moves fills a district and then resolves it: the mast
-stops asking, the queue says reviewed, a pip fills. The log is local to the
-browser and keyed by the opaque seed, so two businesses opened in the same
-browser stay apart. It says *"kept in this browser, not sent to Whop, and not a
-record that the work was done"* at the point of the click. If the city later
-reads a district differently than when it was reviewed, the briefing says so —
-and says City cannot tell you why, because it cannot.
+## Where every fact comes from
 
-### What the numbers rule is now
+Three provenances, kept apart in storage, in language, and in the world:
+
+| | Source | Shown as |
+| --- | --- | --- |
+| observed | The Whop API, through this deployment's own credential | "From Whop" |
+| reported | The operator's answer. Unverified, never transmitted | "You told City" |
+| local | Game progress in this browser | "This browser" |
+
+There is no simulation. Nothing in the interface is invented to look like data.
+
+## What City is entitled to say
+
+`src/city/evidence.ts` is the record of what each state word means in terms of
+the server derivation that produced it. The one that matters: `struggling` comes
+from two different conditions — nothing marked visible, or nothing showing
+activity — and the projection does not carry which. The reading names both.
+
+City reads the Whop API. It does not browse the storefront and does not try a
+purchase, so it never reports an outcome it did not observe. `tests/evidence.test.ts`
+proves this structurally: it builds snapshots, runs the real derivation, and
+asserts the state that comes out is the one the copy claims that observation
+produces.
+
+## Numbers
+
+The only digits in the interface are counts of the operator's own progress,
+marked `data-local="true"`. Everything derived from the business is a word,
+because the projection carries no numbers to show. A browser test strips the
+local elements and asserts no digit survives.
+
+## What the numbers rule is now
 
 `tests/browser/shell.spec.ts` used to assert no digit appeared anywhere in the
 shell. It now asserts something more precise: **nothing derived from the
