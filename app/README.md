@@ -204,8 +204,11 @@ A "quantity" is a finite number or a cleanly numeric string, matching what
 `toNumber` accepts. Everything else is refused rather than normalised:
 `parseFloat` would quietly turn `"12 members"` into 12 and `{}` into 0, and a
 zero invented that way is indistinguishable from a real one by the time it
-decides a district's state. Timestamps are shape-checked as well as parsed,
-because `Date.parse` accepts `"2026"` and hands back a date a year wide.
+decides a district's state. Timestamps are checked for shape *and* calendar, and
+`Date.parse` is not consulted at all: it accepts `"2026"`, and it silently rolls
+an impossible date forward, so `2026-02-29` arrives as March 1st. Every
+component is range-checked and the day is checked against the real length of its
+month in its own year.
 
 One malformed row fails the whole page: a partially-understood catalogue is not
 a smaller catalogue.

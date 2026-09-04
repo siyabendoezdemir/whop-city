@@ -1004,3 +1004,145 @@ describe("upstream rows are validated field by field", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Timestamps: shape and calendar, not Date.parse.
+// ---------------------------------------------------------------------------
+
+describe("timestamps are calendar-strict", () => {
+  function upstream(overrides: { products?: unknown; plans?: unknown; detail?: unknown }) {
+    const pick = (key: keyof typeof overrides, fallback: unknown) =>
+      key in overrides ? overrides[key] : fallback;
+    return async (input: unknown) => {
+      const requested = String(input);
+      if (requested.includes("/products/")) return json(pick("detail", PRODUCT));
+      if (requested.includes("/products")) return json(pick("products", { data: [PRODUCT] }));
+      if (requested.includes("/plans")) return json(pick("plans", { data: [PLAN] }));
+      return json({});
+    };
+  }
+
+  /** The same timestamp on a product row, and separately on a plan row. */
+  const freshnessFor = async (createdAt: unknown, row: "product" | "plan") => {
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(
+      row === "product"
+        ? upstream({
+            products: { data: [{ ...PRODUCT, created_at: createdAt }] },
+            detail: { ...PRODUCT, created_at: createdAt },
+          })
+        : upstream({ plans: { data: [{ ...PLAN, created_at: createdAt }] } }),
+    );
+    return (await read(LIVE_ENV)).freshness;
+  };
+
+  const rejects = async (createdAt: unknown, why: string) => {
+    for (const row of ["product", "plan"] as const) {
+      expect(await freshnessFor(createdAt, row), `${row}: ${why} (${String(createdAt)})`).toBe(
+        "unavailable",
+      );
+    }
+  };
+
+  const accepts = async (createdAt: unknown) => {
+    for (const row of ["product", "plan"] as const) {
+      expect(await freshnessFor(createdAt, row), `${row}: ${String(createdAt)} was refused`).toBe(
+        "live",
+      );
+    }
+  };
+
+  it("rejects the dates javascript would roll over", async () => {
+    // The audit's three. Date.parse accepts every one of them and hands back a
+    // date in the following month, which then feeds the recency buckets.
+    await rejects("2026-02-29T00:00:00Z", "2026 is not a leap year");
+    await rejects("2026-02-30T00:00:00Z", "february never has 30 days");
+    await rejects("2026-04-31T00:00:00Z", "april has 30 days");
+  });
+
+  it("knows which years february has 29 days in", async () => {
+    await accepts("2024-02-29T00:00:00Z"); // divisible by 4
+    await rejects("2025-02-29T00:00:00Z", "not a leap year");
+    await accepts("2000-02-29T00:00:00Z"); // divisible by 400
+    await rejects("1900-02-29T00:00:00Z", "divisible by 100 but not 400");
+    await accepts("2024-02-28T00:00:00Z");
+  });
+
+  it("rejects an impossible month or day", async () => {
+    await rejects("2026-00-10T00:00:00Z", "month 0");
+    await rejects("2026-13-10T00:00:00Z", "month 13");
+    await rejects("2026-01-00T00:00:00Z", "day 0");
+    await rejects("2026-01-32T00:00:00Z", "january has 31 days");
+    await rejects("2026-06-31T00:00:00Z", "june has 30 days");
+    await rejects("2026-09-31T00:00:00Z", "september has 30 days");
+    await rejects("2026-11-31T00:00:00Z", "november has 30 days");
+  });
+
+  it("accepts the last day of every month", async () => {
+    for (const [month, day] of [
+      ["01", "31"], ["02", "28"], ["03", "31"], ["04", "30"], ["05", "31"], ["06", "30"],
+      ["07", "31"], ["08", "31"], ["09", "30"], ["10", "31"], ["11", "30"], ["12", "31"],
+    ]) {
+      expect(
+        await freshnessFor(`2026-${month}-${day}T12:00:00Z`, "product"),
+        `2026-${month}-${day} was refused`,
+      ).toBe("live");
+    }
+  });
+
+  it("rejects an impossible time of day", async () => {
+    await rejects("2026-01-01T24:00:00Z", "hour 24");
+    await rejects("2026-01-01T99:00:00Z", "hour 99");
+    await rejects("2026-01-01T00:60:00Z", "minute 60");
+    await rejects("2026-01-01T00:00:60Z", "second 60");
+    await rejects("2026-01-01T00:00:99Z", "second 99");
+  });
+
+  it("accepts the edges of a valid time of day", async () => {
+    await accepts("2026-01-01T00:00:00Z");
+    await accepts("2026-01-01T23:59:59Z");
+  });
+
+  it("rejects a malformed or out-of-range offset", async () => {
+    await rejects("2026-01-01T00:00:00", "no offset at all");
+    await rejects("2026-01-01T00:00:00+24:00", "offset hour 24");
+    await rejects("2026-01-01T00:00:00+00:60", "offset minute 60");
+    await rejects("2026-01-01T00:00:00+0100", "offset without a colon");
+    await rejects("2026-01-01T00:00:00+1:00", "one-digit offset hour");
+    await rejects("2026-01-01T00:00:00 Z", "space before the offset");
+  });
+
+  it("accepts utc and explicit offsets", async () => {
+    await accepts("2026-01-01T00:00:00Z");
+    await accepts("2026-01-01T00:00:00z");
+    await accepts("2026-01-01T00:00:00+00:00");
+    await accepts("2026-06-15T09:30:00-07:00");
+    await accepts("2026-06-15T09:30:00+23:59");
+  });
+
+  it("accepts fractional seconds only where they are well formed", async () => {
+    await accepts("2026-01-01T00:00:00.1Z");
+    await accepts("2026-01-01T00:00:00.123Z");
+    await accepts("2026-01-01T00:00:00.123456+02:00");
+    await rejects("2026-01-01T00:00:00.Z", "a dot with no digits");
+    await rejects("2026-01-01T00:00:00,123Z", "a comma instead of a dot");
+  });
+
+  it("still accepts a genuinely null created_at", async () => {
+    await accepts(null);
+  });
+
+  it("still refuses a non-string created_at", async () => {
+    await rejects(1767225600000, "an epoch number");
+    await rejects({}, "an object");
+    await rejects("", "an empty string");
+    await rejects("2026", "a bare year");
+    await rejects("2026-01-01", "a date with no time");
+  });
+
+  it("keeps a well-formed empty page live", async () => {
+    resetSnapshotCache();
+    fetchSpy.mockImplementation(async () => json({ data: [] }));
+    expect((await read(LIVE_ENV)).freshness).toBe("live");
+  });
+});

@@ -171,16 +171,51 @@ function isNullableQuantity(value: unknown): value is number | string | null {
 /**
  * An RFC 3339 timestamp, or null.
  *
- * The shape is checked as well as the parse, because `Date.parse` is generous
- * enough to accept `"2026"` and hand back a date a year wide, and the value
- * decides whether a district reads as `rising`.
+ * Shape *and* calendar. A pattern match alone accepts `2026-02-29`, and
+ * `Date.parse` does not reject it either — JavaScript silently rolls an
+ * impossible date forward, so February 30th arrives as March 2nd and a
+ * timestamp the API never meant to send ends up deciding whether a district
+ * reads as `rising`. `Date.parse` is therefore not consulted at all here: every
+ * component is range-checked, and the day is checked against the real length of
+ * its month in its own year.
  */
-const RFC3339 = /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
+const RFC3339 =
+  /^(\d{4})-(\d{2})-(\d{2})[Tt ](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|([+-])(\d{2}):(\d{2}))$/;
+
+function isLeapYear(year: number): boolean {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) return isLeapYear(year) ? 29 : 28;
+  return month === 4 || month === 6 || month === 9 || month === 11 ? 30 : 31;
+}
 
 function isNullableTimestamp(value: unknown): value is string | null {
   if (value === null) return true;
   if (typeof value !== "string") return false;
-  return RFC3339.test(value) && !Number.isNaN(Date.parse(value));
+
+  const match = RFC3339.exec(value);
+  if (!match) return false;
+
+  const [, year, month, day, hour, minute, second, , , , offsetHour, offsetMinute] = match;
+
+  const y = Number(year);
+  const mo = Number(month);
+  const d = Number(day);
+  if (mo < 1 || mo > 12) return false;
+  if (d < 1 || d > daysInMonth(y, mo)) return false;
+
+  // Leap seconds are legal RFC 3339 but nothing upstream emits one, and
+  // accepting 60 would mean accepting it on any minute of any day.
+  if (Number(hour) > 23 || Number(minute) > 59 || Number(second) > 59) return false;
+
+  // A numeric offset, when present, has its own ranges.
+  if (offsetHour !== undefined) {
+    if (Number(offsetHour) > 23 || Number(offsetMinute) > 59) return false;
+  }
+
+  return true;
 }
 
 /**
