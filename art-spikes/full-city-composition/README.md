@@ -270,7 +270,12 @@ shades is correct, one that jumps is crawling.
 | After, 2× | **121 px (0.30%)** |
 
 It also records a magnified clip of a very slow dolly, which is what makes the
-difference legible rather than merely counted.
+difference legible rather than merely counted. Watched at eight frames per pixel
+of camera travel, the 1× edges snap between hard pixel states and the whole
+length of every kerb and lane marking ripples; the 2× edges slide through
+intermediate shades and stay put. The obvious risk of supersampling — trading
+crawl for mush — did not materialise: the softer edges do not read as blur and
+no detail is lost.
 
 ## Shadows are welded to the world, not to the camera
 
