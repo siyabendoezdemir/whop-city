@@ -1,0 +1,66 @@
+{
+  "city-default.png": {
+    "drawCalls": 148,
+    "triangles": 212924,
+    "geometries": 148,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 902
+  },
+  "city-commerce-core.png": {
+    "drawCalls": 133,
+    "triangles": 205432,
+    "geometries": 148,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 902
+  },
+  "city-offer-forge.png": {
+    "drawCalls": 115,
+    "triangles": 198132,
+    "geometries": 148,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 902
+  },
+  "city-creator-quarter.png": {
+    "drawCalls": 115,
+    "triangles": 202544,
+    "geometries": 148,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 902
+  },
+  "state-rising.png": {
+    "drawCalls": 135,
+    "triangles": 174900,
+    "geometries": 135,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 872
+  },
+  "state-thriving.png": {
+    "drawCalls": 143,
+    "triangles": 213110,
+    "geometries": 144,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 824
+  },
+  "state-struggling.png": {
+    "drawCalls": 117,
+    "triangles": 148434,
+    "geometries": 118,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 790
+  },
+  "state-unavailable.png": {
+    "drawCalls": 112,
+    "triangles": 149418,
+    "geometries": 113,
+    "textures": 15,
+    "parcels": 11,
+    "propInstances": 776
+  }
+}
