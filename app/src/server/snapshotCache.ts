@@ -8,27 +8,33 @@
  * attached. So two things happen here, and only these two:
  *
  *  - **Single flight.** Concurrent requests that resolve to the same deployment
- *    wait on one capture instead of starting their own.
- *  - **A short TTL.** The result is reused for a few seconds afterwards.
+ *    wait on one capture instead of starting their own. An entry that is still
+ *    running is shared no matter how long it has been running: the window is
+ *    measured from when a capture *finishes*, never from when it started, or a
+ *    capture slower than the window would be joined by a second fan-out at
+ *    exactly the moment the upstream is least able to take one.
+ *  - **A short TTL after success.** A settled result is reused for a few
+ *    seconds. Nothing else is retained: a rejection is dropped the instant it
+ *    settles, and so is a result the caller declines to retain — which is how a
+ *    capture that failed its mandatory reads avoids being served as a stable
+ *    answer for the rest of the window.
  *
  * Deliberately not a shared or CDN cache. The value is one business's city, and
  * the entry is keyed by deployment context and held in this isolate's memory
- * only; the response itself stays `no-store`. A shared cache in front of this
- * endpoint would be a way to serve one business's city to another, which is the
- * one failure this whole boundary exists to prevent.
+ * only; the response itself stays `private, no-store`. A shared cache in front
+ * of this endpoint would be a way to serve one business's city to another,
+ * which is the one failure this whole boundary exists to prevent.
  *
- * The clock is a parameter rather than `Date.now()` so expiry is testable
- * without waiting for it.
+ * The clock is injectable so expiry is testable without waiting for it.
  */
 
 /** Short enough that a state change shows up promptly; long enough to matter. */
 export const SNAPSHOT_TTL_MS = 10_000;
 
 type Entry<T> = {
-  /** In flight, or settled and being reused until `expiresAt`. */
   promise: Promise<T>;
-  expiresAt: number;
-  settled: boolean;
+  /** Null while the producer is still running. Set once it settles happily. */
+  expiresAt: number | null;
 };
 
 const entries = new Map<string, Entry<unknown>>();
@@ -43,39 +49,56 @@ export function snapshotCacheSize(): number {
   return entries.size;
 }
 
-/**
- * Runs `produce` at most once per key per TTL, coalescing concurrent callers.
- *
- * A rejected capture is not retained: the entry is dropped as soon as it
- * settles unhappily, so a transient upstream failure cannot be served as a
- * result for the rest of the window. Callers already in flight still share that
- * one attempt, which is the point — a failing upstream must not be amplified
- * either.
- */
+export type SingleFlightOptions<T> = {
+  /** Defaults to the wall clock. Tests supply their own. */
+  clock?: () => number;
+  ttlMs?: number;
+  /**
+   * Whether a settled value is worth keeping.
+   *
+   * Defaults to keeping everything. The route declines to keep an unavailable
+   * projection, so a failed capture is retried on the next request rather than
+   * pinned for the window — while callers already waiting on it still share
+   * that one attempt.
+   */
+  retain?: (value: T) => boolean;
+};
+
 export async function withSingleFlight<T>(
   key: string,
-  now: number,
   produce: () => Promise<T>,
-  ttlMs: number = SNAPSHOT_TTL_MS,
+  options: SingleFlightOptions<T> = {},
 ): Promise<T> {
-  const existing = entries.get(key);
-  if (existing && existing.expiresAt > now) return existing.promise as Promise<T>;
+  const clock = options.clock ?? Date.now;
+  const ttlMs = options.ttlMs ?? SNAPSHOT_TTL_MS;
+  const retain = options.retain ?? (() => true);
 
-  const entry: Entry<T> = {
-    promise: produce(),
-    expiresAt: now + ttlMs,
-    settled: false,
-  };
+  const existing = entries.get(key);
+  if (existing) {
+    // In flight: join it, however long it has been going.
+    if (existing.expiresAt === null) return existing.promise as Promise<T>;
+    // Settled and still fresh.
+    if (existing.expiresAt > clock()) return existing.promise as Promise<T>;
+  }
+
+  const entry: Entry<T> = { promise: produce(), expiresAt: null };
   entries.set(key, entry as Entry<unknown>);
+
+  /** Only evict if this entry is still the one in the map. */
+  const evict = () => {
+    if (entries.get(key) === (entry as Entry<unknown>)) entries.delete(key);
+  };
 
   try {
     const value = await entry.promise;
-    entry.settled = true;
+    if (retain(value)) {
+      entry.expiresAt = clock() + ttlMs;
+    } else {
+      evict();
+    }
     return value;
   } catch (error) {
-    // Drop it, but only if it is still ours: a later caller may have replaced
-    // the entry after expiry and that one is not this failure's to evict.
-    if (entries.get(key) === (entry as Entry<unknown>)) entries.delete(key);
+    evict();
     throw error;
   }
 }

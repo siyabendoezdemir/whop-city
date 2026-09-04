@@ -132,18 +132,43 @@ explicitly opted into fixtures** — see below.
 | condition | source | what the browser sees |
 | --- | --- | --- |
 | `WHOP_API_ORIGIN` bound **and** `CITY_SEED_SECRET` usable | **live** | the real business |
-| no origin, but `CITY_FIXTURES` is set | **fixture** | the named scenario |
+| fixtures compiled in **and** `CITY_FIXTURES` set | **fixture** | the named scenario |
 | neither | **none** | the unavailable city: every district dormant, `freshness: "unavailable"` |
-
-The third row is the one that matters for deployment. Fixtures used to be the
-fallback, which meant a hosted City whose binding was missing or renamed would
-answer with a healthy invented business and label it "Reading the business now".
-Fixtures are now opt-in: `CITY_FIXTURES` lives in `.dev.vars`, which wrangler
-reads for the local worker and never uploads, so a deployed City cannot serve
-invented state even if every other binding is wrong.
 
 Unknown scenario values fall back to the default silently rather than echoing
 back, and in live mode the query string is not read at all.
+
+### Fixtures are a build-time capability, not a runtime flag
+
+There are two builds:
+
+```bash
+pnpm build            # deployable. No fixtures in it at all.
+pnpm build:fixtures   # local visual work. vite build --mode fixtures
+```
+
+`vite.config.ts` replaces `__CITY_FIXTURES_BUILD__` with a literal. In a
+deployable build it is `false`, so the fixture branch is dead code, and because
+the scenario *names* live in `scenarios.ts` rather than `fixtures.ts` nothing
+else references the fixture module — the bundler drops it, and the invented
+business data with it. `tests/browser/production-build.spec.ts` greps the
+deployable bundle for `fixture_account_`, `fixture_product_` and
+`Fixture product` and requires all three absent.
+
+`CITY_FIXTURES` is still needed on top of that, but only to decide whether a
+build that *has* fixtures shows them. It cannot switch them on in a build that
+does not.
+
+This is the enforcement boundary, and it replaces an earlier version that relied
+on `.dev.vars` not being uploaded. That is a convention, not a boundary: a
+hosted deployment that acquired the variable by any other route could have
+published an invented city as live. The regression test is the case where the
+binding genuinely *is* present — `.dev.vars` still sets `CITY_FIXTURES=1` for
+the local worker — and a production build ignores it, returning the unavailable
+city and never `freshness: live`.
+
+`pnpm capture`, `pnpm capture:fly` and `pnpm test:browser:fixtures` all need
+`pnpm build:fixtures` first. `pnpm test:browser:production` needs `pnpm build`.
 
 Without a live binding **no outbound request is attempted** — not a failed one,
 not a timeout.
@@ -155,6 +180,20 @@ collapse into the same `[]` on the way up. A refused connection, a timeout, a
 non-OK status including 401 and 403, an unparseable body, or a 200 with no
 account on it are all `ok: false`, and any one of them on a mandatory read makes
 the whole capture fail and the city render unavailable.
+
+**A 200 is not on its own a success.** Every mandatory response is checked
+against the shape City actually needs, because the failure modes that matter are
+quiet ones:
+
+| response | why it is refused |
+| --- | --- |
+| `{}` from products or plans | a missing `data` array is malformed, not an empty business |
+| `data` that is not an array, or items with no `id` | nothing usable to identify |
+| `{}` from a product detail | the affiliate fields are the reason the read exists; without them "off" and "unknown" are indistinguishable, and the projection would quietly pick "off" |
+| a detail whose `id` is not the one asked for | one product's affiliate state would attach to another |
+| an app response with no `account.id` | the deployment is not wired to a business |
+
+`{ "data": [] }` is valid and stays a **live**, genuinely empty result.
 
 A business that genuinely has nothing in it is the opposite: a successful read,
 a **live** city with every district `dormant` and signalling `unbuilt`. The
@@ -171,15 +210,23 @@ we could not look.
 `/api/city/snapshot` is public and unauthenticated, and one call fans out into
 up to twenty-seven upstream reads. `server/snapshotCache.ts` puts two things in
 front of that and nothing else: concurrent requests resolving to the same
-deployment wait on one capture, and the result is reused for a bounded ten
-seconds.
+deployment wait on one capture, and a **successful** result is reused for a
+bounded ten seconds.
+
+The window is measured from when a capture *settles*, never from when it
+started. An in-flight entry is shared however long it runs — measuring from the
+start meant a capture slower than the window got joined by a second upstream
+fan-out at exactly the moment the upstream was least able to take one.
 
 It is deliberately not a shared or CDN cache. Entries are keyed by deployment
 context built from bindings only — never from anything a caller sends — and held
 in the isolate's memory, and the response is `private, no-store, max-age=0`. A
 shared cache in front of this endpoint would be a way to serve one business's
-city to another. A failed capture is dropped rather than retained, so a
-transient upstream failure is neither replayed nor served as a live city.
+city to another. A rejected capture is dropped the instant it settles, and so is a
+result the route declines to keep — which is any unavailable projection. A
+failed capture is therefore retried on the very next request rather than pinned
+for the window, while callers already waiting on it still share that one
+attempt.
 
 ## Deploying
 

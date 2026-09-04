@@ -9,6 +9,13 @@ import { defineConfig } from "vitest/config";
  * broken it in ways that had nothing to do with the code under test.
  */
 export default defineConfig({
+  /**
+   * Unit tests run with fixtures compiled in, so the fixture-backed paths are
+   * exercisable. The production side of the guard is asserted by passing the
+   * flag explicitly, and proved against a real deployable build in
+   * `tests/productionBuild.test.ts`.
+   */
+  define: { __CITY_FIXTURES_BUILD__: "true" },
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],

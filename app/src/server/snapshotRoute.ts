@@ -25,7 +25,8 @@
  */
 
 import { serializeProjection, unavailableProjection } from "../city/projection";
-import { DEFAULT_SCENARIO, fixtureSnapshot, resolveScenario } from "./fixtures";
+import { fixtureSnapshot } from "./fixtures";
+import { DEFAULT_SCENARIO, resolveScenario } from "./scenarios";
 import { toPublicProjection } from "./project";
 import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
 import { captureSnapshot } from "./snapshot";
@@ -50,20 +51,31 @@ export function isLiveSource(env: Env): boolean {
 }
 
 /**
- * Fixtures are opt-in and local-only.
+ * Fixtures need two things, and the first one is not a runtime value.
  *
- * `CITY_FIXTURES` is set in `.dev.vars`, which wrangler reads for the local
- * worker and never uploads, so a deployed City cannot turn this on by accident.
+ * The build must have been made with fixtures compiled in, which a deployable
+ * build never is — see `fixtureGuard.ts`. `CITY_FIXTURES` on top of that is the
+ * local opt-in. Relying on the binding alone was the hole: `.dev.vars` not
+ * being uploaded is a convention, and a hosted deployment that acquired the
+ * variable by any other route could have published an invented city as live.
+ *
+ * @param compiledIn Injectable so tests can exercise the production side of the
+ *   guard. Production proof that it really is `false` in a deployable build is
+ *   the bundle assertion in `tests/productionBuild.test.ts`.
  */
-export function isFixtureSource(env: Env): boolean {
+export function isFixtureSource(env: Env, compiledIn: boolean = __CITY_FIXTURES_BUILD__): boolean {
+  if (!compiledIn) return false;
   const flag = env.CITY_FIXTURES;
   return flag === true || flag === "1" || flag === "true";
 }
 
 /** The source this environment resolves to. Exported so tests can assert it. */
-export function resolveSource(env: Env): "live" | "fixture" | "none" {
+export function resolveSource(
+  env: Env,
+  compiledIn: boolean = __CITY_FIXTURES_BUILD__,
+): "live" | "fixture" | "none" {
   if (isLiveSource(env)) return "live";
-  return isFixtureSource(env) ? "fixture" : "none";
+  return isFixtureSource(env, compiledIn) ? "fixture" : "none";
 }
 
 /**
@@ -113,10 +125,13 @@ async function buildProjection(env: Env, scenario: string | null): Promise<Publi
 
   const now = Date.now();
 
-  if (source === "fixture") {
+  // The literal, not a function call: this is what lets the bundler see the
+  // branch is dead in a deployable build and delete `fixtures.ts` with it.
+  if (__CITY_FIXTURES_BUILD__ && source === "fixture") {
     // Not account-bound, so no key is needed and none is used.
     return toPublicProjection(fixtureSnapshot(resolveScenario(scenario), now), ANONYMOUS_SEED, now);
   }
+  if (source === "fixture") return unavailableProjection(ANONYMOUS_SEED);
 
   const capture = await captureSnapshot(env);
   // A failed mandatory read is "we could not look", never "there is nothing
@@ -153,8 +168,11 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
 
     const projection = await withSingleFlight(
       `${deploymentKey(env, source)}|${scenario ?? ""}`,
-      Date.now(),
       () => buildProjection(env, scenario),
+      // An unavailable city is a failure with a face on it. Keeping it for the
+      // window would pin a transient upstream problem in place; the next
+      // request retries, while callers already waiting share this attempt.
+      { retain: (projection) => projection.freshness !== "unavailable" },
     );
 
     return jsonResponse(serializeProjection(projection));

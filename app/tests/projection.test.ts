@@ -10,7 +10,8 @@ import {
   unavailableProjection,
   type PublicCityProjection,
 } from "../src/city/projection";
-import { FIXTURE_SCENARIOS, fixtureSnapshot } from "../src/server/fixtures";
+import { fixtureSnapshot } from "../src/server/fixtures";
+import { FIXTURE_SCENARIOS } from "../src/server/scenarios";
 import { toPublicProjection } from "../src/server/project";
 import {
   ANONYMOUS_SEED,

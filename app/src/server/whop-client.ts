@@ -18,6 +18,14 @@
  * and an empty result are different facts about the business and the city
  * renders them differently, so they must not collapse into the same `[]` on the
  * way up. See `snapshot.ts`.
+ *
+ * A 200 is not on its own a successful read. Every mandatory response is
+ * checked against the shape City actually needs before it counts, because the
+ * failure modes that matter here are quiet ones: a proxy returning `{}`, a
+ * truncated page with no `data` on it, or a product detail missing the very
+ * affiliate fields the read exists to fetch. Left unchecked, each of those
+ * becomes an empty-but-live city, which is the exact lie this file is supposed
+ * to prevent.
  */
 
 const API_VERSION = "2026-09-02-2";
@@ -130,14 +138,51 @@ export type WhopPlan = {
   initial_price: { amount: string | null; currency: string | null } | null;
 };
 
-type Page<T> = { data?: T[] };
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
 
 /**
- * A page that came back successfully but carried nothing is a real answer: the
- * business has no products. Only a failed read is a failure.
+ * Validates a list response.
+ *
+ * The envelope must be an object with a `data` array on it — a missing `data`
+ * is a malformed response, not a business with nothing in it — and every item
+ * must carry the minimum City needs to identify it. `{ data: [] }` is valid and
+ * means exactly what it says.
  */
-function page<T>(read: Read<Page<T>>): Read<T[]> {
-  return read.ok ? { ok: true, data: read.data?.data ?? [] } : FAILED;
+function page<T>(read: Read<unknown>, item: (value: unknown) => value is T): Read<T[]> {
+  if (!read.ok) return FAILED;
+  const body = read.data;
+  if (!isObject(body) || !Array.isArray(body.data)) return FAILED;
+  if (!body.data.every(item)) return FAILED;
+  return { ok: true, data: body.data as T[] };
+}
+
+function isWhopProduct(value: unknown): value is WhopProduct {
+  return isObject(value) && isNonEmptyString(value.id);
+}
+
+function isWhopPlan(value: unknown): value is WhopPlan {
+  return isObject(value) && isNonEmptyString(value.id);
+}
+
+/**
+ * A product detail is only usable if it identifies itself and says something
+ * about affiliate state.
+ *
+ * The affiliate fields are the entire reason this read exists. A detail that
+ * omits `global_affiliate_status` cannot distinguish "affiliates are off" from
+ * "we did not learn", and the projection would quietly choose the first, which
+ * renders Creator Quarter dormant on no evidence.
+ */
+function isWhopProductDetail(value: unknown, expectedId: string): value is WhopProductDetail {
+  if (!isObject(value)) return false;
+  if (!isNonEmptyString(value.id) || value.id !== expectedId) return false;
+  return "global_affiliate_status" in value && "member_affiliate_status" in value;
 }
 
 /**
@@ -150,20 +195,22 @@ function page<T>(read: Read<Page<T>>): Read<T[]> {
  */
 export async function readProducts(env: Env, accountId: string): Promise<Read<WhopProduct[]>> {
   return page(
-    await readJson<Page<WhopProduct>>(
+    await readJson<unknown>(
       env,
       `/api/v1/products?account_id=${encodeURIComponent(accountId)}&first=${PAGE_SIZE}`,
     ),
+    isWhopProduct,
   );
 }
 
 /** GET /api/v1/plans?account_id=… — `account_id` is required or the API 400s. */
 export async function readPlans(env: Env, accountId: string): Promise<Read<WhopPlan[]>> {
   return page(
-    await readJson<Page<WhopPlan>>(
+    await readJson<unknown>(
       env,
       `/api/v1/plans?account_id=${encodeURIComponent(accountId)}&first=${PAGE_SIZE}`,
     ),
+    isWhopPlan,
   );
 }
 
@@ -177,7 +224,11 @@ export async function readProductDetail(
   env: Env,
   productId: string,
 ): Promise<Read<WhopProductDetail>> {
-  return readJson<WhopProductDetail>(env, `/api/v1/products/${encodeURIComponent(productId)}`);
+  const read = await readJson<unknown>(env, `/api/v1/products/${encodeURIComponent(productId)}`);
+  if (!read.ok) return FAILED;
+  // The id has to match what was asked for. A detail for a different product
+  // would silently attach one product's affiliate state to another.
+  return isWhopProductDetail(read.data, productId) ? { ok: true, data: read.data } : FAILED;
 }
 
 /**
@@ -197,14 +248,12 @@ export async function readOwningAccountId(env: Env): Promise<Read<string>> {
   const appId = typeof env.APP_ID === "string" ? env.APP_ID : null;
   if (!appId) return FAILED;
 
-  const app = await readJson<{ account?: { id?: string } }>(
-    env,
-    `/api/v1/apps/${encodeURIComponent(appId)}`,
-  );
+  const app = await readJson<unknown>(env, `/api/v1/apps/${encodeURIComponent(appId)}`);
   if (!app.ok) return FAILED;
 
-  const id = app.data?.account?.id;
   // A 200 with no account on it tells us the deployment is not wired to a
   // business. That is not a business with nothing in it either.
-  return typeof id === "string" && id.length > 0 ? { ok: true, data: id } : FAILED;
+  const body = app.data;
+  if (!isObject(body) || !isObject(body.account)) return FAILED;
+  return isNonEmptyString(body.account.id) ? { ok: true, data: body.account.id } : FAILED;
 }

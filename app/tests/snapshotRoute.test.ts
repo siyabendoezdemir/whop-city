@@ -5,9 +5,16 @@ import {
   SNAPSHOT_PATH,
   deploymentKey,
   handleSnapshotRequest,
+  isFixtureSource,
   resolveSource,
 } from "../src/server/snapshotRoute";
-import { SNAPSHOT_TTL_MS, resetSnapshotCache, withSingleFlight } from "../src/server/snapshotCache";
+import {
+  SNAPSHOT_TTL_MS,
+  resetSnapshotCache,
+  snapshotCacheSize,
+  withSingleFlight,
+} from "../src/server/snapshotCache";
+import { FIXTURE_SCENARIOS, resolveScenario } from "../src/server/scenarios";
 import type { Env } from "../src/server/whop-client";
 
 const ORIGIN = "https://city-spike.whop.site";
@@ -368,6 +375,23 @@ describe("upstream failures do not become dormant business state", () => {
 // ---------------------------------------------------------------------------
 
 describe("request amplification is bounded", () => {
+  /** A clock the test moves by hand, so expiry never depends on real time. */
+  function fakeClock(start = 1_000_000) {
+    let now = start;
+    return { now: () => now, advance: (ms: number) => (now += ms) };
+  }
+
+  /** A producer that resolves only when the test says so. */
+  function deferred<T>() {
+    let resolve!: (value: T) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
   it("coalesces concurrent requests into one upstream capture", async () => {
     const responses = await Promise.all(
       Array.from({ length: 12 }, () => handleSnapshotRequest(new Request(url()), LIVE_ENV)),
@@ -379,22 +403,55 @@ describe("request amplification is bounded", () => {
     for (const body of bodies) expect(body).toEqual(bodies[0]);
   });
 
-  it("reuses the result for the ttl and captures again after it", async () => {
-    const now = Date.now();
-    let calls = 0;
-    const produce = async () => {
-      calls += 1;
-      return calls;
+  it("shares an in-flight capture that outlives the ttl", async () => {
+    // The bug this replaces: the window used to start when the producer did, so
+    // a capture slower than ten seconds was joined by a second upstream
+    // fan-out at exactly the moment the upstream was least able to take one.
+    const clock = fakeClock();
+    const gate = deferred<string>();
+    let started = 0;
+    const produce = () => {
+      started += 1;
+      return gate.promise;
     };
 
-    expect(await withSingleFlight("k", now, produce)).toBe(1);
-    expect(await withSingleFlight("k", now + SNAPSHOT_TTL_MS - 1, produce)).toBe(1);
-    expect(await withSingleFlight("k", now + SNAPSHOT_TTL_MS + 1, produce)).toBe(2);
-    expect(calls).toBe(2);
+    const first = withSingleFlight("k", produce, { clock: clock.now });
+    clock.advance(SNAPSHOT_TTL_MS * 5);
+    const second = withSingleFlight("k", produce, { clock: clock.now });
+
+    expect(started).toBe(1);
+    gate.resolve("one capture");
+    expect(await first).toBe("one capture");
+    expect(await second).toBe("one capture");
+    expect(started).toBe(1);
   });
 
-  it("does not retain a failed capture", async () => {
-    const now = Date.now();
+  it("starts the ttl when the capture settles, not when it began", async () => {
+    const clock = fakeClock();
+    const gate = deferred<string>();
+    let started = 0;
+    const produce = () => {
+      started += 1;
+      return started === 1 ? gate.promise : Promise.resolve("second");
+    };
+
+    const first = withSingleFlight("k", produce, { clock: clock.now });
+    clock.advance(SNAPSHOT_TTL_MS * 3); // the capture takes longer than the window
+    gate.resolve("first");
+    await first;
+
+    // Still fresh, because the window opened at settlement.
+    clock.advance(SNAPSHOT_TTL_MS - 1);
+    expect(await withSingleFlight("k", produce, { clock: clock.now })).toBe("first");
+    expect(started).toBe(1);
+
+    clock.advance(2);
+    expect(await withSingleFlight("k", produce, { clock: clock.now })).toBe("second");
+    expect(started).toBe(2);
+  });
+
+  it("does not retain a rejected capture", async () => {
+    const clock = fakeClock();
     let calls = 0;
     const produce = async () => {
       calls += 1;
@@ -402,21 +459,66 @@ describe("request amplification is bounded", () => {
       return "recovered";
     };
 
-    await expect(withSingleFlight("k", now, produce)).rejects.toThrow();
-    // Same instant, still inside the window: the failure was dropped, so this
-    // is a fresh attempt rather than a replay of the error.
-    expect(await withSingleFlight("k", now, produce)).toBe("recovered");
+    await expect(withSingleFlight("k", produce, { clock: clock.now })).rejects.toThrow();
+    // Same instant: the failure was dropped, so this is a fresh attempt.
+    expect(await withSingleFlight("k", produce, { clock: clock.now })).toBe("recovered");
   });
 
-  it("never serves a failed capture as a live city", async () => {
-    fetchSpy.mockRejectedValue(new Error("upstream down"));
-    const failed = await read(LIVE_ENV);
-    expect(failed.freshness).toBe("unavailable");
+  it("does not retain a result the caller declines to keep", async () => {
+    const clock = fakeClock();
+    let calls = 0;
+    const produce = async () => `attempt-${(calls += 1)}`;
+    const retain = (value: string) => value !== "attempt-1";
 
-    // Still inside the ttl. The unavailable answer may be reused, but it can
-    // never come back wearing "live".
-    const again = await read(LIVE_ENV);
-    expect(again.freshness).toBe("unavailable");
+    expect(await withSingleFlight("k", produce, { clock: clock.now, retain })).toBe("attempt-1");
+    // Not kept, so the very next request retries rather than replaying it.
+    expect(await withSingleFlight("k", produce, { clock: clock.now, retain })).toBe("attempt-2");
+    // That one is retained.
+    expect(await withSingleFlight("k", produce, { clock: clock.now, retain })).toBe("attempt-2");
+    expect(calls).toBe(2);
+    expect(snapshotCacheSize()).toBe(1);
+  });
+
+  it("shares one failed attempt between concurrent callers, then retries", async () => {
+    const clock = fakeClock();
+    const gate = deferred<string>();
+    let started = 0;
+    const produce = () => {
+      started += 1;
+      return started === 1 ? gate.promise : Promise.resolve("after");
+    };
+
+    const a = withSingleFlight("k", produce, { clock: clock.now });
+    const b = withSingleFlight("k", produce, { clock: clock.now });
+    gate.reject(new Error("down"));
+
+    await expect(a).rejects.toThrow();
+    await expect(b).rejects.toThrow();
+    expect(started, "concurrent callers each started their own attempt").toBe(1);
+
+    expect(await withSingleFlight("k", produce, { clock: clock.now })).toBe("after");
+  });
+
+  it("never serves a failed capture as a live city, and retries it", async () => {
+    fetchSpy.mockRejectedValue(new Error("upstream down"));
+    expect((await read(LIVE_ENV)).freshness).toBe("unavailable");
+    const callsAfterFailure = fetchSpy.mock.calls.length;
+
+    // An unavailable answer is a failure with a face on it, so it is not
+    // pinned for the window: the next request goes back upstream.
+    expect((await read(LIVE_ENV)).freshness).toBe("unavailable");
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(callsAfterFailure);
+
+    // And a recovered upstream is picked up immediately, not after the ttl.
+    fetchSpy.mockImplementation(healthyUpstream());
+    expect((await read(LIVE_ENV)).freshness).toBe("live");
+  });
+
+  it("reuses a successful live city for the window", async () => {
+    expect((await read(LIVE_ENV)).freshness).toBe("live");
+    const calls = fetchSpy.mock.calls.length;
+    await read(LIVE_ENV);
+    expect(fetchSpy.mock.calls.length).toBe(calls);
   });
 
   it("keys entries by deployment, so two deployments never share a city", async () => {
@@ -440,7 +542,6 @@ describe("request amplification is bounded", () => {
     const key = deploymentKey(LIVE_ENV, "live");
     expect(key).toContain("biz_LIVE_ACCOUNT");
     expect(key).toContain("https://api.whop.com");
-    // Nothing a caller sends can appear in it.
     expect(key).not.toContain("scenario");
     expect(key).not.toContain("?");
   });
@@ -481,5 +582,169 @@ describe("the permitted api origin", () => {
   it("accepts the documented api host", async () => {
     const body = await read(LIVE_ENV);
     expect(body.freshness).toBe("live");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A 200 is not on its own a successful read.
+// ---------------------------------------------------------------------------
+
+describe("malformed upstream responses are not live cities", () => {
+  const expectUnavailable = async (env: Env = LIVE_ENV) => {
+    const body = await read(env);
+    expect(body.freshness).toBe("unavailable");
+    for (const district of body.districts) {
+      expect(district.state).toBe("dormant");
+      expect(district.signal).toBe("unreadable");
+    }
+  };
+
+  /**
+   * Serves `products`/`plans`/`detail` overrides on top of a healthy upstream.
+   *
+   * Key presence rather than `??`, so an override of `null` is served as `null`
+   * instead of falling through to the healthy default — which is exactly the
+   * case being tested.
+   */
+  function upstream(overrides: { products?: unknown; plans?: unknown; detail?: unknown }) {
+    const pick = (key: keyof typeof overrides, fallback: unknown) =>
+      key in overrides ? overrides[key] : fallback;
+    return async (input: unknown) => {
+      const requested = String(input);
+      if (requested.includes("/products/")) return json(pick("detail", PRODUCT));
+      if (requested.includes("/products")) return json(pick("products", { data: [PRODUCT] }));
+      if (requested.includes("/plans")) return json(pick("plans", { data: [PLAN] }));
+      return json({});
+    };
+  }
+
+  it("rejects a 200 product list with no data on it", async () => {
+    fetchSpy.mockImplementation(upstream({ products: {} }));
+    await expectUnavailable();
+  });
+
+  it("rejects a 200 plan list with no data on it", async () => {
+    fetchSpy.mockImplementation(upstream({ plans: {} }));
+    await expectUnavailable();
+  });
+
+  it("rejects a list whose data is not an array", async () => {
+    for (const products of [{ data: null }, { data: "nope" }, { data: { 0: PRODUCT } }]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(upstream({ products }));
+      await expectUnavailable();
+    }
+  });
+
+  it("rejects a list body that is not an object at all", async () => {
+    for (const products of [null, [PRODUCT], "ok", 7]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(upstream({ products }));
+      await expectUnavailable();
+    }
+  });
+
+  it("rejects list items with no usable id", async () => {
+    for (const products of [{ data: [{}] }, { data: [{ id: "" }] }, { data: [null] }]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(upstream({ products }));
+      await expectUnavailable();
+    }
+  });
+
+  it("rejects an empty product detail", async () => {
+    // The case that used to slip through: {} became a successful detail and
+    // every affiliate field was silently read as disabled, so Creator Quarter
+    // rendered dormant on no evidence at all.
+    fetchSpy.mockImplementation(upstream({ detail: {} }));
+    await expectUnavailable();
+  });
+
+  it("rejects a product detail missing the affiliate fields it exists to fetch", async () => {
+    const { global_affiliate_status, ...withoutStatus } = PRODUCT;
+    void global_affiliate_status;
+    fetchSpy.mockImplementation(upstream({ detail: withoutStatus }));
+    await expectUnavailable();
+
+    resetSnapshotCache();
+    const { member_affiliate_status, ...withoutMember } = PRODUCT;
+    void member_affiliate_status;
+    fetchSpy.mockImplementation(upstream({ detail: withoutMember }));
+    await expectUnavailable();
+  });
+
+  it("rejects a product detail for a different product", async () => {
+    // Otherwise one product's affiliate state gets attached to another.
+    fetchSpy.mockImplementation(upstream({ detail: { ...PRODUCT, id: "prod_SOMEONE_ELSE" } }));
+    await expectUnavailable();
+  });
+
+  it("rejects an app response with no account object", async () => {
+    const byAppId: Env = {
+      WHOP_API_ORIGIN: "https://api.whop.com",
+      APP_ID: "app_1",
+      CITY_SEED_SECRET: SECRET,
+    };
+    for (const app of [{}, { account: null }, { account: {} }, { account: { id: "" } }]) {
+      resetSnapshotCache();
+      fetchSpy.mockImplementation(async (input: unknown) =>
+        String(input).includes("/apps/") ? json(app) : json({ data: [] }),
+      );
+      await expectUnavailable(byAppId);
+    }
+  });
+
+  it("still treats a well-formed empty page as a live, genuinely empty business", async () => {
+    // The distinction the validation must not destroy.
+    fetchSpy.mockImplementation(async () => json({ data: [] }));
+    const body = await read(LIVE_ENV);
+    expect(body.freshness).toBe("live");
+    for (const district of body.districts) {
+      expect(district.state).toBe("dormant");
+      expect(district.signal).toBe("unbuilt");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fixtures cannot exist in a deployable build.
+// ---------------------------------------------------------------------------
+
+describe("fixtures are a build-time capability, not a runtime flag", () => {
+  const HOSTED_WITH_FIXTURES_INJECTED: Env = {
+    CITY_FIXTURES: "1",
+    // A hosted deployment that is also misconfigured: this is the combination
+    // that used to publish an invented city as live.
+    WHOP_API_ORIGIN: "https://api.whop.com",
+    WHOP_ACCOUNT_ID: "biz_LIVE_ACCOUNT",
+  };
+
+  it("ignores CITY_FIXTURES when the build has no fixtures in it", () => {
+    expect(isFixtureSource({ CITY_FIXTURES: "1" }, false)).toBe(false);
+    expect(isFixtureSource({ CITY_FIXTURES: true }, false)).toBe(false);
+    expect(resolveSource(HOSTED_WITH_FIXTURES_INJECTED, false)).toBe("none");
+    expect(resolveSource({ CITY_FIXTURES: "1" }, false)).toBe("none");
+  });
+
+  it("honours CITY_FIXTURES only when the build has fixtures in it", () => {
+    expect(isFixtureSource({ CITY_FIXTURES: "1" }, true)).toBe(true);
+    expect(isFixtureSource({}, true)).toBe(false);
+  });
+
+  it("needs both: a fixture build without the binding is still not fixtures", () => {
+    expect(resolveSource({}, true)).toBe("none");
+  });
+
+  it("a live-configured deployment is live regardless of the fixture flag", () => {
+    expect(resolveSource({ ...LIVE_ENV, CITY_FIXTURES: "1" }, true)).toBe("live");
+  });
+});
+
+describe("the scenario allowlist", () => {
+  it("is closed and falls back silently", () => {
+    for (const scenario of FIXTURE_SCENARIOS) expect(resolveScenario(scenario)).toBe(scenario);
+    for (const bogus of ["", null, undefined, "../../etc/passwd", "<script>"]) {
+      expect(resolveScenario(bogus)).toBe("balanced");
+    }
   });
 });

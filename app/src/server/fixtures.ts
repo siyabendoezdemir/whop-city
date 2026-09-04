@@ -12,34 +12,18 @@
  *
  * Timestamps are expressed as offsets from a supplied `now` so a scenario means
  * the same thing whenever it runs.
+ *
+ * This module is unreachable in a deployable build. The only branch that calls
+ * `fixtureSnapshot` sits behind `__CITY_FIXTURES_BUILD__`, which compiles to
+ * `false`, so the bundler drops the branch and this file with it. The scenario
+ * *names* live in `scenarios.ts` precisely so nothing outside a fixture build
+ * has a reason to import this one.
  */
 
+import type { FixtureScenario } from "./scenarios";
 import type { BusinessSnapshot, SnapshotPlan, SnapshotProduct } from "./snapshot";
 
-export const FIXTURE_SCENARIOS = [
-  "balanced",
-  "launch",
-  "thriving",
-  "struggling",
-  "unavailable",
-] as const;
-export type FixtureScenario = (typeof FIXTURE_SCENARIOS)[number];
-
-export const DEFAULT_SCENARIO: FixtureScenario = "balanced";
-
 const DAY = 24 * 60 * 60 * 1000;
-
-/**
- * Resolves an untrusted string to a scenario.
- *
- * Closed allowlist with a silent fallback: an unknown value is not an error and
- * does not echo back, it is simply the default.
- */
-export function resolveScenario(value: string | null | undefined): FixtureScenario {
-  return FIXTURE_SCENARIOS.includes(value as FixtureScenario)
-    ? (value as FixtureScenario)
-    : DEFAULT_SCENARIO;
-}
 
 function product(
   index: number,
