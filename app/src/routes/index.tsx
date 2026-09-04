@@ -1,14 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/')({ component: Home })
+import { CityShell } from '../components/CityShell'
 
-function Home() {
-  return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold">Welcome to TanStack Start</h1>
-      <p className="mt-4 text-lg">
-        Edit <code>src/routes/index.tsx</code> to get started.
-      </p>
-    </div>
-  )
+/**
+ * The city route.
+ *
+ * Client-only: the world is a WebGL canvas and the projection arrives from
+ * `GET /api/city/snapshot`, so there is nothing useful to render on the server
+ * and nothing about the business is embedded in the HTML.
+ */
+export const Route = createFileRoute('/')({
+  component: CityRoute,
+  ssr: false,
+})
+
+function CityRoute() {
+  return <CityShell />
 }

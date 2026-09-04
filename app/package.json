@@ -11,7 +11,16 @@
     "build": "vite build",
     "preview": "vite preview",
     "deploy": "whop apps deploy",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "capture": "node capture/stills.mjs",
+    "capture:fly": "node capture/flythrough.mjs",
+    "leak-check": "playwright test --grep 'leak'",
+    "shadow-check": "playwright test --grep 'shadow rig'",
+    "aliasing-check": "node capture/aliasing-check.mjs",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -21,20 +30,24 @@
     "@tanstack/react-start": "latest",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tailwindcss": "^4.1.18"
+    "tailwindcss": "^4.1.18",
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.26.0",
+    "@playwright/test": "^1.62.1",
     "@tanstack/devtools-vite": "latest",
     "@tanstack/router-cli": "^1.132.0",
     "@types/node": "^22.10.2",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.182.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "@whop/cli": "latest",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
-    "wrangler": "^4.70.0",
-    "@whop/cli": "latest"
+    "vitest": "^3.2.7",
+    "wrangler": "^4.70.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
