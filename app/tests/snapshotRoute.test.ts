@@ -6,8 +6,11 @@ import type { Env } from "../src/server/whop-client";
 const ORIGIN = "https://city-spike.whop.site";
 const url = (query = "") => `${ORIGIN}${SNAPSHOT_PATH}${query}`;
 
-/** No bindings: the local and fixture-backed case. */
-const FIXTURE_ENV: Env = {};
+/** Local, with fixtures explicitly switched on. Comes from `.dev.vars`. */
+const FIXTURE_ENV: Env = { CITY_FIXTURES: "1" };
+
+/** A deployment with nothing bound and no fixture opt-in. */
+const UNCONFIGURED_ENV: Env = {};
 
 /** What a hosted deployment looks like. */
 const LIVE_ENV: Env = {
@@ -54,6 +57,32 @@ describe("the snapshot endpoint", () => {
   it("makes no outbound request at all without a binding", async () => {
     await handleSnapshotRequest(new Request(url()), FIXTURE_ENV);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("says it cannot read the business rather than inventing one", async () => {
+    // The deployment case that matters: hosted, but the binding is missing or
+    // renamed. Answering with a plausible fixture here would put fabricated
+    // business state on a public URL and label it live.
+    const response = await handleSnapshotRequest(new Request(url()), UNCONFIGURED_ENV);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.freshness).toBe("unavailable");
+    for (const district of body.districts) {
+      expect(district.state).toBe("dormant");
+      expect(district.signal).toBe("unreadable");
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("cannot be talked into fixtures by a caller", async () => {
+    // The scenario parameter is not an opt-in: without CITY_FIXTURES the
+    // deployment has no fixture mode for it to select.
+    const body = await (
+      await handleSnapshotRequest(new Request(url("?scenario=thriving")), UNCONFIGURED_ENV)
+    ).json();
+    expect(body.freshness).toBe("unavailable");
+    expect(body.districts.every((d: { state: string }) => d.state === "dormant")).toBe(true);
   });
 
   it("ignores caller input entirely when reading live", async () => {

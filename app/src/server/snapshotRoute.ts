@@ -9,6 +9,19 @@
  * from a closed allowlist. That is all. There is no path, method, header, body,
  * account or origin the caller can reach, and in live mode the query string is
  * not read at all. The account always comes from the deployment binding.
+ *
+ * There are three sources, in this order:
+ *
+ *  - **live**, when the deployment bound an API origin;
+ *  - **fixture**, only when the deployment explicitly asked for fixtures;
+ *  - **nothing**, otherwise, which renders the unavailable city.
+ *
+ * The third case is the important one. Fixtures used to be the fallback, which
+ * meant a hosted City whose binding was missing or renamed would answer with a
+ * healthy invented business and label it "Reading the business now" — fabricated
+ * state presented as real, on a public URL. Fixtures are now opt-in, so an
+ * unconfigured deployment says it cannot read the business instead of making
+ * one up.
  */
 
 import { serializeProjection, unavailableProjection } from "../city/projection";
@@ -29,6 +42,23 @@ export const SNAPSHOT_METHOD = "GET";
  */
 export function isLiveSource(env: Env): boolean {
   return apiOrigin(env) !== null;
+}
+
+/**
+ * Fixtures are opt-in and local-only.
+ *
+ * `CITY_FIXTURES` is set in `.dev.vars`, which wrangler reads for the local
+ * worker and never uploads, so a deployed City cannot turn this on by accident.
+ */
+export function isFixtureSource(env: Env): boolean {
+  const flag = env.CITY_FIXTURES;
+  return flag === true || flag === "1" || flag === "true";
+}
+
+/** The source this environment resolves to. Exported so tests can assert it. */
+export function resolveSource(env: Env): "live" | "fixture" | "none" {
+  if (isLiveSource(env)) return "live";
+  return isFixtureSource(env) ? "fixture" : "none";
 }
 
 function jsonResponse(body: string, status = 200): Response {
@@ -53,10 +83,14 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
   const secret = typeof env.CITY_SEED_SECRET === "string" ? env.CITY_SEED_SECRET : null;
 
   try {
-    const live = isLiveSource(env);
-    const snapshot = live
-      ? await captureSnapshot(env)
-      : fixtureSnapshot(resolveScenario(new URL(request.url).searchParams.get("scenario")), now);
+    const source = resolveSource(env);
+    const snapshot =
+      source === "live"
+        ? await captureSnapshot(env)
+        : source === "fixture"
+          ? fixtureSnapshot(resolveScenario(new URL(request.url).searchParams.get("scenario")), now)
+          : // No binding and no fixture opt-in: say so rather than invent a city.
+            emptySnapshot(now);
 
     const seed = await deriveLayoutSeed(snapshot.accountId, secret);
     return jsonResponse(serializeProjection(toPublicProjection(snapshot, seed, now)));
@@ -76,9 +110,13 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
 export async function buildProjectionForEnv(env: Env, scenarioHint: string | null = null) {
   const now = Date.now();
   const secret = typeof env.CITY_SEED_SECRET === "string" ? env.CITY_SEED_SECRET : null;
-  const snapshot = isLiveSource(env)
-    ? await captureSnapshot(env).catch(() => emptySnapshot(now))
-    : fixtureSnapshot(resolveScenario(scenarioHint ?? DEFAULT_SCENARIO), now);
+  const source = resolveSource(env);
+  const snapshot =
+    source === "live"
+      ? await captureSnapshot(env).catch(() => emptySnapshot(now))
+      : source === "fixture"
+        ? fixtureSnapshot(resolveScenario(scenarioHint ?? DEFAULT_SCENARIO), now)
+        : emptySnapshot(now);
   const seed = await deriveLayoutSeed(snapshot.accountId, secret);
   return toPublicProjection(snapshot, seed, now);
 }

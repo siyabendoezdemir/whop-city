@@ -114,6 +114,9 @@ Fixture-backed in this increment. `server/fixtures.ts` builds five deterministic
 it — what reaches the browser has crossed exactly the same boundary live data
 would.
 
+`?scenario=` selects one, and it is honoured **only when the deployment
+explicitly opted into fixtures** — see below.
+
 | scenario | what it is | resulting city |
 | --- | --- | --- |
 | `balanced` *(default)* | established shopfront, freshly reworked pricing | Core healthy, Forge rising, Quarter healthy |
@@ -122,14 +125,56 @@ would.
 | `struggling` | built then shuttered: nothing visible | struggling and dormant |
 | `unavailable` | the business could not be read | every district unbuilt, and the crest says so |
 
-`?scenario=` selects one. The server honours it **only when there is no live
-binding** and ignores the query string entirely otherwise, so it cannot
-influence a real read. Unknown values fall back to the default silently rather
-than echoing back.
+### Which source a deployment uses
 
-When a deployment provides `WHOP_API_ORIGIN`, `captureSnapshot` reads live
-instead. Without a binding **no outbound request is attempted at all** — not a
-failed one, not a timeout.
+`resolveSource` picks one of three, in this order:
+
+| condition | source | what the browser sees |
+| --- | --- | --- |
+| `WHOP_API_ORIGIN` is bound | **live** | the real business |
+| no origin, but `CITY_FIXTURES` is set | **fixture** | the named scenario |
+| neither | **none** | the unavailable city: every district dormant, `freshness: "unavailable"` |
+
+The third row is the one that matters for deployment. Fixtures used to be the
+fallback, which meant a hosted City whose binding was missing or renamed would
+answer with a healthy invented business and label it "Reading the business now".
+Fixtures are now opt-in: `CITY_FIXTURES` lives in `.dev.vars`, which wrangler
+reads for the local worker and never uploads, so a deployed City cannot serve
+invented state even if every other binding is wrong.
+
+Unknown scenario values fall back to the default silently rather than echoing
+back, and in live mode the query string is not read at all.
+
+Without a live binding **no outbound request is attempted** — not a failed one,
+not a timeout.
+
+## Deploying
+
+Not done yet, and not to be done without explicit approval.
+
+```bash
+pnpm build            # produces dist/whop-build.zip
+pnpm deploy           # whop apps deploy — uploads and promotes
+pnpm deploy --preview # uploads a non-production build only
+```
+
+The target is fixed by `whop.app.json`: app `app_USXOBX9htLTka7`, route
+`city-spike`, so the deployed URL is `https://city-spike.whop.site`.
+
+**Required for a live city:** `WHOP_API_ORIGIN`, injected by the hosted Website
+runtime. Nothing else is required — the business is derived from `APP_ID` via
+the public `GET /api/v1/apps/{id}`, and `WHOP_ACCOUNT_ID` is an optional
+override. Without the origin the city deploys and renders, honestly unavailable.
+
+**Recommended:** `CITY_SEED_SECRET`, any stable random string. It keys the
+layout seed so the account id cannot be recovered by grinding an unkeyed digest.
+
+**Must not be set on a deployment:** `CITY_FIXTURES`. It is local-only by
+construction, and setting it on a hosted City would publish invented business
+state.
+
+City holds no credential in any environment: the hosted runtime attaches the app
+key in its outbound proxy.
 
 ## The renderer
 
