@@ -1,20 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { Answer } from "../src/city/session";
 import {
   EMPTY_LOG,
+  answersForDistrict,
+  clearAll,
+  clearAnswer,
   clearDistrict,
-  clearReviewed,
-  districtProgress,
-  entryFor,
-  hasChangedSinceReview,
-  isReviewed,
+  completeSession,
   loadLog,
-  markReviewed,
+  recordAnswer,
   saveLog,
 } from "../src/state/operatorLog";
 
 const SEED_A = "a7f3c1e90b6d84fa";
 const SEED_B = "0f1e2d3c4b5a6978";
+
+const answer = (over: Partial<Answer> = {}): Answer => ({
+  activityId: "commerce.mixed",
+  promptId: "visible",
+  districtId: "commerce-core",
+  value: "confirmed",
+  observedState: "struggling",
+  at: 1_780_000_000_000,
+  ...over,
+});
 
 /** A localStorage that behaves, so the semantics are under test and not jsdom. */
 function memoryStorage(): Storage {
@@ -39,167 +49,96 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("the review log", () => {
-  it("starts empty and records a mark", () => {
-    let log = loadLog(SEED_A);
-    expect(log.entries).toHaveLength(0);
-
-    log = markReviewed(log, {
-      moveId: "core.struggling.visibility",
-      districtId: "commerce-core",
-      stateAtReview: "struggling",
-    });
-
-    expect(isReviewed(log, "core.struggling.visibility")).toBe(true);
-    expect(entryFor(log, "core.struggling.visibility")?.districtId).toBe("commerce-core");
+describe("the operator log", () => {
+  it("records an answer", () => {
+    const log = recordAnswer(EMPTY_LOG, answer());
+    expect(log.answers).toHaveLength(1);
+    expect(answersForDistrict(log, "commerce-core")).toHaveLength(1);
+    expect(answersForDistrict(log, "offer-forge")).toHaveLength(0);
   });
 
-  it("is idempotent: marking twice does not double up", () => {
-    const entry = {
-      moveId: "core.struggling.visibility",
-      districtId: "commerce-core" as const,
-      stateAtReview: "struggling" as const,
-    };
-    const once = markReviewed(EMPTY_LOG, entry);
-    const twice = markReviewed(once, entry);
-    expect(twice).toBe(once);
-    expect(twice.entries).toHaveLength(1);
+  it("replaces rather than duplicates when the operator changes their mind", () => {
+    let log = recordAnswer(EMPTY_LOG, answer({ value: "confirmed" }));
+    log = recordAnswer(log, answer({ value: "problem" }));
+    expect(log.answers).toHaveLength(1);
+    expect(log.answers[0].value).toBe("problem");
   });
 
-  it("unmarks, and clears a whole district", () => {
-    let log = markReviewed(EMPTY_LOG, {
-      moveId: "a.b.one",
-      districtId: "offer-forge",
-      stateAtReview: "struggling",
-    });
-    log = markReviewed(log, {
-      moveId: "a.b.two",
-      districtId: "offer-forge",
-      stateAtReview: "struggling",
-    });
+  it("undoes one answer, a district, or everything", () => {
+    let log = recordAnswer(EMPTY_LOG, answer({ promptId: "visible" }));
+    log = recordAnswer(log, answer({ promptId: "members" }));
+    log = recordAnswer(log, answer({ promptId: "typed", districtId: "offer-forge" }));
 
-    expect(clearReviewed(log, "a.b.one").entries).toHaveLength(1);
-    expect(clearDistrict(log, "offer-forge").entries).toHaveLength(0);
-    expect(clearDistrict(log, "commerce-core").entries).toHaveLength(2);
+    expect(clearAnswer(log, "visible").answers).toHaveLength(2);
+    expect(clearDistrict(log, "commerce-core").answers).toHaveLength(1);
+    expect(clearAll(log).answers).toHaveLength(0);
+    // Undoing answers does not undo the fact that sessions were finished.
+    expect(clearAll(completeSession(log)).sessionsCompleted).toBe(1);
   });
 
   it("survives a round trip through storage", () => {
-    const log = markReviewed(EMPTY_LOG, {
-      moveId: "a.b.one",
-      districtId: "offer-forge",
-      stateAtReview: "dormant",
-    });
+    const log = completeSession(recordAnswer(EMPTY_LOG, answer()));
     saveLog(SEED_A, log);
-    expect(loadLog(SEED_A).entries).toEqual(log.entries);
+    const loaded = loadLog(SEED_A);
+    expect(loaded.answers).toEqual(log.answers);
+    expect(loaded.sessionsCompleted).toBe(1);
   });
 
   it("keeps two businesses apart in the same browser", () => {
-    saveLog(
-      SEED_A,
-      markReviewed(EMPTY_LOG, {
-        moveId: "a.b.one",
-        districtId: "offer-forge",
-        stateAtReview: "dormant",
-      }),
-    );
-    expect(loadLog(SEED_A).entries).toHaveLength(1);
-    expect(loadLog(SEED_B).entries).toHaveLength(0);
+    saveLog(SEED_A, recordAnswer(EMPTY_LOG, answer()));
+    expect(loadLog(SEED_A).answers).toHaveLength(1);
+    expect(loadLog(SEED_B).answers).toHaveLength(0);
   });
 
-  it("stores nothing but the move, the district, a public state word and a local clock", () => {
-    saveLog(
-      SEED_A,
-      markReviewed(EMPTY_LOG, {
-        moveId: "a.b.one",
-        districtId: "offer-forge",
-        stateAtReview: "dormant",
-      }),
-    );
-    const raw = localStorage.getItem(`whop-city.review.v1:${SEED_A}`) ?? "";
-    const stored = JSON.parse(raw);
-    expect(Object.keys(stored).sort()).toEqual(["entries", "schema"]);
-    expect(Object.keys(stored.entries[0]).sort()).toEqual([
+  it("stores nothing but the answer, the prompt, a public state word and a local clock", () => {
+    saveLog(SEED_A, recordAnswer(EMPTY_LOG, answer()));
+    const stored = JSON.parse(localStorage.getItem(`whop-city.log.v2:${SEED_A}`) ?? "");
+    expect(Object.keys(stored).sort()).toEqual(["answers", "schema", "sessionsCompleted"]);
+    expect(Object.keys(stored.answers[0]).sort()).toEqual([
+      "activityId",
+      "at",
       "districtId",
-      "moveId",
-      "reviewedAt",
-      "stateAtReview",
+      "observedState",
+      "promptId",
+      "value",
     ]);
   });
 });
 
-describe("the review log refuses to trust storage", () => {
+describe("the log refuses to trust storage", () => {
   it("ignores a corrupt payload", () => {
-    localStorage.setItem(`whop-city.review.v1:${SEED_A}`, "{not json");
-    expect(loadLog(SEED_A).entries).toHaveLength(0);
+    localStorage.setItem(`whop-city.log.v2:${SEED_A}`, "{not json");
+    expect(loadLog(SEED_A)).toEqual(EMPTY_LOG);
   });
 
-  it("ignores a payload from another schema", () => {
+  it("ignores a payload from another schema, including the one before this", () => {
     localStorage.setItem(
-      `whop-city.review.v1:${SEED_A}`,
-      JSON.stringify({ schema: 99, entries: [{ moveId: "x" }] }),
+      `whop-city.log.v2:${SEED_A}`,
+      JSON.stringify({ schema: 1, entries: [{ moveId: "x" }] }),
     );
-    expect(loadLog(SEED_A).entries).toHaveLength(0);
+    expect(loadLog(SEED_A).answers).toHaveLength(0);
   });
 
-  it("drops malformed entries but keeps good ones", () => {
+  it("drops malformed answers but keeps good ones", () => {
     localStorage.setItem(
-      `whop-city.review.v1:${SEED_A}`,
-      JSON.stringify({
-        schema: 1,
-        entries: [
-          { moveId: "a.b.one", districtId: "offer-forge", stateAtReview: "dormant", reviewedAt: 1 },
-          { moveId: 7 },
-          null,
-        ],
-      }),
+      `whop-city.log.v2:${SEED_A}`,
+      JSON.stringify({ schema: 2, answers: [answer(), { promptId: 7 }, null], sessionsCompleted: -3 }),
     );
-    expect(loadLog(SEED_A).entries).toHaveLength(1);
+    const log = loadLog(SEED_A);
+    expect(log.answers).toHaveLength(1);
+    expect(log.sessionsCompleted).toBe(0);
   });
 
-  it("works when storage is unavailable entirely", () => {
+  it("works when storage is unavailable or refuses to write", () => {
     vi.stubGlobal("localStorage", undefined);
     expect(() => saveLog(SEED_A, EMPTY_LOG)).not.toThrow();
-    expect(loadLog(SEED_A).entries).toHaveLength(0);
-  });
+    expect(loadLog(SEED_A)).toEqual(EMPTY_LOG);
 
-  it("works when storage refuses to write", () => {
     const throwing = memoryStorage();
     throwing.setItem = () => {
       throw new Error("QuotaExceededError");
     };
     vi.stubGlobal("localStorage", throwing);
     expect(() => saveLog(SEED_A, EMPTY_LOG)).not.toThrow();
-  });
-});
-
-describe("progression", () => {
-  const moves = ["a.b.one", "a.b.two", "a.b.three"];
-
-  it("counts clicks toward completion", () => {
-    let log = EMPTY_LOG;
-    expect(districtProgress(log, moves)).toEqual({ reviewed: 0, total: 3, complete: false });
-
-    for (const moveId of moves) {
-      log = markReviewed(log, { moveId, districtId: "commerce-core", stateAtReview: "struggling" });
-    }
-    expect(districtProgress(log, moves)).toEqual({ reviewed: 3, total: 3, complete: true });
-  });
-
-  it("is never complete when there is nothing to do", () => {
-    // An unreadable district has no moves, and must not read as resolved.
-    expect(districtProgress(EMPTY_LOG, [])).toEqual({ reviewed: 0, total: 0, complete: false });
-  });
-
-  it("notices when a district reads differently than when it was reviewed", () => {
-    const log = markReviewed(EMPTY_LOG, {
-      moveId: "a.b.one",
-      districtId: "commerce-core",
-      stateAtReview: "struggling",
-    });
-
-    expect(hasChangedSinceReview(log, "commerce-core", "struggling")).toBe(false);
-    expect(hasChangedSinceReview(log, "commerce-core", "healthy")).toBe(true);
-    // A district that was never reviewed has not changed since a review.
-    expect(hasChangedSinceReview(log, "offer-forge", "healthy")).toBe(false);
   });
 });

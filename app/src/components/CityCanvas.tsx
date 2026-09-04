@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import { useEffect, useRef } from "react";
 
-import { attentionFor } from "../city/attention";
+import { evidenceKind } from "../city/evidence";
 import type { DistrictId, PublicCityProjection } from "../city/projection";
 import { buildCity, disposeCity, type City } from "../render/city/city";
-import { createMarkers } from "../render/city/markers";
+import { createMarkers, type ProgressMark } from "../render/city/markers";
 import { applySurfaceDetail } from "../render/scene/materials";
 import { SUPERSAMPLE_DEFAULT, VIEW, createStage } from "../render/scene/stage";
 import { FRAMING_ORDER, framingFor, type FramingKey } from "./framings";
@@ -27,8 +27,11 @@ type Props = {
   framing: FramingKey;
   /** 1 is the framing's own height; below 1 is closer. */
   zoom: number;
-  /** Districts whose moves have all been reviewed. Their markers stop asking. */
-  resolved: readonly DistrictId[];
+  /**
+   * What the player has done in each district. Drawn as a separate mark beside
+   * the condition, never instead of it.
+   */
+  progress: Readonly<Record<DistrictId, ProgressMark>>;
   /** A district was picked in the world. The shell decides what that means. */
   onSelectDistrict: (districtId: DistrictId) => void;
   /** WebGL could not start. The shell swaps in the readable fallback. */
@@ -76,7 +79,7 @@ export function CityCanvas({
   projection,
   framing,
   zoom,
-  resolved,
+  progress,
   onSelectDistrict,
   onUnavailable,
 }: Props) {
@@ -191,7 +194,7 @@ export function CityCanvas({
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, stage.camera);
       const hits = raycaster.intersectObjects(
-        markers.markers.map((marker) => marker.target),
+        markers.markers.flatMap((marker) => marker.targets),
         false,
       );
       const districtId = hits[0]?.object.userData.districtId;
@@ -299,7 +302,7 @@ export function CityCanvas({
           if (!marker) return null;
           const rect = stage.renderer.domElement.getBoundingClientRect();
           const world = marker.group.position.clone();
-          world.y += 26.6; // the lamp, not the foot of the mast
+          world.y += marker.lampHeight(); // low and tall masts differ
           world.project(stage.camera);
           return {
             x: rect.left + ((world.x + 1) / 2) * rect.width,
@@ -422,7 +425,7 @@ export function CityCanvas({
   }, [projectionKey]);
 
   // ------------------------------------------------- markers follow the state
-  const resolvedKey = [...resolved].sort().join(",");
+  const progressKey = JSON.stringify(progress);
   useEffect(() => {
     const stage = stageRef.current;
     const markers = markersRef.current;
@@ -431,7 +434,10 @@ export function CityCanvas({
     for (const marker of markers.markers) {
       const district = projection.districts.find((d) => d.id === marker.districtId);
       if (!district) continue;
-      marker.setLevel(attentionFor(district), resolved.includes(marker.districtId));
+      // Condition comes from Whop; progress comes from the browser. Two calls,
+      // two marks, and the first never depends on the second.
+      marker.setCondition(evidenceKind(district));
+      marker.setProgress(progress[marker.districtId] ?? "none");
       marker.setSelected(framing === marker.districtId);
     }
     if (isCaptureMode()) {
@@ -439,7 +445,7 @@ export function CityCanvas({
       stage.renderer.render(stage.scene, stage.camera);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectionKey, resolvedKey, framing]);
+  }, [projectionKey, progressKey, framing]);
 
   // ------------------------------------------------------- camera, on demand
   // In capture mode there is no loop, so a framing change has to draw itself.

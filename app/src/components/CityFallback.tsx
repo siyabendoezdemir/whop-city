@@ -1,39 +1,28 @@
-import {
-  ATTENTION_LABEL,
-  attentionQueue,
-  DIRECTION_NOTE,
-  SIGNAL_NOTE,
-} from "../city/attention";
+import { CHECK_ANSWERS, CHECK_LABEL, COMMIT_ANSWERS, COMMIT_LABEL, type Prompt } from "../city/activities";
+import { EVIDENCE_LIMIT, readingFor } from "../city/evidence";
 import { DISTRICT_NAMES, DISTRICT_SUBTITLES } from "../city/explain";
-import { briefingForOrUnreadable } from "../city/playbook";
-import type { DistrictId, PublicCityProjection } from "../city/projection";
-import { districtProgress, isReviewed, type ReviewLog } from "../state/operatorLog";
+import type { DistrictWork, Session } from "../city/session";
+import type { DistrictId } from "../city/projection";
 import type { FramingKey } from "./framings";
 
 /**
  * The city without the city.
  *
  * Shown when WebGL will not start — an old machine, a locked-down browser, a
- * lost context. The world is the product, so this is a real loss, but the part
- * an operator came for is the reading and the moves, and those are text. The
- * whole briefing works here: the same queue, the same states, the same review
- * marks, the same local-only persistence.
- *
- * It is not a stub and it is not an apology page. It says plainly that the
- * world could not be drawn, then gets on with it.
+ * lost context. The world is the product and losing it is a real loss, but the
+ * part an operator came for is the reading and the work, and those are words.
+ * The whole session runs here: the same ranking, the same activities, the same
+ * branching, the same local notes.
  */
 
 type Props = {
-  projection: PublicCityProjection;
-  log: ReviewLog;
+  session: Session;
   selected: DistrictId | null;
   onSelect: (key: FramingKey) => void;
-  onToggleMove: (moveId: string, districtId: DistrictId) => void;
+  onAnswer: (work: DistrictWork, prompt: Prompt, value: string) => void;
 };
 
-export function CityFallback({ projection, log, selected, onSelect, onToggleMove }: Props) {
-  const queue = attentionQueue(projection.districts);
-
+export function CityFallback({ session, selected, onSelect, onAnswer }: Props) {
   return (
     <div className="city-flat" data-testid="city-fallback">
       <p className="city-flat__note">
@@ -41,15 +30,26 @@ export function CityFallback({ projection, log, selected, onSelect, onToggleMove
         you is below.
       </p>
 
+      <div className="city-flat__session">
+        <h1>{session.title}</h1>
+        <p>{session.purpose}</p>
+      </div>
+
       <ol className="city-flat__districts">
-        {queue.map(({ district, level }) => {
-          const briefing = briefingForOrUnreadable(district);
-          const progress = districtProgress(log, briefing.moves.map((move) => move.id));
+        {session.work.map((entry) => {
+          const { district, activity, run, plan } = entry;
+          const reading = readingFor(district);
           const open = selected === district.id;
+          const current = run?.current ?? null;
 
           return (
-            <li key={district.id} className="city-flat__district" data-district={district.id}
-              data-state={district.state} data-level={level}>
+            <li
+              key={district.id}
+              className="city-flat__district"
+              data-district={district.id}
+              data-state={district.state}
+              data-progress={entry.complete ? "worked" : "none"}
+            >
               <button
                 type="button"
                 className="city-flat__head"
@@ -59,40 +59,85 @@ export function CityFallback({ projection, log, selected, onSelect, onToggleMove
               >
                 <span className="city-flat__name">{DISTRICT_NAMES[district.id]}</span>
                 <span className="city-flat__status">
-                  {progress.complete ? "Reviewed" : ATTENTION_LABEL[level]}
+                  {entry.declined
+                    ? "You decided against"
+                    : entry.complete
+                      ? "You worked here"
+                      : activity
+                        ? "Open"
+                        : "Unreadable"}
                 </span>
               </button>
 
               {open ? (
                 <div className="city-flat__body">
                   <p className="city-flat__subtitle">{DISTRICT_SUBTITLES[district.id]}</p>
-                  <p className="city-flat__reading">{briefing.reading}</p>
-                  <p className="city-flat__signal">
-                    {SIGNAL_NOTE[district.signal]} · {DIRECTION_NOTE[district.direction]}
+                  <p>
+                    <strong>From Whop:</strong> {reading.observed}
                   </p>
-                  <p className="city-flat__stake">{briefing.stake}</p>
+                  {reading.ambiguity ? <p>{reading.ambiguity}</p> : null}
+                  <p className="city-flat__limit">{EVIDENCE_LIMIT}</p>
 
-                  <ol className="city-flat__moves">
-                    {briefing.moves.map((move) => (
-                      <li key={move.id}>
-                        <button
-                          type="button"
-                          className="city-move__mark"
-                          data-move={move.id}
-                          aria-pressed={isReviewed(log, move.id)}
-                          onClick={() => onToggleMove(move.id, district.id)}
-                        >
-                          <span className="city-move__tick" aria-hidden="true">
-                            {isReviewed(log, move.id) ? "✓" : ""}
-                          </span>
-                          <span className="city-move__text">
-                            <span className="city-move__title">{move.title}</span>
-                            <span className="city-move__detail">{move.detail}</span>
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ol>
+                  {activity && current ? (
+                    <div className="city-flat__prompt" data-prompt={current.id}>
+                      <p>
+                        <strong>{current.title}</strong>
+                      </p>
+                      <p>{current.why}</p>
+                      <div className="prompt__answers" role="group" aria-label={current.title}>
+                        {current.kind === "check"
+                          ? CHECK_ANSWERS.map((value) => (
+                              <button key={value} type="button" className="answer" data-answer={value}
+                                onClick={() => onAnswer(entry, current, value)}>
+                                {CHECK_LABEL[value]}
+                              </button>
+                            ))
+                          : null}
+                        {current.kind === "commit"
+                          ? COMMIT_ANSWERS.map((value) => (
+                              <button key={value} type="button" className="answer" data-answer={value}
+                                onClick={() => onAnswer(entry, current, value)}>
+                                {COMMIT_LABEL[value]}
+                              </button>
+                            ))
+                          : null}
+                        {current.kind === "choice"
+                          ? (current.options ?? []).map((option) => (
+                              <button key={option.id} type="button" className="answer answer--wide"
+                                data-answer={option.id} onClick={() => onAnswer(entry, current, option.id)}>
+                                {option.label}
+                              </button>
+                            ))
+                          : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {activity && !current ? (
+                    <p data-testid="district-done">
+                      {entry.declined
+                        ? "Decided: deliberately not part of the business."
+                        : "Everything here is worked through."}
+                    </p>
+                  ) : null}
+
+                  {!activity ? <p>City could not read this district, so it has nothing to suggest.</p> : null}
+
+                  {plan.length > 0 ? (
+                    <>
+                      <p>
+                        <strong>You told City:</strong>
+                      </p>
+                      <ul className="planlist">
+                        {plan.map((item) => (
+                          <li key={item.promptId} className="planlist__item" data-kind={item.kind}>
+                            <span className="planlist__mark" aria-hidden="true" />
+                            <span className="planlist__text">{item.text}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  ) : null}
                 </div>
               ) : null}
             </li>

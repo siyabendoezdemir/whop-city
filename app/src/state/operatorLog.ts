@@ -1,43 +1,39 @@
 /**
- * The operator's own review log.
+ * The operator's own log.
  *
- * Local to this browser and nothing else. Marking a move reviewed records that
- * *you said you looked at it*; it does not perform the move, does not tell Whop
- * anything, and is not read back from anywhere. The interface says so wherever
- * it shows this state, and this module is deliberately the only thing that
+ * Local to this browser and nothing else. Recording an answer records that
+ * *you said something*; it does not perform the work, does not tell Whop
+ * anything, and is not read back from anywhere. The interface says so at the
+ * point of the click, and this module is deliberately the only thing that
  * writes it, so there is one place to check that claim against.
  *
- * What is stored: a district id, a move id, the state the district was in when
- * you reviewed it, and the time you clicked. That is all. No projection, no
- * business data, and nothing derived from either — the recorded state is one of
- * four public words, which the browser was already holding.
+ * What is stored, per answer: an activity id, a prompt id, a district id, the
+ * answer value, the public state word the district showed at the time, and a
+ * local clock reading. That is all. No projection, no business data, and
+ * nothing derived from either — the recorded state is one of four public words
+ * the browser was already holding, and it is kept so the city can tell later
+ * that an answer was given under a reading that no longer applies.
  *
- * The log is keyed by the projection's opaque seed, so two businesses opened in
- * the same browser keep separate logs and neither can read the other's.
+ * Keyed by the projection's opaque seed, so two businesses opened in the same
+ * browser keep separate logs and neither can read the other's.
  */
 
-import type { DistrictId, DistrictState } from "../city/projection";
+import type { DistrictId } from "../city/projection";
+import type { Answer, AnswerSet } from "../city/session";
 
-const STORAGE_PREFIX = "whop-city.review.v1";
+const STORAGE_PREFIX = "whop-city.log.v2";
 
 /** Bumped if the shape below changes; older payloads are dropped, not migrated. */
-const SCHEMA = 1;
+const SCHEMA = 2;
 
-export type ReviewEntry = {
-  readonly moveId: string;
-  readonly districtId: DistrictId;
-  /** The public state word the district showed when this was marked. */
-  readonly stateAtReview: DistrictState;
-  /** Local clock, from this browser. Never sent anywhere. */
-  readonly reviewedAt: number;
-};
-
-export type ReviewLog = {
+export type OperatorLog = {
   readonly schema: number;
-  readonly entries: readonly ReviewEntry[];
+  readonly answers: AnswerSet;
+  /** Sessions the operator has finished. Local count, for the return loop. */
+  readonly sessionsCompleted: number;
 };
 
-export const EMPTY_LOG: ReviewLog = { schema: SCHEMA, entries: [] };
+export const EMPTY_LOG: OperatorLog = { schema: SCHEMA, answers: [], sessionsCompleted: 0 };
 
 function storageKey(seed: string): string {
   return `${STORAGE_PREFIX}:${seed}`;
@@ -47,8 +43,8 @@ function storageKey(seed: string): string {
  * Storage that cannot throw.
  *
  * Private browsing, disabled storage and quota errors all end the same way: the
- * log is empty and the session still works. A review log is a convenience, and
- * losing it must never take the city down with it.
+ * log is empty and the session still works. A log is a convenience, and losing
+ * it must never take the city down with it.
  */
 function storage(): Storage | null {
   try {
@@ -59,18 +55,20 @@ function storage(): Storage | null {
   }
 }
 
-function isEntry(value: unknown): value is ReviewEntry {
+function isAnswer(value: unknown): value is Answer {
   if (typeof value !== "object" || value === null) return false;
-  const entry = value as Record<string, unknown>;
+  const answer = value as Record<string, unknown>;
   return (
-    typeof entry.moveId === "string" &&
-    typeof entry.districtId === "string" &&
-    typeof entry.stateAtReview === "string" &&
-    typeof entry.reviewedAt === "number"
+    typeof answer.activityId === "string" &&
+    typeof answer.promptId === "string" &&
+    typeof answer.districtId === "string" &&
+    typeof answer.value === "string" &&
+    typeof answer.observedState === "string" &&
+    typeof answer.at === "number"
   );
 }
 
-export function loadLog(seed: string): ReviewLog {
+export function loadLog(seed: string): OperatorLog {
   const store = storage();
   if (!store) return EMPTY_LOG;
   try {
@@ -79,14 +77,21 @@ export function loadLog(seed: string): ReviewLog {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null) return EMPTY_LOG;
     const log = parsed as Record<string, unknown>;
-    if (log.schema !== SCHEMA || !Array.isArray(log.entries)) return EMPTY_LOG;
-    return { schema: SCHEMA, entries: log.entries.filter(isEntry) };
+    if (log.schema !== SCHEMA || !Array.isArray(log.answers)) return EMPTY_LOG;
+    return {
+      schema: SCHEMA,
+      answers: log.answers.filter(isAnswer),
+      sessionsCompleted:
+        typeof log.sessionsCompleted === "number" && log.sessionsCompleted >= 0
+          ? Math.floor(log.sessionsCompleted)
+          : 0,
+    };
   } catch {
     return EMPTY_LOG;
   }
 }
 
-export function saveLog(seed: string, log: ReviewLog): void {
+export function saveLog(seed: string, log: OperatorLog): void {
   const store = storage();
   if (!store) return;
   try {
@@ -96,55 +101,37 @@ export function saveLog(seed: string, log: ReviewLog): void {
   }
 }
 
-export function isReviewed(log: ReviewLog, moveId: string): boolean {
-  return log.entries.some((entry) => entry.moveId === moveId);
-}
-
-export function entryFor(log: ReviewLog, moveId: string): ReviewEntry | null {
-  return log.entries.find((entry) => entry.moveId === moveId) ?? null;
-}
-
-export function markReviewed(
-  log: ReviewLog,
-  entry: Omit<ReviewEntry, "reviewedAt">,
-  now: number = Date.now(),
-): ReviewLog {
-  if (isReviewed(log, entry.moveId)) return log;
-  return { schema: SCHEMA, entries: [...log.entries, { ...entry, reviewedAt: now }] };
-}
-
-export function clearReviewed(log: ReviewLog, moveId: string): ReviewLog {
-  if (!isReviewed(log, moveId)) return log;
-  return { schema: SCHEMA, entries: log.entries.filter((entry) => entry.moveId !== moveId) };
-}
-
-export function clearDistrict(log: ReviewLog, districtId: DistrictId): ReviewLog {
-  return { schema: SCHEMA, entries: log.entries.filter((entry) => entry.districtId !== districtId) };
-}
-
 /**
- * Whether the district has moved on since it was reviewed.
+ * Records an answer, replacing any previous answer to the same prompt.
  *
- * The honest half of the loop. City can see that a district it was reviewed in
- * one state is now in another; it cannot see why, and it does not claim the
- * review caused it. All this reports is that the ground has shifted and the
- * briefing is worth reading again.
+ * Changing your mind is normal and must not leave two contradictory answers in
+ * the log. Answering a `choice` differently also invalidates everything that
+ * followed the old branch, which is handled by the caller clearing forward.
  */
-export function hasChangedSinceReview(
-  log: ReviewLog,
-  districtId: DistrictId,
-  currentState: DistrictState,
-): boolean {
-  const reviewed = log.entries.filter((entry) => entry.districtId === districtId);
-  if (reviewed.length === 0) return false;
-  return reviewed.some((entry) => entry.stateAtReview !== currentState);
+export function recordAnswer(log: OperatorLog, answer: Answer): OperatorLog {
+  return {
+    ...log,
+    answers: [...log.answers.filter((entry) => entry.promptId !== answer.promptId), answer],
+  };
 }
 
-/** Progress through one district's moves. Counts clicks, not business facts. */
-export function districtProgress(
-  log: ReviewLog,
-  moveIds: readonly string[],
-): { reviewed: number; total: number; complete: boolean } {
-  const reviewed = moveIds.filter((moveId) => isReviewed(log, moveId)).length;
-  return { reviewed, total: moveIds.length, complete: moveIds.length > 0 && reviewed === moveIds.length };
+export function clearAnswer(log: OperatorLog, promptId: string): OperatorLog {
+  return { ...log, answers: log.answers.filter((entry) => entry.promptId !== promptId) };
+}
+
+/** Start this district's activity again. Undo, at the granularity that matters. */
+export function clearDistrict(log: OperatorLog, districtId: DistrictId): OperatorLog {
+  return { ...log, answers: log.answers.filter((entry) => entry.districtId !== districtId) };
+}
+
+export function clearAll(log: OperatorLog): OperatorLog {
+  return { ...log, answers: [] };
+}
+
+export function completeSession(log: OperatorLog): OperatorLog {
+  return { ...log, sessionsCompleted: log.sessionsCompleted + 1 };
+}
+
+export function answersForDistrict(log: OperatorLog, districtId: DistrictId): AnswerSet {
+  return log.answers.filter((entry) => entry.districtId === districtId);
 }

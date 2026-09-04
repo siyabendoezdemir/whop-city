@@ -183,7 +183,7 @@ body {
 /* ------------------------------------------------- the attention queue */
 
 .city-queue {
-  top: 96px;
+  top: 138px;
   left: 18px;
   width: 15.5rem;
   padding: 12px 12px 10px;
@@ -636,4 +636,161 @@ body {
   .city-queue__item[data-level="urgent"][data-resolved="false"] .city-queue__level {
     animation: none;
   }
+}
+
+/* ==========================================================================
+   The operator session
+   ========================================================================== */
+
+.city-queue { width: 17.5rem; }
+
+.session { display: grid; gap: 3px; padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, #7ea3d4 16%, transparent); }
+.session__title { margin: 0; font-size: 0.92rem; font-weight: 640; color: #f4f7fb; }
+.session__purpose { margin: 0; font-size: 0.72rem; line-height: 1.45; color: #8ea4c0; }
+.session__count { margin: 3px 0 0; font-size: 0.7rem; color: #cddcef; }
+
+.city-queue__chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+
+/* Two chips, two authorities. Observed keeps its condition colour; local is
+   always the same neutral, so player progress can never read as business health. */
+.chip {
+  font-size: 0.62rem; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 999px;
+  border: 1px solid currentColor; white-space: nowrap;
+}
+.chip--observed { color: var(--cond, #8ea4c0); }
+.chip--observed[data-condition="mixed"] { --cond: #ff8a70; }
+.chip--observed[data-condition="nothing"] { --cond: #7fc4ff; }
+.chip--observed[data-condition="recent"] { --cond: #ffb457; }
+.chip--observed[data-condition="working"] { --cond: #6fd39a; }
+.chip--observed[data-condition="unread"] { --cond: #7c8ba1; }
+.chip--local { color: #a9b8cc; border-style: dashed; }
+
+/* The queue lamp mirrors the world's condition mark, never the player's. */
+.city-queue__item[data-condition="mixed"] { --level: #ff6b4a; }
+.city-queue__item[data-condition="nothing"] { --level: #7fc4ff; }
+.city-queue__item[data-condition="recent"] { --level: #ffb457; }
+.city-queue__item[data-condition="working"] { --level: #6fd39a; }
+.city-queue__item[data-condition="unread"] { --level: #7c8ba1; }
+.city-queue__item[data-condition="mixed"] .city-queue__level { animation: city-pulse 1.6s ease-in-out infinite; }
+/* Progress adds a rule down the side. It does not recolour the lamp. */
+.city-queue__item[data-progress="worked"] { box-shadow: inset 3px 0 0 #6fd39a; }
+.city-queue__item[data-progress="declined"] { box-shadow: inset 3px 0 0 #7c8ba1; }
+.city-queue__item[data-progress="changed"] { box-shadow: inset 3px 0 0 #ffb457; }
+
+.city-queue__actions { display: grid; gap: 6px; }
+
+/* ------------------------------------------------------------- the panel */
+
+.panel__head { display: grid; gap: 2px; }
+.panel__subtitle { margin: 0; font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: #8ea4c0; }
+.panel__name { margin: 0; font-size: 1.2rem; font-weight: 640; color: #f4f7fb; }
+
+.prov {
+  display: inline-block; font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 1px 6px; border-radius: 4px; vertical-align: middle;
+}
+.prov[data-provenance="observed"] { background: color-mix(in srgb, #7fc4ff 20%, transparent); color: #bfe0ff; }
+.prov[data-provenance="reported"] { background: color-mix(in srgb, #ffb457 18%, transparent); color: #ffd9a0; }
+.prov[data-provenance="local"] { background: color-mix(in srgb, #8ea4c0 18%, transparent); color: #cddcef; }
+
+.panel__reading { display: grid; gap: 5px; justify-items: start; padding: 10px 12px; border-radius: 10px;
+  background: color-mix(in srgb, #7fc4ff 7%, transparent); border: 1px solid color-mix(in srgb, #7fc4ff 18%, transparent); }
+.panel__observed { margin: 0; font-size: 0.85rem; line-height: 1.5; color: #e6f0fb; }
+.panel__ambiguity { margin: 0; font-size: 0.76rem; line-height: 1.45; color: #a9c4e0; }
+.panel__limit { margin: 0; font-size: 0.66rem; color: #7f93ad; }
+
+.panel__changed { margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 0.75rem; line-height: 1.45;
+  background: color-mix(in srgb, #ffb457 13%, transparent); border: 1px solid color-mix(in srgb, #ffb457 30%, transparent); color: #ffd9a0; }
+
+.panel__activity { display: grid; gap: 8px; }
+.panel__activityHead { display: grid; gap: 2px; }
+.panel__activityTitle { margin: 0; font-size: 0.95rem; font-weight: 620; color: #f4f7fb; }
+.panel__activityPurpose { margin: 0; font-size: 0.74rem; line-height: 1.45; color: #9fb2ca; }
+
+.prompt { display: grid; gap: 6px; padding: 12px; border-radius: 10px;
+  background: color-mix(in srgb, #16233a 72%, transparent); border: 1px solid color-mix(in srgb, #7ea3d4 20%, transparent); }
+.prompt__step { margin: 0; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #8ea4c0; }
+.prompt__title { margin: 0; font-size: 0.9rem; font-weight: 600; color: #f4f7fb; }
+.prompt__why { margin: 0; font-size: 0.76rem; line-height: 1.5; color: #a9bacf; }
+.prompt__answers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.prompt__note { margin: 2px 0 0; font-size: 0.64rem; color: #7f93ad; }
+
+.answer {
+  flex: 1 1 auto; min-width: 7.5rem; padding: 8px 11px; border-radius: 8px; font: inherit; font-size: 0.78rem;
+  color: #f4f7fb; cursor: pointer; text-align: left;
+  border: 1px solid color-mix(in srgb, #7ea3d4 34%, transparent);
+  background: color-mix(in srgb, #7ea3d4 12%, transparent);
+  transition: background 140ms ease, border-color 140ms ease;
+}
+.answer:hover { background: color-mix(in srgb, #7ea3d4 24%, transparent); border-color: color-mix(in srgb, #7ea3d4 55%, transparent); }
+.answer--wide { flex-basis: 100%; }
+.answer[data-answer="problem"] { border-color: color-mix(in srgb, #ff6b4a 45%, transparent); }
+.answer[data-answer="confirmed"], .answer[data-answer="will-do"] { border-color: color-mix(in srgb, #6fd39a 45%, transparent); }
+
+.panel__done, .panel__blocked, .panel__payoff {
+  margin: 0; font-size: 0.8rem; line-height: 1.5; color: #c6d5e8;
+  padding: 10px 12px; border-radius: 9px; background: color-mix(in srgb, #16233a 60%, transparent);
+}
+.panel__payoff { border: 1px solid color-mix(in srgb, #6fd39a 30%, transparent); }
+
+.panel__plan, .panel__planFoot { display: grid; gap: 6px; }
+.panel__planHead { display: flex; align-items: center; gap: 8px; }
+.panel__planTitle { margin: 0; font-size: 0.82rem; font-weight: 600; color: #cddcef; }
+.panel__local { margin: 0; font-size: 0.66rem; line-height: 1.4; color: #7f93ad; }
+.panel__undo { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+
+.planlist { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.planlist__item { display: flex; gap: 8px; align-items: start; font-size: 0.78rem; line-height: 1.45; color: #dfe9f6; }
+.planlist__mark { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 3px; background: #7c8ba1; }
+.planlist__item[data-kind="action"] .planlist__mark { background: #ffb457; }
+.planlist__item[data-kind="clear"] .planlist__mark { background: #6fd39a; }
+.planlist__item[data-kind="finding"] .planlist__mark { background: #7fc4ff; }
+.planlist__item[data-kind="decision"] .planlist__mark { background: #7c8ba1; border-radius: 50%; }
+.planlist__stale { color: #ffb457; }
+
+.planblock { display: grid; gap: 5px; }
+.planblock__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.planblock__head h2 { margin: 0; font-size: 0.86rem; font-weight: 620; color: #f4f7fb; }
+
+.ghost {
+  padding: 6px 10px; border-radius: 7px; font: inherit; font-size: 0.72rem; cursor: pointer;
+  color: #cddcef; background: transparent; border: 1px solid color-mix(in srgb, #7ea3d4 28%, transparent);
+}
+.ghost:hover { background: color-mix(in srgb, #7ea3d4 16%, transparent); }
+.ghost--tiny { justify-self: start; margin-top: 3px; font-size: 0.64rem; padding: 3px 7px; }
+
+.city-brief--plan { width: 27rem; }
+
+/* --------------------------------------------------------------- orientation */
+
+.orient { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center;
+  background: color-mix(in srgb, #060b14 72%, transparent); backdrop-filter: blur(6px); padding: 20px; }
+.orient__card { max-width: 34rem; display: grid; gap: 10px; padding: 22px 24px; border-radius: 14px;
+  background: color-mix(in srgb, #0d1726 94%, transparent); border: 1px solid color-mix(in srgb, #7ea3d4 26%, transparent); }
+.orient__title { margin: 0; font-size: 1.25rem; font-weight: 640; color: #ffd9a0; }
+.orient__card p { margin: 0; font-size: 0.84rem; line-height: 1.55; color: #c6d5e8; }
+.orient__whose { color: #9fb2ca !important; font-size: 0.78rem !important; }
+.orient__go { justify-self: start; margin-top: 4px; padding: 9px 15px; border: 0; border-radius: 9px;
+  font: inherit; font-size: 0.84rem; font-weight: 560; color: #26170a; background: #ffb457; cursor: pointer; }
+
+.city-progress__pip[data-declined="true"] { background: color-mix(in srgb, #7c8ba1 70%, transparent); }
+
+/* ------------------------------------------------------------ small screens */
+
+@media (max-width: 900px) {
+  .city-queue, .city-brief {
+    position: absolute; left: 12px; right: 12px; width: auto; max-width: none;
+  }
+  .city-queue { top: 132px; max-height: 38vh; overflow-y: auto; }
+  .city-brief { top: auto; bottom: 108px; max-height: 52vh; }
+  .city-brief--plan { width: auto; }
+  .city-crest { right: 12px; }
+  .city-jump { left: 12px; right: 12px; bottom: 12px; overflow-x: auto; }
+  .city-camera, .city-progress { display: none; }
+  .city-flat { padding: 92px 12px 24px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .answer, .ghost, .chip { transition: none; }
+  .city-queue__item[data-condition="mixed"] .city-queue__level { animation: none; }
 }

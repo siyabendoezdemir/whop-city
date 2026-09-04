@@ -77,6 +77,11 @@ function build(scenario: FixtureScenario): BusinessSnapshot {
   };
 
   switch (scenario) {
+    case "blank":
+      // A business that has just been created. Every district dormant, which
+      // is the only way to reach the "decide what goes here" activities.
+      return base;
+
     case "unavailable":
       return { ...base, accountId: null, reachable: false };
 
