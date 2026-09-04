@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: #0d1420;
+  color: #f4f7fb;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  overflow: hidden;
+}
+
+/*
+ * The city owns the viewport.
+ *
+ * Everything below is edge-anchored and deliberately small: a crest, district
+ * navigation, camera controls, and one panel that appears only once a place is
+ * selected. No header, no bottom bar, no dashboard chrome.
+ */
+
+.city {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(120% 90% at 50% 0%, #21324a 0%, #0d1420 70%);
+}
+
+/*
+ * The renderer sets the canvas element's own width and height so the drawing
+ * buffer and the displayed size agree exactly. Overriding either here would
+ * stretch the city, so this only positions it.
+ */
+.city-canvas {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.city-canvas canvas {
+  display: block;
+}
+
+/* ------------------------------------------------------------- first load */
+
+.city-first-load {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.6rem;
+  justify-items: center;
+  background: radial-gradient(120% 90% at 50% 30%, #2b405e 0%, #0d1420 72%);
+  z-index: 3;
+}
+
+.city-first-load__crest {
+  font-size: 1.6rem;
+  font-weight: 620;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #ffd9a0;
+}
+
+.city-first-load__note {
+  font-size: 0.86rem;
+  color: #9fb2ca;
+}
+
+/* ------------------------------------------------------------- edge chrome */
+
+.city-crest,
+.city-jump,
+.city-camera,
+.city-place {
+  position: absolute;
+  z-index: 2;
+  /* Quiet, glassy, and never a card with a metric in it. */
+  background: color-mix(in srgb, #0d1726 78%, transparent);
+  border: 1px solid color-mix(in srgb, #7ea3d4 22%, transparent);
+  border-radius: 12px;
+  backdrop-filter: blur(9px);
+  box-shadow: 0 10px 30px rgb(3 8 16 / 38%);
+}
+
+.city-crest {
+  top: 18px;
+  left: 18px;
+  display: grid;
+  gap: 2px;
+  padding: 10px 14px;
+}
+
+.city-crest__name {
+  font-size: 0.94rem;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #ffd9a0;
+}
+
+.city-crest__state,
+.city-crest__mode {
+  font-size: 0.72rem;
+  color: #9fb2ca;
+}
+
+.city-crest__state[data-freshness="unavailable"] {
+  color: #e2a08a;
+}
+
+.city-jump {
+  left: 18px;
+  bottom: 18px;
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+}
+
+.city-jump button {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 0.78rem;
+  color: #cddcef;
+  background: transparent;
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.city-jump button:hover {
+  background: color-mix(in srgb, #7ea3d4 16%, transparent);
+  color: #f4f7fb;
+}
+
+.city-jump button[aria-pressed="true"] {
+  background: color-mix(in srgb, #ffb457 88%, transparent);
+  color: #26170a;
+  font-weight: 600;
+}
+
+.city-camera {
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+}
+
+.city-camera button {
+  appearance: none;
+  border: 0;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  font: inherit;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: #cddcef;
+  background: transparent;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.city-camera button:hover {
+  background: color-mix(in srgb, #7ea3d4 16%, transparent);
+}
+
+/* ---------------------------------------------------- the selected place */
+
+.city-place {
+  left: 18px;
+  bottom: 74px;
+  max-width: 24rem;
+  padding: 14px 16px;
+  display: grid;
+  gap: 4px;
+  /* A left rule tinted by the district's physical state: the one place the
+     state is named in the interface rather than only shown in the world. */
+  border-left: 3px solid var(--state-colour, #7ea3d4);
+}
+
+.city-place[data-state="healthy"] {
+  --state-colour: #6fd39a;
+}
+.city-place[data-state="rising"] {
+  --state-colour: #ffb457;
+}
+.city-place[data-state="struggling"] {
+  --state-colour: #e2806a;
+}
+.city-place[data-state="dormant"] {
+  --state-colour: #7c8ba1;
+}
+
+.city-place__subtitle {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8ea4c0;
+}
+
+.city-place__name {
+  margin: 0;
+  font-size: 1.12rem;
+  font-weight: 640;
+  color: #f4f7fb;
+}
+
+.city-place__explain {
+  margin: 2px 0 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: #c6d5e8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .city-jump button,
+  .city-camera button {
+    transition: none;
+  }
+}

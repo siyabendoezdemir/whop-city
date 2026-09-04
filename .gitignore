@@ -1,0 +1,22 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local Workers runtime state. Deploy uploads git-tracked files as the source
+# archive, so anything left here by `wrangler dev` would ship with the build.
+.wrangler/
+
+# Secrets. Nothing matching these may ever be committed.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Capability-spike output. May echo business identifiers even after redaction.
+probe-reports/
+tests/fixtures/live/
+
+.DS_Store

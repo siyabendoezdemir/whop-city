@@ -1,0 +1,63 @@
+{
+  "name": "city-spike",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#/*": "./src/*"
+  },
+  "scripts": {
+    "dev": "vite dev --port 3000",
+    "generate-routes": "tsr generate",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "whop apps deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "capture": "node capture/stills.mjs",
+    "capture:fly": "node capture/flythrough.mjs",
+    "leak-check": "playwright test --grep 'leak'",
+    "shadow-check": "playwright test --grep 'shadow rig'",
+    "aliasing-check": "node capture/aliasing-check.mjs",
+    "test:browser": "playwright test",
+    "build:fixtures": "vite build --mode fixtures",
+    "test:browser:production": "playwright test tests/browser/data-safety.spec.ts tests/browser/production-build.spec.ts",
+    "test:browser:fixtures": "playwright test tests/browser/world.spec.ts tests/browser/shell.spec.ts"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@tanstack/react-devtools": "latest",
+    "@tanstack/react-router": "latest",
+    "@tanstack/react-router-devtools": "latest",
+    "@tanstack/react-start": "latest",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^4.1.18",
+    "three": "^0.182.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.26.0",
+    "@playwright/test": "^1.62.1",
+    "@tanstack/devtools-vite": "latest",
+    "@tanstack/router-cli": "^1.132.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.182.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@whop/cli": "latest",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.0",
+    "vitest": "^3.2.7",
+    "wrangler": "^4.70.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "lightningcss",
+      "sharp",
+      "workerd"
+    ]
+  }
+}

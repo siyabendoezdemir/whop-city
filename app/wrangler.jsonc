@@ -1,0 +1,10 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "city-spike",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  // City's own entry, which wraps the TanStack Start handler so that exactly
+  // one fixed API path is served ahead of the router. Pointing this back at
+  // "@tanstack/react-start/server-entry" would silently remove the endpoint.
+  "main": "src/server.ts"
+}
