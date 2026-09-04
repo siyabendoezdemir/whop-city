@@ -13,3 +13,5 @@ __unconfig*
 todos.json
 artifacts/
 .frames/
+test-results/
+playwright-report/
