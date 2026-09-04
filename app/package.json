@@ -17,10 +17,10 @@
     "test:e2e": "playwright test",
     "capture": "node capture/stills.mjs",
     "capture:fly": "node capture/flythrough.mjs",
-    "stats": "node capture/stats.mjs",
-    "leak-check": "node capture/leak-check.mjs",
-    "shadow-check": "node capture/shadow-check.mjs",
-    "aliasing-check": "node capture/aliasing-check.mjs"
+    "leak-check": "playwright test --grep 'leak'",
+    "shadow-check": "playwright test --grep 'shadow rig'",
+    "aliasing-check": "node capture/aliasing-check.mjs",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

@@ -20,7 +20,21 @@ import { APP_URL, artifactPath, framesDir, launchOptions, openCity } from "./env
  */
 
 const SS = Number(process.env.SS ?? 2);
-const FPS = 30;
+const FPS = Number(process.env.FPS ?? 24);
+
+/**
+ * Recorded at 1024x640 rather than the authored 1440x900.
+ *
+ * Same 16:10 aspect, so the composition and every framing are unchanged, and
+ * `ss` still applies on top — the supersampling the anti-crawl work depends on
+ * is preserved, which is the thing a moving camera has to demonstrate. It is
+ * purely a cost decision: software-rendering a supersampled frame is the whole
+ * expense of a recording, and this halves the pixels per frame.
+ */
+const FLY_VIEW = {
+  width: Number(process.env.FLY_WIDTH ?? 1024),
+  height: Number(process.env.FLY_HEIGHT ?? 640),
+};
 
 const TIMELINE = [
   { kind: "hold", at: "city", seconds: 2.2 },
@@ -40,12 +54,15 @@ for (const file of readdirSync(FRAMES)) rmSync(resolve(FRAMES, file));
 mkdirSync(FRAMES, { recursive: true });
 
 const browser = await chromium.launch(launchOptions());
-const page = await openCity(browser, { ss: SS });
+const page = await openCity(browser, { ss: SS, view: FLY_VIEW });
 page.on("pageerror", (error) => console.log("PAGE ERROR:", String(error).slice(0, 200)));
 
 const canvas = page.locator("canvas");
 const total = Math.round(DURATION * FPS);
-console.log(`recording ${DURATION.toFixed(1)}s of ${APP_URL} -> ${total} frames at ss=${SS}`);
+console.log(
+  `recording ${DURATION.toFixed(1)}s of ${APP_URL} -> ${total} frames ` +
+    `at ${FLY_VIEW.width}x${FLY_VIEW.height} ss=${SS}`,
+);
 
 let frame = 0;
 let elapsed = 0;
