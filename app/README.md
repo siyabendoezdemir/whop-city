@@ -114,6 +114,9 @@ Fixture-backed in this increment. `server/fixtures.ts` builds five deterministic
 it — what reaches the browser has crossed exactly the same boundary live data
 would.
 
+`?scenario=` selects one, and it is honoured **only when the deployment
+explicitly opted into fixtures** — see below.
+
 | scenario | what it is | resulting city |
 | --- | --- | --- |
 | `balanced` *(default)* | established shopfront, freshly reworked pricing | Core healthy, Forge rising, Quarter healthy |
@@ -122,14 +125,166 @@ would.
 | `struggling` | built then shuttered: nothing visible | struggling and dormant |
 | `unavailable` | the business could not be read | every district unbuilt, and the crest says so |
 
-`?scenario=` selects one. The server honours it **only when there is no live
-binding** and ignores the query string entirely otherwise, so it cannot
-influence a real read. Unknown values fall back to the default silently rather
-than echoing back.
+### Which source a deployment uses
 
-When a deployment provides `WHOP_API_ORIGIN`, `captureSnapshot` reads live
-instead. Without a binding **no outbound request is attempted at all** — not a
-failed one, not a timeout.
+`resolveSource` picks one of three, in this order:
+
+| condition | source | what the browser sees |
+| --- | --- | --- |
+| `WHOP_API_ORIGIN` bound **and** `CITY_SEED_SECRET` usable | **live** | the real business |
+| fixtures compiled in **and** `CITY_FIXTURES` set | **fixture** | the named scenario |
+| neither | **none** | the unavailable city: every district dormant, `freshness: "unavailable"` |
+
+Unknown scenario values fall back to the default silently rather than echoing
+back, and in live mode the query string is not read at all.
+
+### Fixtures are a build-time capability, not a runtime flag
+
+There are two builds:
+
+```bash
+pnpm build            # deployable. No fixtures in it at all.
+pnpm build:fixtures   # local visual work. vite build --mode fixtures
+```
+
+`vite.config.ts` replaces `__CITY_FIXTURES_BUILD__` with a literal. In a
+deployable build it is `false`, so the fixture branch is dead code, and because
+the scenario *names* live in `scenarios.ts` rather than `fixtures.ts` nothing
+else references the fixture module — the bundler drops it, and the invented
+business data with it. `tests/browser/production-build.spec.ts` greps the
+deployable bundle for `fixture_account_`, `fixture_product_` and
+`Fixture product` and requires all three absent.
+
+`CITY_FIXTURES` is still needed on top of that, but only to decide whether a
+build that *has* fixtures shows them. It cannot switch them on in a build that
+does not.
+
+This is the enforcement boundary, and it replaces an earlier version that relied
+on `.dev.vars` not being uploaded. That is a convention, not a boundary: a
+hosted deployment that acquired the variable by any other route could have
+published an invented city as live. The regression test is the case where the
+binding genuinely *is* present — `.dev.vars` still sets `CITY_FIXTURES=1` for
+the local worker — and a production build ignores it, returning the unavailable
+city and never `freshness: live`.
+
+`pnpm capture`, `pnpm capture:fly` and `pnpm test:browser:fixtures` all need
+`pnpm build:fixtures` first. `pnpm test:browser:production` needs `pnpm build`.
+
+Without a live binding **no outbound request is attempted** — not a failed one,
+not a timeout.
+
+### A failed read is not an empty business
+
+Every reader returns `{ ok: true, data }` or `{ ok: false }`, and the two never
+collapse into the same `[]` on the way up. A refused connection, a timeout, a
+non-OK status including 401 and 403, an unparseable body, or a 200 with no
+account on it are all `ok: false`, and any one of them on a mandatory read makes
+the whole capture fail and the city render unavailable.
+
+**A 200 is not on its own a success.** Every mandatory response is checked
+against the shape City actually needs, envelope *and* rows, because the failure
+modes that matter are quiet ones.
+
+The envelope must be an object with a `data` array on it — a missing `data` is
+malformed, not an empty business — and every row must carry every field the
+snapshot reads, in a shape the snapshot can read:
+
+| row | validated |
+| --- | --- |
+| product | `id` non-empty string · `title`, `visibility` string or null · `member_count` quantity or null · `created_at` RFC 3339 or null · `default_plan` null or `{ id, plan_type }` |
+| plan | `id` non-empty string · `plan_type`, `visibility` string or null · `created_at` RFC 3339 or null · `initial_price` null or `{ amount, currency }` |
+| product detail | every product field, plus `global_affiliate_status` and `member_affiliate_status` string or null and `global_affiliate_percentage` quantity or null, and the `id` must be the one that was requested |
+
+Presence is checked, not only type: a field the API declares as `string | null`
+and simply omits is a malformed response rather than a null. `{ id: "prod_1" }`
+would otherwise become a complete product with an empty title, an invisible
+shopfront and no members — a live city built out of nothing.
+
+A "quantity" is a finite number or a cleanly numeric string, matching what
+`toNumber` accepts. Everything else is refused rather than normalised:
+`parseFloat` would quietly turn `"12 members"` into 12 and `{}` into 0, and a
+zero invented that way is indistinguishable from a real one by the time it
+decides a district's state. Timestamps are checked for shape *and* calendar, and
+`Date.parse` is not consulted at all: it accepts `"2026"`, and it silently rolls
+an impossible date forward, so `2026-02-29` arrives as March 1st. Every
+component is range-checked and the day is checked against the real length of its
+month in its own year.
+
+One malformed row fails the whole page: a partially-understood catalogue is not
+a smaller catalogue.
+
+`{ "data": [] }` is valid and stays a **live**, genuinely empty result, and so
+is a row whose nullable fields are all genuinely null.
+
+A business that genuinely has nothing in it is the opposite: a successful read,
+a **live** city with every district `dormant` and signalling `unbuilt`. The
+operator can therefore tell an empty shop from a broken city, which is the whole
+point of the distinction — the failure mode is silent otherwise.
+
+Every read is mandatory, including the per-product affiliate detail reads. That
+is the strict choice: a failed detail read would otherwise render Creator
+Quarter dormant, which reads as "nobody is affiliating" when the truth is that
+we could not look.
+
+### Request amplification
+
+`/api/city/snapshot` is public and unauthenticated, and one call fans out into
+up to twenty-seven upstream reads. `server/snapshotCache.ts` puts two things in
+front of that and nothing else: concurrent requests resolving to the same
+deployment wait on one capture, and a **successful** result is reused for a
+bounded ten seconds.
+
+The window is measured from when a capture *settles*, never from when it
+started. An in-flight entry is shared however long it runs — measuring from the
+start meant a capture slower than the window got joined by a second upstream
+fan-out at exactly the moment the upstream was least able to take one.
+
+It is deliberately not a shared or CDN cache. Entries are keyed by deployment
+context built from bindings only — never from anything a caller sends — and held
+in the isolate's memory, and the response is `private, no-store, max-age=0`. A
+shared cache in front of this endpoint would be a way to serve one business's
+city to another. A rejected capture is dropped the instant it settles, and so is a
+result the route declines to keep — which is any unavailable projection. A
+failed capture is therefore retried on the very next request rather than pinned
+for the window, while callers already waiting on it still share that one
+attempt.
+
+## Deploying
+
+Not done yet, and not to be done without explicit approval.
+
+```bash
+pnpm build            # produces dist/whop-build.zip
+pnpm deploy           # whop apps deploy — uploads and promotes
+pnpm deploy --preview # uploads a non-production build only
+```
+
+The target is fixed by `whop.app.json`: app `app_USXOBX9htLTka7`, route
+`city-spike`, so the deployed URL is `https://city-spike.whop.site`.
+
+**Required for a live city:** `WHOP_API_ORIGIN`, injected by the hosted Website
+runtime. The business is derived from `APP_ID` via the public
+`GET /api/v1/apps/{id}`, and `WHOP_ACCOUNT_ID` is an optional override. Without
+the origin the city deploys and renders, honestly unavailable.
+
+The origin is checked before use: https only, host `api.whop.com` or a
+`.whop.com` subdomain, and no credentials, path or query on it. The bare
+`whop.com` apex is refused — it is the marketplace website, not an API host.
+Pinning to the single literal `https://api.whop.com` is a follow-up: the hosted
+runtime supplies this value and its exact form is not documented, so narrowing
+further is not verifiable without a live deployment.
+
+**Also required:** `CITY_SEED_SECRET`, a stable random string of at least 16
+characters. It keys the layout seed. Without it the deployment serves the
+unavailable city rather than a real one, so a live City needs both bindings or
+neither.
+
+**Must not be set on a deployment:** `CITY_FIXTURES`. It is local-only by
+construction, and setting it on a hosted City would publish invented business
+state.
+
+City holds no credential in any environment: the hosted runtime attaches the app
+key in its outbound proxy.
 
 ## The renderer
 

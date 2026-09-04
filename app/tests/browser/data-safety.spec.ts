@@ -200,3 +200,59 @@ test("a caller cannot steer the endpoint anywhere", async ({ request, baseURL })
     "seed",
   ]);
 });
+
+// ---------------------------------------------------------------------------
+// Route exposure: what a caller can reach on a deployed City.
+// ---------------------------------------------------------------------------
+
+test("the snapshot endpoint is GET-only over the wire", async ({ request, baseURL }) => {
+  const ok = await request.get(`${baseURL}${ALLOWED_ENDPOINT}`);
+  expect(ok.status()).toBe(200);
+
+  for (const method of ["post", "put", "patch", "delete"] as const) {
+    const response = await request[method](`${baseURL}${ALLOWED_ENDPOINT}`);
+    expect(response.status(), `${method} was accepted`).toBe(405);
+    expect(response.headers()["allow"]).toBe("GET");
+  }
+});
+
+test("the app registers no callable server functions", async ({ request, baseURL }) => {
+  // City uses no createServerFn, so the framework's dispatch prefix is closed
+  // outright rather than left answering with whatever its error shape is.
+  for (const path of [
+    "/_serverFn",
+    "/_serverFn/",
+    "/_serverFn/anything",
+    "/_serverFn/src_server_city_ts--loadCityProjection",
+  ]) {
+    const response = await request.post(`${baseURL}${path}`, {
+      data: { any: "thing" },
+      failOnStatusCode: false,
+    });
+    expect(response.status(), `${path} answered ${response.status()}`).toBe(404);
+
+    const body = await response.text();
+    for (const leak of ["stack", "at Object", "node_modules", "unhandled", "HTTPError", "/workspace"]) {
+      expect(body.toLowerCase(), `${path} leaked "${leak}"`).not.toContain(leak.toLowerCase());
+    }
+  }
+});
+
+test("a probe at the server-function prefix returns nothing internal", async ({ request, baseURL }) => {
+  for (const method of ["get", "post"] as const) {
+    const response = await request[method](`${baseURL}/_serverFn/whatever`, {
+      failOnStatusCode: false,
+    });
+    expect(response.status()).toBe(404);
+    expect((await response.text()).trim()).toBe("");
+  }
+});
+
+test("the snapshot response is private and never shared-cacheable", async ({ request, baseURL }) => {
+  const response = await request.get(`${baseURL}${ALLOWED_ENDPOINT}`);
+  const cacheControl = response.headers()["cache-control"] ?? "";
+  expect(cacheControl).toContain("no-store");
+  expect(cacheControl).toContain("private");
+  expect(cacheControl).not.toContain("public");
+  expect(cacheControl).not.toContain("s-maxage");
+});

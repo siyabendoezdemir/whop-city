@@ -20,7 +20,10 @@
     "leak-check": "playwright test --grep 'leak'",
     "shadow-check": "playwright test --grep 'shadow rig'",
     "aliasing-check": "node capture/aliasing-check.mjs",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "build:fixtures": "vite build --mode fixtures",
+    "test:browser:production": "playwright test tests/browser/data-safety.spec.ts tests/browser/production-build.spec.ts",
+    "test:browser:fixtures": "playwright test tests/browser/world.spec.ts tests/browser/shell.spec.ts"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
