@@ -14,13 +14,33 @@ import { createServerEntry } from "@tanstack/react-start/server-entry";
 import { SNAPSHOT_PATH, handleSnapshotRequest } from "./server/snapshotRoute";
 import { resolveEnv } from "./server/env";
 
+/**
+ * Where TanStack Start would dispatch server functions.
+ *
+ * City registers none — there is no `createServerFn` anywhere in `src` — so
+ * nothing legitimate is ever sent here. Left to the framework, the prefix
+ * answers a bare `/_serverFn/` with a 500 whose body is
+ * `{"status":500,"unhandled":true,"message":"HTTPError"}`. That leaks nothing
+ * today, but it is an unhandled path on a public deployment whose shape is the
+ * framework's to change. Since the app has no server functions to serve, the
+ * whole prefix is closed here instead.
+ */
+const SERVER_FN_PREFIX = "/_serverFn";
+
 const startFetch = createStartHandler(defaultStreamHandler);
 
 export default createServerEntry({
   async fetch(request, ...rest) {
-    if (new URL(request.url).pathname === SNAPSHOT_PATH) {
+    const { pathname } = new URL(request.url);
+
+    if (pathname === SNAPSHOT_PATH) {
       return handleSnapshotRequest(request, await resolveEnv());
     }
+
+    if (pathname === SERVER_FN_PREFIX || pathname.startsWith(`${SERVER_FN_PREFIX}/`)) {
+      return new Response(null, { status: 404 });
+    }
+
     return startFetch(request, ...rest);
   },
 });

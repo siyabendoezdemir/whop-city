@@ -12,7 +12,12 @@ import {
 } from "../src/city/projection";
 import { FIXTURE_SCENARIOS, fixtureSnapshot } from "../src/server/fixtures";
 import { toPublicProjection } from "../src/server/project";
-import { ANONYMOUS_SEED, deriveLayoutSeed } from "../src/server/seed";
+import {
+  ANONYMOUS_SEED,
+  SeedSecretUnavailable,
+  deriveLayoutSeed,
+  isUsableSeedSecret,
+} from "../src/server/seed";
 import type { BusinessSnapshot } from "../src/server/snapshot";
 
 const NOW = 1_780_000_000_000;
@@ -181,32 +186,62 @@ describe("the privacy boundary", () => {
 });
 
 describe("the layout seed", () => {
+  const SECRET = "a-deployment-secret-long-enough";
+
   it("never contains the account id it came from", async () => {
-    const seed = await deriveLayoutSeed(SENTINELS.accountId, null);
+    const seed = await deriveLayoutSeed(SENTINELS.accountId, SECRET);
     expect(seed).not.toContain(SENTINELS.accountId);
     expect(seed).not.toContain("biz_");
     expect(seed).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  it("is stable for the same business and different across businesses", async () => {
-    const a1 = await deriveLayoutSeed("biz_alpha", null);
-    const a2 = await deriveLayoutSeed("biz_alpha", null);
-    const b = await deriveLayoutSeed("biz_beta", null);
+  it("is stable for the same business under the same secret", async () => {
+    const a1 = await deriveLayoutSeed("biz_alpha", SECRET);
+    const a2 = await deriveLayoutSeed("biz_alpha", SECRET);
+    const b = await deriveLayoutSeed("biz_beta", SECRET);
     expect(a1).toBe(a2);
     expect(a1).not.toBe(b);
   });
 
-  it("changes with the deployment secret, so an unkeyed digest cannot be precomputed", async () => {
-    const unkeyed = await deriveLayoutSeed("biz_alpha", null);
-    const keyed = await deriveLayoutSeed("biz_alpha", "deployment-secret");
-    const other = await deriveLayoutSeed("biz_alpha", "another-secret");
-    expect(keyed).not.toBe(unkeyed);
-    expect(keyed).not.toBe(other);
-    expect(keyed).toMatch(/^[0-9a-f]{16}$/);
+  it("differs for the same business under a different secret", async () => {
+    const one = await deriveLayoutSeed("biz_alpha", SECRET);
+    const other = await deriveLayoutSeed("biz_alpha", "another-secret-long-enough");
+    expect(one).not.toBe(other);
+    expect(other).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  it("has a stable inert seed when there is no account", async () => {
-    expect(await deriveLayoutSeed(null, null)).toBe(ANONYMOUS_SEED);
+  it("refuses to derive an account-bound seed without a usable key", async () => {
+    // There is no unkeyed path any more. An unkeyed digest of a short,
+    // structured account id can be ground back to the business, so the only
+    // answer here is to refuse and let the caller serve the unavailable city.
+    for (const bad of [undefined, null, "", "   ", "too-short", 12345, {}]) {
+      await expect(deriveLayoutSeed("biz_alpha", bad)).rejects.toBeInstanceOf(SeedSecretUnavailable);
+      expect(isUsableSeedSecret(bad)).toBe(false);
+    }
+    expect(isUsableSeedSecret(SECRET)).toBe(true);
+  });
+
+  it("rejects a key that is only long enough once padded", async () => {
+    await expect(deriveLayoutSeed("biz_alpha", "  short  ")).rejects.toBeInstanceOf(
+      SeedSecretUnavailable,
+    );
+  });
+
+  it("serialises neither the account id nor an unkeyed digest of it", async () => {
+    // The digest an earlier version would have produced. If the code ever
+    // regresses to the unkeyed path, this is the string that would appear.
+    const material = new TextEncoder().encode(`whop-city/layout-seed/v2:${SENTINELS.accountId}`);
+    const unkeyed = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", material)).slice(0, 8),
+      (b) => b.toString(16).padStart(2, "0"),
+    ).join("");
+
+    const wire = serializeProjection(
+      toPublicProjection(plantedSnapshot(), await deriveLayoutSeed(SENTINELS.accountId, SECRET), NOW),
+    );
+
+    expect(wire).not.toContain(SENTINELS.accountId);
+    expect(wire).not.toContain(unkeyed);
   });
 });
 

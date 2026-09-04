@@ -12,36 +12,41 @@
  *
  * There are three sources, in this order:
  *
- *  - **live**, when the deployment bound an API origin;
+ *  - **live**, when the deployment bound an API origin *and* holds a usable
+ *    seed key;
  *  - **fixture**, only when the deployment explicitly asked for fixtures;
  *  - **nothing**, otherwise, which renders the unavailable city.
  *
- * The third case is the important one. Fixtures used to be the fallback, which
- * meant a hosted City whose binding was missing or renamed would answer with a
- * healthy invented business and label it "Reading the business now" — fabricated
- * state presented as real, on a public URL. Fixtures are now opt-in, so an
- * unconfigured deployment says it cannot read the business instead of making
- * one up.
+ * Every way this can go wrong ends in the same generic unavailable projection:
+ * no key, a failed upstream read, a timeout, a non-OK status, a malformed body,
+ * an unexpected throw. None of them produce a dormant-looking *live* city and
+ * none of them put a reason on the wire, because a reason can carry a URL, an
+ * id, or a fragment of an upstream response.
  */
 
 import { serializeProjection, unavailableProjection } from "../city/projection";
 import { DEFAULT_SCENARIO, fixtureSnapshot, resolveScenario } from "./fixtures";
 import { toPublicProjection } from "./project";
-import { ANONYMOUS_SEED, deriveLayoutSeed } from "./seed";
-import { captureSnapshot, emptySnapshot } from "./snapshot";
+import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
+import { captureSnapshot } from "./snapshot";
+import { withSingleFlight } from "./snapshotCache";
 import { apiOrigin, type Env } from "./whop-client";
+import type { PublicCityProjection } from "../city/projection";
 
 export const SNAPSHOT_PATH = "/api/city/snapshot";
 export const SNAPSHOT_METHOD = "GET";
 
 /**
- * Live only when the deployment actually gave us somewhere to read from.
+ * Live only when the deployment gave us somewhere to read from *and* a key to
+ * derive the layout seed with.
  *
- * In local development there is no binding, so nothing outbound is attempted at
- * all — not a failed request, not a timeout, none.
+ * The key is checked here, before any upstream work, so a misconfigured
+ * deployment does not read a business it then cannot render. In local
+ * development neither is present, so nothing outbound is attempted at all —
+ * not a failed request, not a timeout, none.
  */
 export function isLiveSource(env: Env): boolean {
-  return apiOrigin(env) !== null;
+  return apiOrigin(env) !== null && isUsableSeedSecret(env.CITY_SEED_SECRET);
 }
 
 /**
@@ -61,17 +66,76 @@ export function resolveSource(env: Env): "live" | "fixture" | "none" {
   return isFixtureSource(env) ? "fixture" : "none";
 }
 
+/**
+ * Which deployment a cache entry belongs to.
+ *
+ * Built from binding values only, never from anything a caller sends, so two
+ * deployments cannot collide and a caller cannot select somebody else's entry.
+ * `none` and fixture deployments get their own keys too, which keeps the fast
+ * paths from sharing one slot with a live business.
+ */
+export function deploymentKey(env: Env, source: string): string {
+  const parts = [
+    source,
+    typeof env.WHOP_API_ORIGIN === "string" ? env.WHOP_API_ORIGIN : "",
+    typeof env.APP_ID === "string" ? env.APP_ID : "",
+    typeof env.WHOP_ACCOUNT_ID === "string" ? env.WHOP_ACCOUNT_ID : "",
+  ];
+  return parts.join("|");
+}
+
 function jsonResponse(body: string, status = 200): Response {
   return new Response(body, {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      // The projection is per-deployment and cheap to rebuild; caching it at a
-      // shared edge would be a way to serve one business's city to another.
-      "cache-control": "no-store",
+      // Private and unstored. The projection belongs to one business, and a
+      // shared cache in front of this endpoint would be a way to serve one
+      // business's city to another.
+      "cache-control": "private, no-store, max-age=0",
+      vary: "Cookie",
       "x-content-type-options": "nosniff",
     },
   });
+}
+
+/**
+ * Builds the projection for this deployment.
+ *
+ * Throws nothing: every failure resolves to the unavailable projection, so the
+ * value is safe to share between coalesced callers and safe to retain for the
+ * cache's short window.
+ */
+async function buildProjection(env: Env, scenario: string | null): Promise<PublicCityProjection> {
+  const source = resolveSource(env);
+
+  if (source === "none") return unavailableProjection(ANONYMOUS_SEED);
+
+  const now = Date.now();
+
+  if (source === "fixture") {
+    // Not account-bound, so no key is needed and none is used.
+    return toPublicProjection(fixtureSnapshot(resolveScenario(scenario), now), ANONYMOUS_SEED, now);
+  }
+
+  const capture = await captureSnapshot(env);
+  // A failed mandatory read is "we could not look", never "there is nothing
+  // there". The second would be a lie told in the operator's own city.
+  if (!capture.ok) return unavailableProjection(ANONYMOUS_SEED);
+
+  const accountId = capture.snapshot.accountId;
+  if (accountId === null) return unavailableProjection(ANONYMOUS_SEED);
+
+  // isLiveSource already required a usable key, so this only throws if the
+  // binding changed underneath us. Either way, fail closed.
+  let seed: string;
+  try {
+    seed = await deriveLayoutSeed(accountId, env.CITY_SEED_SECRET);
+  } catch {
+    return unavailableProjection(ANONYMOUS_SEED);
+  }
+
+  return toPublicProjection(capture.snapshot, seed, now);
 }
 
 export async function handleSnapshotRequest(request: Request, env: Env): Promise<Response> {
@@ -79,44 +143,36 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
     return new Response(null, { status: 405, headers: { allow: SNAPSHOT_METHOD } });
   }
 
-  const now = Date.now();
-  const secret = typeof env.CITY_SEED_SECRET === "string" ? env.CITY_SEED_SECRET : null;
-
   try {
     const source = resolveSource(env);
-    const snapshot =
-      source === "live"
-        ? await captureSnapshot(env)
-        : source === "fixture"
-          ? fixtureSnapshot(resolveScenario(new URL(request.url).searchParams.get("scenario")), now)
-          : // No binding and no fixture opt-in: say so rather than invent a city.
-            emptySnapshot(now);
+    // Only the fixture path reads the query string, and only to pick from a
+    // closed allowlist. It is part of the key so two scenarios do not share an
+    // entry during local visual work.
+    const scenario =
+      source === "fixture" ? resolveScenario(new URL(request.url).searchParams.get("scenario")) : null;
 
-    const seed = await deriveLayoutSeed(snapshot.accountId, secret);
-    return jsonResponse(serializeProjection(toPublicProjection(snapshot, seed, now)));
+    const projection = await withSingleFlight(
+      `${deploymentKey(env, source)}|${scenario ?? ""}`,
+      Date.now(),
+      () => buildProjection(env, scenario),
+    );
+
+    return jsonResponse(serializeProjection(projection));
   } catch {
     // Never surface the reason. An error string can carry a URL, an id, or a
-    // fragment of an upstream response. The city renders honestly dormant.
-    try {
-      const seed = await deriveLayoutSeed(null, secret);
-      return jsonResponse(serializeProjection(unavailableProjection(seed)));
-    } catch {
-      return jsonResponse(serializeProjection(unavailableProjection(ANONYMOUS_SEED)), 200);
-    }
+    // fragment of an upstream response.
+    return jsonResponse(serializeProjection(unavailableProjection(ANONYMOUS_SEED)));
   }
 }
 
-/** Used by the route loader during SSR, where there is no Request to hand. */
-export async function buildProjectionForEnv(env: Env, scenarioHint: string | null = null) {
-  const now = Date.now();
-  const secret = typeof env.CITY_SEED_SECRET === "string" ? env.CITY_SEED_SECRET : null;
-  const source = resolveSource(env);
-  const snapshot =
-    source === "live"
-      ? await captureSnapshot(env).catch(() => emptySnapshot(now))
-      : source === "fixture"
-        ? fixtureSnapshot(resolveScenario(scenarioHint ?? DEFAULT_SCENARIO), now)
-        : emptySnapshot(now);
-  const seed = await deriveLayoutSeed(snapshot.accountId, secret);
-  return toPublicProjection(snapshot, seed, now);
+/** Used by a route loader during SSR, where there is no Request to hand. */
+export async function buildProjectionForEnv(
+  env: Env,
+  scenarioHint: string | null = null,
+): Promise<PublicCityProjection> {
+  try {
+    return await buildProjection(env, scenarioHint ?? DEFAULT_SCENARIO);
+  } catch {
+    return unavailableProjection(ANONYMOUS_SEED);
+  }
 }

@@ -6,7 +6,15 @@
  * to the browser, and nothing in this module is imported by client code — the
  * only consumer is `project.ts`, which reads it and returns buckets.
  *
- * Ported from the halted vertical slice.
+ * `captureSnapshot` answers one of two things and never blurs them:
+ *
+ *  - a snapshot, possibly of a business with nothing in it, which is a real
+ *    answer and renders as a dormant but *live* city;
+ *  - a failure, which renders as the generic unavailable city.
+ *
+ * The difference matters because the failure mode is silent. A city that turns
+ * a timed-out read into "this business has no products" is telling the operator
+ * their shop is empty when in fact we could not look.
  */
 
 import {
@@ -15,6 +23,7 @@ import {
   readProductDetail,
   readProducts,
   type Env,
+  type Read,
 } from "./whop-client";
 
 /**
@@ -22,7 +31,8 @@ import {
  *
  * Bounded so a large catalogue cannot turn one page load into a hundred
  * requests, and set above the top bucket boundary so the bucket a district
- * lands in is exact for any business at or under this size.
+ * lands in is exact for any business at or under this size. Products past the
+ * cap are a known, deliberate limit rather than a failed read.
  */
 const AFFILIATE_DETAIL_CAP = 24;
 
@@ -48,11 +58,14 @@ export type SnapshotPlan = {
 export type BusinessSnapshot = {
   accountId: string | null;
   capturedAt: number;
-  /** False when nothing could be read. The city renders honestly dormant. */
+  /** False only for the fixture that models an unreadable business. */
   reachable: boolean;
   products: SnapshotProduct[];
   plans: SnapshotPlan[];
 };
+
+/** A capture either produced a picture of the business, or it did not. */
+export type Capture = { ok: true; snapshot: BusinessSnapshot } | { ok: false };
 
 export function emptySnapshot(capturedAt: number): BusinessSnapshot {
   return { accountId: null, capturedAt, reachable: false, products: [], plans: [] };
@@ -73,53 +86,64 @@ function toNumber(value: unknown): number {
 /**
  * Reads the business through the named read-only functions and normalises it.
  *
- * A failed read is not an error to the caller: an unreachable API yields
- * `reachable: false` and empty collections, and the city renders dormant rather
- * than inventing activity.
+ * Every read here is mandatory, including the per-product detail reads. That is
+ * deliberate and it is the strict choice: a failed detail read would otherwise
+ * make Creator Quarter look dormant when the truth is that we could not read
+ * its affiliate status. One flaky request costs the whole capture and the city
+ * says so, which is the behaviour to prefer while there is no history store to
+ * fall back on.
  */
-export async function captureSnapshot(env: Env): Promise<BusinessSnapshot> {
+export async function captureSnapshot(env: Env): Promise<Capture> {
   // The business must be resolved first: both reads are scoped by it, and an
   // unscoped product read returns the public marketplace rather than failing.
-  const accountId = await readOwningAccountId(env);
-  if (accountId === null) return emptySnapshot(Date.now());
+  const account = await readOwningAccountId(env);
+  if (!account.ok) return { ok: false };
 
   const [products, plans] = await Promise.all([
-    readProducts(env, accountId),
-    readPlans(env, accountId),
+    readProducts(env, account.data),
+    readPlans(env, account.data),
   ]);
+  if (!products.ok || !plans.ok) return { ok: false };
 
   const details = await Promise.all(
-    products.slice(0, AFFILIATE_DETAIL_CAP).map((product) => readProductDetail(env, product.id)),
+    products.data.slice(0, AFFILIATE_DETAIL_CAP).map((product) => readProductDetail(env, product.id)),
   );
+  if (details.some((detail: Read<unknown>) => !detail.ok)) return { ok: false };
+
   const affiliateById = new Map(
-    details.filter((detail) => detail !== null).map((detail) => [detail.id, detail]),
+    details
+      .filter((detail) => detail.ok)
+      .map((detail) => [detail.data.id, detail.data] as const),
   );
 
   return {
-    accountId,
-    capturedAt: Date.now(),
-    reachable: true,
-    products: products.map((product) => {
-      const detail = affiliateById.get(product.id);
-      return {
-        id: product.id,
-        title: product.title,
-        visible: product.visibility === "visible",
-        memberCount: toNumber(product.member_count),
-        // Only an explicit "enabled" counts. An absent field means the detail
-        // read was skipped or failed, and an unknown is never read as a yes.
-        affiliateEnabled: detail?.global_affiliate_status === "enabled",
-        affiliatePercentage: toNumber(detail?.global_affiliate_percentage),
-        memberAffiliateEnabled: detail?.member_affiliate_status === "enabled",
-        createdAt: toEpoch(product.created_at),
-      };
-    }),
-    plans: plans.map((plan) => ({
-      id: plan.id,
-      planType: plan.plan_type,
-      visible: plan.visibility === "visible",
-      priceMinorUnits: Math.round(toNumber(plan.initial_price?.amount) * 100),
-      createdAt: toEpoch(plan.created_at),
-    })),
+    ok: true,
+    snapshot: {
+      accountId: account.data,
+      capturedAt: Date.now(),
+      reachable: true,
+      products: products.data.map((product) => {
+        const detail = affiliateById.get(product.id);
+        return {
+          id: product.id,
+          title: product.title,
+          visible: product.visibility === "visible",
+          memberCount: toNumber(product.member_count),
+          // Only an explicit "enabled" counts. An absent field means the detail
+          // read was outside the cap, and an unknown is never read as a yes.
+          affiliateEnabled: detail?.global_affiliate_status === "enabled",
+          affiliatePercentage: toNumber(detail?.global_affiliate_percentage),
+          memberAffiliateEnabled: detail?.member_affiliate_status === "enabled",
+          createdAt: toEpoch(product.created_at),
+        };
+      }),
+      plans: plans.data.map((plan) => ({
+        id: plan.id,
+        planType: plan.plan_type,
+        visible: plan.visibility === "visible",
+        priceMinorUnits: Math.round(toNumber(plan.initial_price?.amount) * 100),
+        createdAt: toEpoch(plan.created_at),
+      })),
+    },
   };
 }

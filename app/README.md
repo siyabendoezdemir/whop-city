@@ -131,7 +131,7 @@ explicitly opted into fixtures** — see below.
 
 | condition | source | what the browser sees |
 | --- | --- | --- |
-| `WHOP_API_ORIGIN` is bound | **live** | the real business |
+| `WHOP_API_ORIGIN` bound **and** `CITY_SEED_SECRET` usable | **live** | the real business |
 | no origin, but `CITY_FIXTURES` is set | **fixture** | the named scenario |
 | neither | **none** | the unavailable city: every district dormant, `freshness: "unavailable"` |
 
@@ -148,6 +148,39 @@ back, and in live mode the query string is not read at all.
 Without a live binding **no outbound request is attempted** — not a failed one,
 not a timeout.
 
+### A failed read is not an empty business
+
+Every reader returns `{ ok: true, data }` or `{ ok: false }`, and the two never
+collapse into the same `[]` on the way up. A refused connection, a timeout, a
+non-OK status including 401 and 403, an unparseable body, or a 200 with no
+account on it are all `ok: false`, and any one of them on a mandatory read makes
+the whole capture fail and the city render unavailable.
+
+A business that genuinely has nothing in it is the opposite: a successful read,
+a **live** city with every district `dormant` and signalling `unbuilt`. The
+operator can therefore tell an empty shop from a broken city, which is the whole
+point of the distinction — the failure mode is silent otherwise.
+
+Every read is mandatory, including the per-product affiliate detail reads. That
+is the strict choice: a failed detail read would otherwise render Creator
+Quarter dormant, which reads as "nobody is affiliating" when the truth is that
+we could not look.
+
+### Request amplification
+
+`/api/city/snapshot` is public and unauthenticated, and one call fans out into
+up to twenty-seven upstream reads. `server/snapshotCache.ts` puts two things in
+front of that and nothing else: concurrent requests resolving to the same
+deployment wait on one capture, and the result is reused for a bounded ten
+seconds.
+
+It is deliberately not a shared or CDN cache. Entries are keyed by deployment
+context built from bindings only — never from anything a caller sends — and held
+in the isolate's memory, and the response is `private, no-store, max-age=0`. A
+shared cache in front of this endpoint would be a way to serve one business's
+city to another. A failed capture is dropped rather than retained, so a
+transient upstream failure is neither replayed nor served as a live city.
+
 ## Deploying
 
 Not done yet, and not to be done without explicit approval.
@@ -162,12 +195,21 @@ The target is fixed by `whop.app.json`: app `app_USXOBX9htLTka7`, route
 `city-spike`, so the deployed URL is `https://city-spike.whop.site`.
 
 **Required for a live city:** `WHOP_API_ORIGIN`, injected by the hosted Website
-runtime. Nothing else is required — the business is derived from `APP_ID` via
-the public `GET /api/v1/apps/{id}`, and `WHOP_ACCOUNT_ID` is an optional
-override. Without the origin the city deploys and renders, honestly unavailable.
+runtime. The business is derived from `APP_ID` via the public
+`GET /api/v1/apps/{id}`, and `WHOP_ACCOUNT_ID` is an optional override. Without
+the origin the city deploys and renders, honestly unavailable.
 
-**Recommended:** `CITY_SEED_SECRET`, any stable random string. It keys the
-layout seed so the account id cannot be recovered by grinding an unkeyed digest.
+The origin is checked before use: https only, host `api.whop.com` or a
+`.whop.com` subdomain, and no credentials, path or query on it. The bare
+`whop.com` apex is refused — it is the marketplace website, not an API host.
+Pinning to the single literal `https://api.whop.com` is a follow-up: the hosted
+runtime supplies this value and its exact form is not documented, so narrowing
+further is not verifiable without a live deployment.
+
+**Also required:** `CITY_SEED_SECRET`, a stable random string of at least 16
+characters. It keys the layout seed. Without it the deployment serves the
+unavailable city rather than a real one, so a live City needs both bindings or
+neither.
 
 **Must not be set on a deployment:** `CITY_FIXTURES`. It is local-only by
 construction, and setting it on a hosted City would publish invented business
