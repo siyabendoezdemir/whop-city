@@ -38,7 +38,12 @@ export const VIEW = { width: 1440, height: 900 } as const;
 const SUPERSAMPLE = (() => {
   const requested = Number(new URLSearchParams(location.search).get("ss"));
   if (Number.isFinite(requested) && requested > 0) return Math.min(requested, 4);
-  return Math.min(window.devicePixelRatio || 1, 2);
+  // Two samples per CSS pixel per axis, not per device pixel. Keying this off
+  // devicePixelRatio would hand an ordinary 1x monitor no supersampling at all,
+  // which is exactly the display the crawl is worst on. On a 2x panel this
+  // lands at native resolution, where the physical pixels are small enough that
+  // it no longer matters.
+  return 2;
 })();
 
 /** Sun azimuth/elevation chosen so the sawtooth roof self-shadows and the street reads. */
