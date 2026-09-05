@@ -31,7 +31,7 @@ import { toPublicProjection } from "./project";
 import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
 import { captureSnapshot } from "./snapshot";
 import { withSingleFlight } from "./snapshotCache";
-import { apiOrigin, type Env } from "./whop-client";
+import { apiOrigin, boundAppId, type Env } from "./whop-client";
 import type { PublicCityProjection } from "../city/projection";
 
 export const SNAPSHOT_PATH = "/api/city/snapshot";
@@ -90,7 +90,7 @@ export function deploymentKey(env: Env, source: string): string {
   const parts = [
     source,
     typeof env.WHOP_API_ORIGIN === "string" ? env.WHOP_API_ORIGIN : "",
-    typeof env.APP_ID === "string" ? env.APP_ID : "",
+    boundAppId(env) ?? "",
     typeof env.WHOP_ACCOUNT_ID === "string" ? env.WHOP_ACCOUNT_ID : "",
   ];
   return parts.join("|");

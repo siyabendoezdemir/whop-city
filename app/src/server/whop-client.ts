@@ -60,6 +60,9 @@ const FAILED: Read<never> = { ok: false };
 const API_HOST = "api.whop.com";
 const API_DOMAIN_SUFFIX = ".whop.com";
 
+/** Used when the deployment does not name an origin, which is the usual case. */
+const DEFAULT_API_ORIGIN = `https://${API_HOST}`;
+
 function isPermittedApiHost(hostname: string): boolean {
   // Note the leading dot: "api.whop.com.evil.example" does not end with it, and
   // neither does "notwhop.com".
@@ -72,9 +75,34 @@ function isPermittedApiHost(hostname: string): boolean {
  * Returning null is the normal case in local development and means no outbound
  * request will be attempted at all.
  */
+/**
+ * Where the Whop API lives for this deployment.
+ *
+ * Defaults to the public API rather than requiring a binding. The hosted
+ * runtime does not inject `WHOP_API_ORIGIN` - measured, and recorded in
+ * `docs/website-auth-spike.md` - so requiring it meant every deployed City
+ * failed closed to the unavailable projection and no business was ever read.
+ *
+ * An override is still honoured and still has to survive the permitted-host
+ * check, so the widening is in what is *absent*, not in what is accepted.
+ */
+/**
+ * The app this deployment is, from whichever name the runtime used.
+ *
+ * Hosted Whop injects `WHOP_APP_ID`; the original code only looked for
+ * `APP_ID`, so the account fallback never fired where it was needed most.
+ */
+export function boundAppId(env: Env): string | null {
+  for (const key of ["WHOP_APP_ID", "APP_ID"] as const) {
+    const value = env[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return null;
+}
+
 export function apiOrigin(env: Env): string | null {
   const hosted = env.WHOP_API_ORIGIN;
-  if (typeof hosted !== "string" || hosted.length === 0) return null;
+  if (typeof hosted !== "string" || hosted.length === 0) return DEFAULT_API_ORIGIN;
   try {
     const url = new URL(hosted);
     if (url.protocol !== "https:") return null;
@@ -374,7 +402,7 @@ export async function readOwningAccountId(env: Env): Promise<Read<string>> {
   const bound = env.WHOP_ACCOUNT_ID;
   if (typeof bound === "string" && bound.length > 0) return { ok: true, data: bound };
 
-  const appId = typeof env.APP_ID === "string" ? env.APP_ID : null;
+  const appId = boundAppId(env);
   if (!appId) return FAILED;
 
   const app = await readJson<unknown>(env, `/api/v1/apps/${encodeURIComponent(appId)}`);
