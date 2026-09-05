@@ -1,77 +1,45 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 
-import type { Prompt } from "../city/activities";
-import { PROVENANCE_NOTE } from "../city/evidence";
-import { evidenceKind } from "../city/evidence";
-import { DISTRICT_NAMES, FRESHNESS_NOTE } from "../city/explain";
-import { parseProjection, type DistrictId, type PublicCityProjection } from "../city/projection";
-import { buildSession, runActivity, type DistrictWork } from "../city/session";
-import { CONDITION } from "../city/vocabulary";
+import { DISTRICT_NAMES } from "../city/explain";
+import { parseProjection, type PublicCityProjection } from "../city/projection";
+import { BUILDINGS, buildingById, nextTier } from "../game/buildings";
 import {
-  EMPTY_LOG,
-  answersForDistrict,
-  clearAnswer,
-  clearDistrict,
-  clearWorking,
-  fileRound,
-  loadLog,
-  recordAnswer,
-  saveLog,
-  writeNote,
-  type OperatorLog,
-} from "../state/operatorLog";
-
-import { PLOT_IDS } from "../game/plots";
-import {
-  advance,
-  build as buildPlot,
-  clear as clearPlot,
-  foundCity,
-  read as readCity,
-  repair as repairPlot,
-  ticksDue,
-  type GameState,
-} from "../game/state";
-import { loadCity, saveCity } from "../state/simStore";
-import { CityFallback } from "./CityFallback";
-import { DistrictPanel } from "./DistrictPanel";
-import { Resources } from "./Resources";
-import { CommandBar } from "./CommandBar";
-import { Dossier } from "./Dossier";
-import { PlanSheet } from "./PlanSheet";
+  claim,
+  cityTier,
+  markSeen,
+  newCity,
+  readyCount,
+  totalLevels,
+  viewAll,
+  viewOf,
+  type CityState,
+} from "../game/city";
+import { loadCity, saveCity } from "../state/cityStore";
+import { BuildingCard } from "./BuildingCard";
+import { ResourceBar } from "./ResourceBar";
 import { Seal } from "./Glyphs";
-import type { FramingKey } from "./framings";
-import type { ProgressMark } from "../render/city/markers";
 
 const CityCanvas = lazy(() =>
   import("./CityCanvas").then((module) => ({ default: module.CityCanvas })),
 );
 
 /**
- * The shell.
+ * Whop City.
  *
- * At rest there are three things over the world: the seal, the command bar and
- * the camera. Selecting a district adds a fourth and changes the bar; nothing
- * else appears. The earlier arrangement had a crest, a session card, a full
- * district list, a second row of district buttons, a progress widget and an
- * introductory dialog on screen simultaneously, which is how a game ends up
- * looking like a dashboard.
+ * A city you fly around, made of buildings that level up when your Whop
+ * business does. There is one loop and it is short: see a building with a
+ * green arrow over it, click it, read what it cost — five customers, three
+ * products — and press the button. The city grows toward a skyline.
  *
- * What went and where it went:
- *   the district list and the district pill row   -> the studs in the bar
- *   the progress pip widget                       -> the count in the bar
- *   the arrival essay                             -> About, on demand
- *   the reading, ambiguity and limit, always on   -> "Why City says this"
- *   the per-answer disclaimer, repeated           -> one line under the notes
+ * Nothing here simulates a business. Every number on screen came out of the
+ * account, and the only way to move one is to go and move it for real.
  */
 
 const SNAPSHOT_ENDPOINT = "/api/city/snapshot";
-const ZOOM_MIN = 0.45;
-const ZOOM_MAX = 1.6;
-const ZOOM_STEP = 0.15;
-const VISITED_KEY = "whop-city.visited.v2";
+/** Whop's own figures move slowly; a minute is plenty and is kind to the API. */
+const REFRESH_MS = 60_000;
 
-type LoadState =
+type Load =
   | { status: "loading" }
   | { status: "ready"; projection: PublicCityProjection }
   | { status: "failed" };
@@ -82,604 +50,274 @@ function endpointUrl(): string {
   return scenario ? `${SNAPSHOT_ENDPOINT}?scenario=${encodeURIComponent(scenario)}` : SNAPSHOT_ENDPOINT;
 }
 
-function hasVisited(): boolean {
-  try {
-    return typeof localStorage !== "undefined" && localStorage.getItem(VISITED_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function rememberVisit(): void {
-  try {
-    localStorage?.setItem(VISITED_KEY, "1");
-  } catch {
-    /* storage refused; the pointer simply shows again */
-  }
-}
-
-function progressMark(work: DistrictWork): ProgressMark {
-  if (work.changed) return "changed";
-  if (work.declined) return "declined";
-  if (work.complete) return "worked";
-  return "none";
-}
-
 export function CityShell() {
-  const [load, setLoad] = useState<LoadState>({ status: "loading" });
-  const [framing, setFraming] = useState<FramingKey>("city");
+  const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [city, setCity] = useState<CityState | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const [framing, setFraming] = useState<string>("city");
   const [zoom, setZoom] = useState(1);
-  const [log, setLog] = useState<OperatorLog>(EMPTY_LOG);
-  const [worldUnavailable, setWorldUnavailable] = useState(false);
-  const [announcement, setAnnouncement] = useState("");
-  const [about, setAbout] = useState(false);
-  const [showPlan, setShowPlan] = useState(false);
-  const [hint, setHint] = useState(false);
-  const [game, setGame] = useState<GameState | null>(null);
-  const [plot, setPlot] = useState<string | null>(null);
-  const [away, setAway] = useState<{ ticks: number; earned: number } | null>(null);
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
-  const dossierRef = useRef<HTMLElement>(null);
+  const [badges, setBadges] = useState<Array<{ id: string; x: number; y: number; n: number }>>([]);
+  const [flash, setFlash] = useState<string | null>(null);
 
   const projection = load.status === "ready" ? load.projection : null;
+  const metrics = projection?.metrics ?? null;
+
+  // ------------------------------------------------------------- the data
+  const fetchProjection = useCallback(async () => {
+    const response = await fetch(endpointUrl(), { headers: { accept: "application/json" } });
+    if (!response.ok) throw new Error("unavailable");
+    return parseProjection(await response.json());
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch(endpointUrl(), { method: "GET", headers: { accept: "application/json" } })
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error("unavailable"))))
-      .then((body) => parseProjection(body))
+    let alive = true;
+    fetchProjection()
       .then((next) => {
-        if (cancelled) return;
+        if (!alive) return;
         setLoad({ status: "ready", projection: next });
-        setLog(loadLog(next.seed));
-        setHint(!hasVisited());
-
-        // Resume the city if there is one, otherwise found it. Either way the
-        // clock is caught up before the first frame, so returning tomorrow
-        // shows what the city did rather than starting it from where it was.
-        const saved = loadCity(next.seed);
-        const now = Date.now();
-        const start = saved ?? foundCity(next, PLOT_IDS, now);
-        const due = saved ? ticksDue(saved, now) : 0;
-        const caught = advance(start, due, now);
-        setGame(caught.state);
-        saveCity(caught.state);
-        if (caught.ticks > 2) setAway({ ticks: caught.ticks, earned: caught.earned });
+        setCity(loadCity(next.seed) ?? newCity(next.seed, Date.now()));
       })
-      .catch(() => {
-        if (!cancelled) setLoad({ status: "failed" });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      .catch(() => alive && setLoad({ status: "failed" }));
 
-  // A toast is a sentence, not a log. It says the last thing that happened and
-  // then gets out of the way.
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 4_000);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
-  // The city runs on the wall clock, not on frames: a page rendering at a
-  // fraction of a frame per second must still keep time, and the same
-  // arithmetic has to produce the same city whether it ran live or was caught
-  // up in one go on return.
-  useEffect(() => {
-    if (!game) return;
+    // The business keeps moving while the city is open, so the city keeps up.
     const timer = window.setInterval(() => {
-      setGame((current) => {
-        if (!current) return current;
-        const now = Date.now();
-        const due = ticksDue(current, now);
-        if (due <= 0) return current;
-        const next = advance(current, due, now).state;
-        saveCity(next);
-        return next;
-      });
-    }, 1_000);
-    return () => window.clearInterval(timer);
-  }, [game !== null]);
+      fetchProjection()
+        .then((next) => alive && setLoad({ status: "ready", projection: next }))
+        .catch(() => undefined);
+    }, REFRESH_MS);
 
-  const cityReading = useMemo(() => (game ? readCity(game) : null), [game]);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [fetchProjection]);
 
-  /** Apply a move, saving it and saying why if the game refused. */
-  const move = useCallback(
-    (action: (state: GameState) => ReturnType<typeof buildPlot>) => {
-      setGame((current) => {
-        if (!current) return current;
-        const result = action(current);
-        if (!result.ok) {
-          setToast({ id: Date.now(), text: result.why });
-          return current;
-        }
-        saveCity(result.state);
-        const latest = result.state.events[0];
-        if (latest) setToast({ id: Date.now(), text: latest.text });
-        return result.state;
-      });
-    },
-    [],
+  const views = useMemo(
+    () => (city && metrics ? viewAll(city, metrics) : []),
+    [city, metrics],
   );
+  const waiting = city && metrics ? readyCount(city, metrics) : 0;
+  const levels = city && metrics ? totalLevels(city, metrics) : 0;
+  const tier = city && metrics ? cityTier(city, metrics) : null;
+  const upcoming = nextTier(levels);
 
-  const session = useMemo(() => {
-    if (!projection) return null;
-    const notes: Record<string, { text: string; observedState: string }> = {};
-    for (const note of log.notes) notes[note.districtId] = { text: note.text, observedState: note.observedState };
-    return buildSession(projection, log.answers, notes as never);
-  }, [projection, log]);
-
-  const selected = useMemo(() => {
-    if (!session || framing === "city") return null;
-    return session.work.find((entry) => entry.district.id === framing) ?? null;
-  }, [session, framing]);
-
-  const progress = useMemo(() => {
-    const marks: Record<string, ProgressMark> = {};
-    for (const entry of session?.work ?? []) marks[entry.district.id] = progressMark(entry);
-    return marks as Record<DistrictId, ProgressMark>;
-  }, [session]);
-
-  /** Selection moves the camera and the interface together: one gesture. */
-  const select = useCallback((key: FramingKey) => {
-    setFraming(key);
-    setZoom(1);
-    setShowPlan(false);
-    setHint(false);
-    rememberVisit();
-    if (key !== "city") {
-      setAnnouncement(`${DISTRICT_NAMES[key as DistrictId]}.`);
-      window.requestAnimationFrame(() => dossierRef.current?.focus());
-    } else {
-      setAnnouncement("Whop City.");
-    }
+  const persist = useCallback((next: CityState) => {
+    setCity(next);
+    saveCity(next);
   }, []);
 
-  const persist = useCallback(
-    (next: OperatorLog) => {
-      setLog(next);
-      if (projection) saveLog(projection.seed, next);
-    },
-    [projection],
-  );
-
-  const answer = useCallback(
-    (work: DistrictWork, prompt: Prompt, value: string) => {
-      if (!work.activity) return;
-      const activity = work.activity;
-
-      let next = recordAnswer(log, {
-        activityId: activity.id,
-        promptId: prompt.id,
-        districtId: work.district.id,
-        value,
-        observedState: work.district.state,
-        at: Date.now(),
-      });
-
-      // Re-answering a fork strands whatever followed the old branch. Drop it
-      // rather than leave answers on a path nobody is walking.
-      const reachable = new Set(
-        runActivity(
-          activity,
-          next.answers.filter((entry) => entry.activityId === activity.id),
-        ).answered.map((entry) => entry.id),
-      );
-      for (const entry of next.answers) {
-        if (entry.activityId !== activity.id) continue;
-        if (entry.promptId === prompt.id) continue;
-        if (!reachable.has(entry.promptId)) next = clearAnswer(next, entry.promptId);
-      }
-
+  const upgrade = useCallback(
+    (id: string) => {
+      if (!city || !metrics) return;
+      const before = viewOf(buildingById(id)!, city, metrics).level;
+      const next = claim(city, id, metrics);
+      const after = viewOf(buildingById(id)!, next, metrics).level;
+      if (after === before) return;
       persist(next);
-      setAnnouncement("Recorded.");
+      setFlash(`${buildingById(id)!.name} is now level ${after}`);
     },
-    [log, persist],
+    [city, metrics, persist],
   );
 
-  const note = useCallback(
-    (work: DistrictWork, text: string) => {
-      if (text === work.note) return;
-      persist(
-        writeNote(log, {
-          districtId: work.district.id,
-          text,
-          observedState: work.district.state,
-          at: Date.now(),
-        }),
-      );
-      setAnnouncement(text.trim() === "" ? "Note removed." : "Note saved in this browser.");
-    },
-    [log, persist],
-  );
+  // Remember what the business looked like, so a return can say what moved.
+  useEffect(() => {
+    if (!city || !metrics) return;
+    const timer = window.setTimeout(() => persist(markSeen(city, metrics, Date.now())), 4_000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metrics]);
+
+  useEffect(() => {
+    if (!flash) return;
+    const timer = window.setTimeout(() => setFlash(null), 2_600);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
 
   /**
-   * Re-open an answered step.
+   * Green arrows over anything ready.
    *
-   * Everything after it on the path is dropped, because those answers were
-   * given on the strength of the one being changed.
+   * Positioned from the renderer's own projection of each plot, refreshed on a
+   * timer rather than every frame: eleven badges do not need sixty updates a
+   * second, and the camera glide settles well inside this.
    */
-  const reopen = useCallback(
-    (work: DistrictWork, promptId: string) => {
-      if (!work.activity) return;
-      const activity = work.activity;
-      const answered = runActivity(
-        activity,
-        log.answers.filter((entry) => entry.activityId === activity.id),
-      ).answered.map((prompt) => prompt.id);
-      const from = answered.indexOf(promptId);
-      if (from < 0) return;
+  useEffect(() => {
+    const tick = () => {
+      const hooks = window.__city;
+      if (!hooks?.ready) return;
+      setBadges(
+        views
+          .filter((view) => view.ready > 0)
+          .map((view) => {
+            const at = hooks.plotPoint(view.building.id);
+            return at ? { id: view.building.id, x: at.x, y: at.y, n: view.ready } : null;
+          })
+          .filter((badge): badge is { id: string; x: number; y: number; n: number } => badge !== null),
+      );
+    };
+    tick();
+    const timer = window.setInterval(tick, 300);
+    return () => window.clearInterval(timer);
+  }, [views]);
 
-      let next = log;
-      for (const id of answered.slice(from)) next = clearAnswer(next, id);
-      persist(next);
-      setAnnouncement("Step re-opened.");
-    },
-    [log, persist],
-  );
+  const pickedView = picked ? views.find((view) => view.building.id === picked) ?? null : null;
 
-  const undoLast = useCallback(
-    (work: DistrictWork) => {
-      const answers = answersForDistrict(log, work.district.id);
-      const last = [...answers].sort((a, b) => a.at - b.at).pop();
-      if (last) persist(clearAnswer(log, last.promptId));
-      setAnnouncement("Last answer removed.");
-    },
-    [log, persist],
-  );
-
-  /**
-   * The one control: take me somewhere worth building.
-   *
-   * Whatever is most wrong first — a derelict plot, then the district that
-   * would relieve the constraint the city is actually under, then simply the
-   * emptiest ground.
-   */
-  const primary = useCallback(() => {
-    if (!game || !cityReading) return;
-    const empty = game.plots.filter((entry) => entry.level === 0);
-    const wanted: DistrictId | null = cityReading.overCapacity
-      ? "offer-forge"
-      : cityReading.shortOfFootfall
-        ? "creator-quarter"
-        : cityReading.income === 0
-          ? "creator-quarter"
-          : "commerce-core";
-
-    // Bare ground first, then the lowest thing standing in the district that
-    // would relieve the constraint. A city seeded full has nothing to build on
-    // and every reason to build *up*, and the one control has to know that.
-    const lowest = (where: DistrictId | null) =>
-      [...game.plots]
-        .filter((entry) => entry.level > 0 && (where === null || entry.district === where))
-        .sort((a, b) => a.level - b.level)[0] ?? null;
-
-    const target =
-      game.plots.find((entry) => entry.derelict) ??
-      empty.find((entry) => entry.district === wanted) ??
-      empty[0] ??
-      lowest(wanted) ??
-      lowest(null);
-
-    if (!target) {
-      setToast({ id: Date.now(), text: "Nothing to do here yet." });
-      return;
-    }
-    setPlot(target.id);
-    select(target.district);
-  }, [game, cityReading, select]);
+  const goTo = useCallback((id: string) => {
+    setPicked(id);
+    const building = buildingById(id);
+    if (building) setFraming(building.district);
+  }, []);
 
   // ----------------------------------------------------------- keyboard
   useEffect(() => {
-    if (!projection) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+    const onKey = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-
-      const districts = projection.districts;
-      if (event.key >= "1" && event.key <= String(districts.length)) {
-        select(districts[Number(event.key) - 1].id);
-        event.preventDefault();
-      } else if (event.key === "0" || event.key === "Escape") {
-        if (about) setAbout(false);
-        else if (showPlan) setShowPlan(false);
-        else select("city");
-        event.preventDefault();
-      } else if (event.key.toLowerCase() === "f") {
-        primary();
-        event.preventDefault();
-      } else if (event.key.toLowerCase() === "p") {
-        setShowPlan((open) => !open);
-        event.preventDefault();
+      if (event.key === "Escape") {
+        setPicked(null);
+        setFraming("city");
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [projection, about, showPlan, primary, select]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
-  // Finishing the last district is the payoff: the sheet comes up by itself.
-  const complete = session?.complete ?? false;
-  const wasComplete = useRef(false);
-  useEffect(() => {
-    if (complete && !wasComplete.current) {
-      setShowPlan(true);
-      setAnnouncement("Round finished. Your plan is ready.");
-    }
-    wasComplete.current = complete;
-  }, [complete]);
-
-  /**
-   * File the finished round and clear the desk.
-   *
-   * Filing keeps the plan; it is the difference between starting again and
-   * throwing away what you just did, and only the second used to be on offer.
-   */
-  const startNewRound = useCallback(() => {
-    if (!session) return;
-    persist(
-      fileRound(log, {
-        at: Date.now(),
-        title: session.title,
-        items: session.work.flatMap((entry) =>
-          entry.plan.map((item) => ({
-            districtId: entry.district.id,
-            districtName: DISTRICT_NAMES[entry.district.id],
-            condition: CONDITION[evidenceKind(entry.district)].label,
-            kind: item.kind,
-            text: item.text,
-          })),
-        ),
-      }),
-    );
-    setShowPlan(false);
-    setFraming("city");
-    setAnnouncement("Round filed. A new round is open.");
-  }, [session, log, persist]);
-
-  // ------------------------------------------------------------- render
-  if (load.status === "loading" || load.status === "failed" || !projection || !session) {
+  if (load.status === "loading") {
     return (
       <main className="city">
         <div className="boot" role="status">
           <span className="boot__name">Whop City</span>
-          <span>
-            {load.status === "failed"
-              ? "The business could not be read."
-              : "Surveying the ground…"}
-          </span>
+          <span>Surveying the ground…</span>
+        </div>
+      </main>
+    );
+  }
+
+  if (load.status === "failed" || !projection || !city || !metrics || !tier) {
+    return (
+      <main className="city">
+        <div className="boot" role="status">
+          <span className="boot__name">Whop City</span>
+          <span>Could not reach your business. Try again in a moment.</span>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="city" data-freshness={projection.freshness}>
-      {worldUnavailable ? (
-        <CityFallback
-          session={session}
-          selected={selected?.district.id ?? null}
-          onSelect={select}
-          onAnswer={answer}
+    <main className="city" data-freshness={projection.freshness} data-tier={tier.level}>
+      <Suspense fallback={null}>
+        <CityCanvas
+          projection={projection}
+          framing={framing as never}
+          zoom={zoom}
+          levels={Object.fromEntries(views.map((view) => [view.building.id, view.level]))}
+          selected={picked}
+          onSelectPlot={goTo}
+          onSelectDistrict={(key) => {
+            setFraming(key);
+            setPicked(null);
+          }}
+          onUnavailable={() => undefined}
         />
-      ) : (
-        <Suspense fallback={null}>
-          <CityCanvas
-            projection={projection}
-            framing={framing}
-            zoom={zoom}
-            progress={progress}
-            plots={game?.plots ?? []}
-            selectedPlot={plot}
-            onSelectPlot={(id) => {
-              setPlot(id);
-              const owner = game?.plots.find((entry) => entry.id === id)?.district;
-              if (owner && owner !== framing) select(owner);
-            }}
-            onSelectDistrict={select}
-            onUnavailable={() => setWorldUnavailable(true)}
-          />
-        </Suspense>
-      )}
+      </Suspense>
 
-      <p className="city-live" role="status" aria-live="polite">
-        {announcement}
-      </p>
-
-      {/* ------------------------------------------------------------- seal */}
-      <div className="seal surface">
-        <Seal className="seal__mark" />
-        <span className="seal__text">
-          <span className="seal__name">Whop City</span>
-          <span className="seal__state" data-freshness={projection.freshness}>
-            {FRESHNESS_NOTE[projection.freshness]}
+      {/* ------------------------------------------------------------ tier */}
+      <div className="tier" data-testid="tier">
+        <Seal className="tier__crest" />
+        <span className="tier__text">
+          <span className="tier__name">{tier.name}</span>
+          <span className="tier__levels">
+            {upcoming ? `${levels} / ${upcoming.at} to ${upcoming.name}` : `${levels} levels — as grand as it gets`}
           </span>
         </span>
-        <button
-          type="button"
-          className="btn seal__about"
-          data-action="about"
-          aria-label="About Whop City"
-          onClick={() => setAbout(true)}
-        >
-          i
-        </button>
       </div>
 
-      {/* -------------------------------------------------------------- bar */}
-      <CommandBar
-        session={session}
-        selected={selected?.district.id ?? null}
-        onSelect={select}
-        onBack={() => select("city")}
-        onPrimary={primary}
-        planOpen={showPlan}
-        plots={game?.plots ?? []}
-        reading={cityReading}
-      />
+      <ResourceBar metrics={metrics} />
 
-      {hint && !selected && session.outstanding.length > 0 ? (
-        <div className="hint surface">
-          <span>Click a district in the city, or begin the round.</span>
-          <button
-            type="button"
-            className="btn btn--quiet hint__dismiss"
-            data-action="dismiss-hint"
-            onClick={() => {
-              setHint(false);
-              rememberVisit();
-            }}
-          >
-            Got it
-          </button>
-        </div>
+      {/* --------------------------------------------------- ready to press */}
+      {badges.map((badge) => (
+        <button
+          key={badge.id}
+          type="button"
+          className="ready"
+          data-ready={badge.id}
+          style={{ left: badge.x, top: badge.y }}
+          aria-label={`${buildingById(badge.id)?.name}: ${badge.n} upgrade ready`}
+          onClick={() => goTo(badge.id)}
+        >
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M8 13V4" />
+            <path d="M3.6 8.4 8 3.6l4.4 4.8" />
+          </svg>
+          {badge.n > 1 ? <span className="ready__n">{badge.n}</span> : null}
+        </button>
+      ))}
+
+      {pickedView ? (
+        <BuildingCard view={pickedView} onUpgrade={() => upgrade(pickedView.building.id)} onClose={() => setPicked(null)} />
+      ) : null}
+
+      {flash ? (
+        <p className="toast surface" role="status">
+          {flash}
+        </p>
+      ) : null}
+
+      {/* ------------------------------------------------------ nothing ready */}
+      {waiting === 0 && !pickedView ? (
+        <p className="nudge surface" role="status">
+          {metrics.source === "owner"
+            ? "Nothing to upgrade yet. Grow the business and the city follows."
+            : "Open this from your Whop dashboard to see your own figures."}
+        </p>
       ) : null}
 
       <div className="camera surface" role="group" aria-label="Camera">
-        <button type="button" data-cam="in" aria-label="Zoom in"
-          onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}>+</button>
-        <button type="button" data-cam="out" aria-label="Zoom out"
-          onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}>−</button>
+        <button type="button" data-cam="in" aria-label="Zoom in" onClick={() => setZoom((z) => Math.max(0.45, z - 0.15))}>
+          +
+        </button>
+        <button type="button" data-cam="out" aria-label="Zoom out" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))}>
+          −
+        </button>
         <button
           type="button"
           data-cam="reset"
           aria-label="Back to the whole city"
           onClick={() => {
-            // Also leaves free-look: the home button is how you get un-lost.
             setZoom(1);
-            select("city");
+            setFraming("city");
+            setPicked(null);
           }}
         >
           ⌂
         </button>
       </div>
 
-      {game && cityReading ? <Resources credits={game.credits} reading={cityReading} /> : null}
-
-      {toast ? (
-        <p className="toast surface" key={toast.id} role="status">
-          {toast.text}
-        </p>
-      ) : null}
-
-      {away ? (
-        <div className="away" role="dialog" aria-modal="true" aria-label="While you were away">
-          <div className="away__card">
-            <h1 className="away__title">The city kept going</h1>
-            <p className="away__line" data-local="true">
-              <strong data-testid="away-ticks">{away.ticks}</strong> ticks passed and the city took{" "}
-              <strong data-testid="away-earned">{Math.floor(away.earned)}</strong> credits.
-            </p>
-            <p className="away__note">
-              Simulated time, caught up on the same arithmetic that would have run had you left the
-              tab open. Nothing about the business changed.
-            </p>
-            <button type="button" className="btn btn--primary" data-action="away-done" onClick={() => setAway(null)}>
-              Back to the city
+      <nav className="districts" aria-label="Districts">
+        {(["commerce-core", "offer-forge", "creator-quarter"] as const).map((id) => {
+          const built = views.filter((view) => view.building.district === id);
+          const ready = built.reduce((sum, view) => sum + view.ready, 0);
+          return (
+            <button
+              key={id}
+              type="button"
+              className="districts__go"
+              data-district={id}
+              data-ready={ready > 0 ? "true" : "false"}
+              aria-pressed={framing === id}
+              onClick={() => {
+                setFraming(id);
+                setPicked(null);
+              }}
+            >
+              {DISTRICT_NAMES[id]}
+              <span className="districts__count">{built.reduce((sum, view) => sum + view.level, 0)}</span>
+              {ready > 0 ? <span className="districts__bell">{ready}</span> : null}
             </button>
-          </div>
-        </div>
-      ) : null}
-
-      {/* ---------------------------------------------------------- dossier */}
-      {selected && !showPlan ? (
-        <aside
-          className="dossier"
-          ref={dossierRef}
-          tabIndex={-1}
-          aria-label={DISTRICT_NAMES[selected.district.id]}
-          data-district={selected.district.id}
-          data-state={selected.district.state}
-          data-condition={selected.district.signal === "unreadable" ? "unread" : undefined}
-          data-progress={progressMark(selected)}
-        >
-          {game && cityReading ? (
-            <DistrictPanel
-              district={selected.district.id}
-              condition={evidenceKind(selected.district)}
-              reading={cityReading}
-              credits={game.credits}
-              plots={game.plots.filter((entry) => entry.district === selected.district.id)}
-              selected={game.plots.find((entry) => entry.id === plot) ?? null}
-              onSelectPlot={setPlot}
-              onBuild={(plotId, trade) => move((state) => buildPlot(state, plotId, trade))}
-              onRepair={(plotId) => move((state) => repairPlot(state, plotId))}
-              onClear={(plotId) => move((state) => clearPlot(state, plotId))}
-              notes={
-                <details className="fieldnotes">
-                  <summary className="fieldnotes__summary">Field notes on the real business</summary>
-                  <div className="fieldnotes__body">
-                    <Dossier
-                      work={selected}
-                      onAnswer={(prompt, value) => answer(selected, prompt, value)}
-                      onReopen={(promptId) => reopen(selected, promptId)}
-                      onNote={(text) => note(selected, text)}
-                      onUndoLast={() => undoLast(selected)}
-                      onRestart={() => persist(clearDistrict(log, selected.district.id))}
-                    />
-                  </div>
-                </details>
-              }
-            />
-          ) : null}
-        </aside>
-      ) : null}
-
-      {/* ------------------------------------------------------------- plan */}
-      {showPlan ? (
-        <PlanSheet
-          session={session}
-          rounds={log.rounds}
-          onClose={() => setShowPlan(false)}
-          onFileRound={startNewRound}
-          onDiscard={() => {
-            persist(clearWorking(log));
-            setShowPlan(false);
-            setFraming("city");
-            setAnnouncement("Round discarded. Earlier rounds are kept.");
-          }}
-          onSay={setAnnouncement}
-        />
-      ) : null}
-
-      {/* ------------------------------------------------------------ about */}
-      {about ? (
-        <div className="about" role="dialog" aria-modal="true" aria-label="About Whop City">
-          <div className="about__card">
-            <h1 className="about__title">A city built from a business</h1>
-            <p>
-              Every district stands for one part of how this business sells. What is built, lit or
-              staked out comes from what Whop reports about it.
-            </p>
-            <div className="sources">
-              <p className="source">
-                <span className="source__who">From Whop</span>
-                <span className="source__what">{PROVENANCE_NOTE.observed}</span>
-              </p>
-              <p className="source">
-                <span className="source__who">Your answers</span>
-                <span className="source__what">{PROVENANCE_NOTE.reported}</span>
-              </p>
-              <p className="source">
-                <span className="source__who">This browser</span>
-                <span className="source__what">{PROVENANCE_NOTE.local}</span>
-              </p>
-            </div>
-            <p>
-              The city shows the business that deployed this site, and it is public and read-only.
-              If that business is not yours you can look around and take notes, but nothing here
-              operates it.
-            </p>
-            <div className="about__acts">
-              <button type="button" className="btn btn--primary" data-action="about-done"
-                onClick={() => setAbout(false)}>
-                Back to the city
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+          );
+        })}
+      </nav>
     </main>
   );
 }
+
+export const ALL_BUILDINGS = BUILDINGS;

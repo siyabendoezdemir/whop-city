@@ -1,0 +1,521 @@
+/* ==========================================================================
+   Whop City — the game
+   --------------------------------------------------------------------------
+   Chunky, warm, and physical. Panels are carved wood and brass rather than
+   glass; buttons have a thick bottom edge so pressing them looks like pressing
+   something; numbers are big because the numbers are the point.
+
+   Every figure on screen is real: they come from the business's own Whop
+   account. Nothing here is a simulated currency and nothing here is decorative
+   chrome pretending to be data.
+   ========================================================================== */
+
+:root {
+  /* Carved panel */
+  --wood: #3a2a1c;
+  --wood-lit: #4c3826;
+  --wood-dark: #241809;
+  --parchment: #f2e4c9;
+  --parchment-dim: #cdb894;
+
+  /* Brass and gold */
+  --gold: #ffc247;
+  --gold-deep: #d18a1a;
+  --gold-ink: #3a2405;
+
+  /* States */
+  --grow: #6fe08a;
+  --grow-deep: #2f9a4d;
+  --stone: #8a7a68;
+  --stone-dark: #5d5145;
+
+  --card-radius: 16px;
+  --pill-radius: 999px;
+}
+
+/* --------------------------------------------------------------------------
+   Resource bar — the real numbers, always on
+   -------------------------------------------------------------------------- */
+
+.res {
+  position: absolute;
+  top: var(--pad);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  gap: 8px;
+  max-width: calc(100vw - 2 * var(--pad));
+  padding: 0;
+}
+
+.res__pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 15px 7px 9px;
+  border-radius: var(--pill-radius);
+  background: linear-gradient(180deg, var(--wood-lit), var(--wood));
+  border: 2px solid var(--wood-dark);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 220, 160, 0.22),
+    0 3px 0 var(--wood-dark),
+    0 8px 18px rgba(0, 0, 0, 0.35);
+  white-space: nowrap;
+}
+
+.res__icon {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff3d0, var(--gold) 55%, var(--gold-deep));
+  border: 2px solid var(--wood-dark);
+  color: var(--gold-ink);
+}
+
+.res__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.res__value {
+  font-family: var(--face-narrow);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+.res__name {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--parchment-dim);
+}
+
+.res__stack {
+  display: grid;
+  gap: 3px;
+}
+
+/* Withheld: the public view does not get the owner's figures. */
+.res[data-source="withheld"] .res__value {
+  color: var(--stone);
+}
+
+.res__locked {
+  align-self: center;
+  padding: 6px 12px;
+  border-radius: var(--pill-radius);
+  font-size: 12.5px;
+  color: var(--parchment-dim);
+  background: rgba(36, 24, 9, 0.85);
+  border: 2px solid var(--wood-dark);
+}
+
+/* --------------------------------------------------------------------------
+   Tier banner — how grand the city has become
+   -------------------------------------------------------------------------- */
+
+.tier {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 8px 10px;
+  border-radius: var(--pill-radius);
+  background: linear-gradient(180deg, var(--wood-lit), var(--wood));
+  border: 2px solid var(--wood-dark);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.2), 0 3px 0 var(--wood-dark);
+}
+
+.tier__crest {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  color: var(--gold);
+}
+
+.tier__text {
+  display: grid;
+  gap: 1px;
+}
+
+.tier__name {
+  font-family: var(--face-narrow);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+  line-height: 1;
+}
+
+.tier__levels {
+  font-size: 12px;
+  color: var(--parchment-dim);
+}
+
+/* --------------------------------------------------------------------------
+   The building card — where you press the button
+   -------------------------------------------------------------------------- */
+
+.card {
+  position: absolute;
+  right: var(--pad);
+  bottom: var(--pad);
+  z-index: 5;
+  width: min(23rem, calc(100vw - 2 * var(--pad)));
+  display: grid;
+  gap: 0;
+  border-radius: var(--card-radius);
+  background: linear-gradient(180deg, var(--wood-lit), var(--wood) 60%);
+  border: 3px solid var(--wood-dark);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 220, 160, 0.18),
+    0 6px 0 var(--wood-dark),
+    0 18px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  animation: card-in 200ms cubic-bezier(0.2, 1.3, 0.5, 1);
+}
+
+@keyframes card-in {
+  from {
+    transform: translateY(14px) scale(0.97);
+    opacity: 0;
+  }
+}
+
+.card__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.16), transparent);
+  border-bottom: 2px solid var(--wood-dark);
+}
+
+/* The level badge: a brass plate with the number stamped on it. */
+.card__badge {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font-family: var(--face-narrow);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: linear-gradient(180deg, #ffe08a, var(--gold) 45%, var(--gold-deep));
+  border: 2px solid var(--wood-dark);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+}
+
+.card__badge[data-level="0"] {
+  color: var(--parchment-dim);
+  background: linear-gradient(180deg, #6b5b4a, #3f3428);
+}
+
+.card__title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.card__name {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--parchment);
+}
+
+.card__role {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--parchment-dim);
+}
+
+.card__close {
+  margin-left: auto;
+  align-self: flex-start;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 16px;
+  color: var(--parchment-dim);
+  background: rgba(0, 0, 0, 0.22);
+  border: 2px solid var(--wood-dark);
+  cursor: pointer;
+}
+
+.card__close:hover {
+  color: var(--parchment);
+}
+
+.card__body {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+/* ---- the requirement, which is the whole game ---- */
+
+.req {
+  display: grid;
+  gap: 9px;
+  padding: 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.26);
+  border: 2px solid var(--wood-dark);
+}
+
+.req__line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 15px;
+  color: var(--parchment-dim);
+}
+
+.req__count {
+  font-family: var(--face-narrow);
+  font-size: 27px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--parchment);
+  font-variant-numeric: tabular-nums;
+}
+
+.req__of {
+  font-family: var(--face-narrow);
+  font-size: 19px;
+  color: var(--parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.req__bar {
+  height: 16px;
+  border-radius: var(--pill-radius);
+  background: rgba(0, 0, 0, 0.45);
+  border: 2px solid var(--wood-dark);
+  overflow: hidden;
+}
+
+.req__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill-radius);
+  background: linear-gradient(180deg, #9cf0ae, var(--grow) 45%, var(--grow-deep));
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18);
+  transition: width 420ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.req__short {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--parchment-dim);
+}
+
+.req__short strong {
+  color: var(--gold);
+}
+
+/* ---- the button ---- */
+
+.press {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 54px;
+  padding: 0 18px;
+  font: inherit;
+  font-family: var(--face-narrow);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--gold-ink);
+  background: linear-gradient(180deg, #b6f5c4, var(--grow) 40%, var(--grow-deep));
+  border: 2px solid #1d5c30;
+  border-radius: 12px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), 0 5px 0 #1d5c30;
+  cursor: pointer;
+  transition: transform 90ms ease, box-shadow 90ms ease;
+}
+
+.press:hover {
+  filter: brightness(1.05);
+}
+
+.press:active {
+  transform: translateY(4px);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3), 0 1px 0 #1d5c30;
+}
+
+.press[data-state="waiting"] {
+  color: var(--parchment-dim);
+  background: linear-gradient(180deg, #6b5b4a, #3f3428);
+  border-color: var(--wood-dark);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.08), 0 5px 0 var(--wood-dark);
+  cursor: not-allowed;
+}
+
+.press[data-state="waiting"]:active {
+  transform: none;
+}
+
+.press[data-state="maxed"] {
+  color: var(--gold-ink);
+  background: linear-gradient(180deg, #ffe08a, var(--gold) 45%, var(--gold-deep));
+  border-color: #8a5a10;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), 0 5px 0 #8a5a10;
+  cursor: default;
+}
+
+/* Ready to press: it should catch your eye from across the screen. */
+.press[data-state="ready"] {
+  animation: press-breathe 1.9s ease-in-out infinite;
+}
+
+@keyframes press-breathe {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.14);
+  }
+}
+
+.card__foot {
+  margin: 0;
+  padding: 0 16px 14px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--stone);
+}
+
+/* --------------------------------------------------------------------------
+   Ready badge over the world
+   -------------------------------------------------------------------------- */
+
+.ready {
+  position: absolute;
+  z-index: 3;
+  transform: translate(-50%, -100%);
+  pointer-events: auto;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border: 3px solid #1d5c30;
+  border-radius: 50%;
+  color: var(--gold-ink);
+  background: radial-gradient(circle at 35% 28%, #c9ffd6, var(--grow) 55%, var(--grow-deep));
+  box-shadow: 0 4px 0 #1d5c30, 0 10px 22px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  animation: ready-bob 1.5s ease-in-out infinite;
+}
+
+.ready svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ready__n {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--pill-radius);
+  font-family: var(--face-narrow);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: var(--gold);
+  border: 2px solid var(--wood-dark);
+}
+
+@keyframes ready-bob {
+  0%,
+  100% {
+    transform: translate(-50%, -100%);
+  }
+  50% {
+    transform: translate(-50%, calc(-100% - 7px));
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Narrow screens
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 780px) {
+  .res {
+    top: auto;
+    bottom: calc(var(--pad) + 4px);
+    left: var(--pad);
+    right: var(--pad);
+    transform: none;
+    justify-content: space-between;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .res::-webkit-scrollbar {
+    display: none;
+  }
+
+  .res__pill {
+    padding: 6px 12px 6px 7px;
+  }
+
+  .res__name {
+    display: none;
+  }
+
+  .card {
+    left: var(--pad);
+    right: var(--pad);
+    bottom: calc(var(--pad) + 62px);
+    width: auto;
+  }
+
+  .tier {
+    padding: 6px 12px 6px 8px;
+  }
+
+  .tier__levels {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .ready,
+  .press {
+    animation: none !important;
+  }
+}

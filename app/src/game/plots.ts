@@ -18,7 +18,6 @@
 import type { StateName } from "../render/city/districts/buildings";
 import { PARCELS } from "../render/city/cityPlan";
 import type { DistrictId } from "../city/projection";
-import type { Plot } from "./state";
 
 const DISTRICT_BY_PREFIX: Array<[string, DistrictId]> = [
   ["core", "commerce-core"],
@@ -47,18 +46,23 @@ export function plotSite(parcelId: string): { x: number; z: number; width: numbe
   return { x: parcel.centre.x, z: parcel.centre.z, width: parcel.width, depth: parcel.depth };
 }
 
-/** How a plot is drawn by the existing district programs. */
-export function stateOfPlot(plot: Plot): StateName {
-  if (plot.derelict) return "struggling";
-  if (plot.level <= 0) return "dormant";
-  if (plot.level === 1) return "rising";
+/**
+ * A building's level, as the renderer draws it.
+ *
+ * Level nought is bare ground, level one is scaffolding going up, and from two
+ * the building is finished and lit. Above that the works layer keeps growing
+ * the tower, which is where the skyline comes from — the architecture below it
+ * is the approved city and is not touched.
+ */
+export function stateOfLevel(level: number): StateName {
+  if (level <= 0) return "dormant";
+  if (level === 1) return "rising";
   return "healthy";
 }
 
 /** The whole board as the renderer wants it. */
-export function plotPlan(plots: readonly Plot[]): Record<string, StateName> {
+export function levelPlan(levels: Readonly<Record<string, number>>): Record<string, StateName> {
   const plan: Record<string, StateName> = {};
-  for (const parcel of PARCELS) plan[parcel.id] = "dormant";
-  for (const plot of plots) plan[plot.id] = stateOfPlot(plot);
+  for (const parcel of PARCELS) plan[parcel.id] = stateOfLevel(levels[parcel.id] ?? 0);
   return plan;
 }

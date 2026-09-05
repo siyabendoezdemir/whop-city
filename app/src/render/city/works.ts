@@ -1,8 +1,6 @@
 import * as THREE from "three";
 
-import { type Trade } from "../../game/catalog";
 import { plotSite } from "../../game/plots";
-import type { Plot } from "../../game/state";
 
 /**
  * The works: what the player's decisions look like standing in the street.
@@ -30,30 +28,11 @@ import type { Plot } from "../../game/state";
  * rather than removing it, so the count never changes either.
  */
 
-const TRADE_TONE: Record<Trade, number> = {
-  market: 0x6fd39a,
-  arcade: 0x6fd39a,
-  signal: 0x7fc4ff,
-  stage: 0x7fc4ff,
-  foundry: 0xffb457,
-  depot: 0xffb457,
-};
-
-const DARK_TONE = { capacity: 0xffb457, funds: 0xec6f45 } as const;
-const DERELICT_TONE = 0xec6f45;
+const LIT_TONE = 0xffd58a;
+const CROWN_TONE = 0xffc247;
 const IDLE_TONE = 0x8ea4c0;
 
-/** Which sign a trade puts up. */
 type SignKind = "canopy" | "crossarm" | "stack";
-
-const SIGN_OF: Record<Trade, SignKind> = {
-  market: "canopy",
-  arcade: "canopy",
-  signal: "crossarm",
-  stage: "crossarm",
-  foundry: "stack",
-  depot: "stack",
-};
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
@@ -62,7 +41,7 @@ export type Works = {
   picks: THREE.Object3D[];
   /** Screen-space anchor for a plot, for tests and captures. */
   anchor: (plotId: string) => THREE.Vector3 | null;
-  apply: (plots: readonly Plot[], selected: string | null) => void;
+  apply: (levels: Readonly<Record<string, number>>, selected: string | null) => void;
   update: (t: number) => void;
   dispose: () => void;
 };
@@ -229,35 +208,23 @@ export function createWorks(ids: readonly string[]): Works {
       return new THREE.Vector3(sites[index].x, 3, sites[index].z);
     },
 
-    apply: (plots, selected) => {
+    apply: (levels, selected) => {
       selectedIndex = sites.findIndex((site) => site.id === selected);
 
       sites.forEach((site, index) => {
-        const plot = plots.find((entry) => entry.id === site.id);
+        const level = levels[site.id] ?? 0;
         const slot = slots[index];
-        if (!plot) {
-          slot.bare = true;
-          slot.sign = null;
-          slot.crowned = false;
-          return;
-        }
 
-        slot.bare = plot.level === 0;
-        slot.height = 4.4 + plot.level * 1.5;
-        slot.sign = slot.bare || !plot.trade ? null : SIGN_OF[plot.trade];
-        slot.lit = !plot.derelict && plot.offline === null && !slot.bare;
-        slot.pulse = plot.derelict || plot.offline !== null;
-        slot.crowned = plot.level >= 3 && plot.offline === null && !plot.derelict;
+        slot.bare = level === 0;
+        // The tower keeps climbing past the point the architecture stops, so a
+        // grown business ends up with a skyline rather than a bigger number.
+        slot.height = level === 0 ? 0 : 6 + level * 5.5;
+        slot.sign = null;
+        slot.lit = level > 0;
+        slot.pulse = false;
+        slot.crowned = level >= 4;
 
-        colour.setHex(
-          plot.derelict
-            ? DERELICT_TONE
-            : plot.offline
-              ? DARK_TONE[plot.offline]
-              : plot.trade
-                ? TRADE_TONE[plot.trade]
-                : IDLE_TONE,
-        );
+        colour.setHex(level >= 4 ? CROWN_TONE : level > 0 ? LIT_TONE : IDLE_TONE);
         lamps.setColorAt(index, colour);
       });
 

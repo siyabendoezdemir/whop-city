@@ -129,7 +129,10 @@ async function buildProjection(env: Env, scenario: string | null): Promise<Publi
   // branch is dead in a deployable build and delete `fixtures.ts` with it.
   if (__CITY_FIXTURES_BUILD__ && source === "fixture") {
     // Not account-bound, so no key is needed and none is used.
-    return toPublicProjection(fixtureSnapshot(resolveScenario(scenario), now), ANONYMOUS_SEED, now);
+    // Fixtures are invented data with no business behind them, so there is
+    // nothing to withhold and the game is fully playable in dev. This branch
+    // cannot exist in a production build — see the compile-time guard above.
+    return toPublicProjection(fixtureSnapshot(resolveScenario(scenario), now), ANONYMOUS_SEED, now, "owner");
   }
   if (source === "fixture") return unavailableProjection(ANONYMOUS_SEED);
 

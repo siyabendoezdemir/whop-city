@@ -1,13 +1,10 @@
 import * as THREE from "three";
 import { useEffect, useRef } from "react";
 
-import { evidenceKind } from "../city/evidence";
 import type { DistrictId, PublicCityProjection } from "../city/projection";
 import { buildCity, disposeCity, type City } from "../render/city/city";
-import { createMarkers, type ProgressMark } from "../render/city/markers";
 import { createWorks, type Works } from "../render/city/works";
-import { plotPlan } from "../game/plots";
-import type { Plot } from "../game/state";
+import { levelPlan } from "../game/plots";
 import { applySurfaceDetail } from "../render/scene/materials";
 import { SUPERSAMPLE_DEFAULT, VIEW, createStage } from "../render/scene/stage";
 import { FRAMING_ORDER, framingFor, type FramingKey } from "./framings";
@@ -34,10 +31,9 @@ type Props = {
    * What the player has done in each district. Drawn as a separate mark beside
    * the condition, never instead of it.
    */
-  progress: Readonly<Record<DistrictId, ProgressMark>>;
-  /** The simulated city: what is standing on each plot. */
-  plots: readonly Plot[];
-  selectedPlot: string | null;
+  /** Level per building id: what the business has earned and the player took. */
+  levels: Readonly<Record<string, number>>;
+  selected: string | null;
   onSelectPlot: (plotId: string) => void;
   /** A district was picked in the world. The shell decides what that means. */
   onSelectDistrict: (districtId: DistrictId) => void;
@@ -97,9 +93,8 @@ export function CityCanvas({
   projection,
   framing,
   zoom,
-  progress,
-  plots,
-  selectedPlot,
+  levels,
+  selected,
   onSelectPlot,
   onSelectDistrict,
   onUnavailable,
@@ -107,7 +102,7 @@ export function CityCanvas({
   const mountRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<ReturnType<typeof createStage> | null>(null);
   const cityRef = useRef<City | null>(null);
-  const markersRef = useRef<ReturnType<typeof createMarkers> | null>(null);
+
   const worksRef = useRef<Works | null>(null);
   // Held in a ref so the pointer handler, which is installed once, always
   // calls the current one.
@@ -280,7 +275,6 @@ export function CityCanvas({
       clock += dt;
       glide(dt);
       cityRef.current?.update(clock);
-      markersRef.current?.update(clock);
       worksRef.current?.update(clock);
       stage.renderer.render(stage.scene, stage.camera);
       raf = requestAnimationFrame(loop);
@@ -296,8 +290,6 @@ export function CityCanvas({
     let pressedAt: { x: number; y: number } | null = null;
 
     const pick = (event: PointerEvent): DistrictId | null => {
-      const markers = markersRef.current;
-      if (!markers) return null;
       const rect = stage.renderer.domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -315,12 +307,7 @@ export function CityCanvas({
         }
       }
 
-      const hits = raycaster.intersectObjects(
-        markers.markers.flatMap((marker) => marker.targets),
-        false,
-      );
-      const districtId = hits[0]?.object.userData.districtId;
-      return typeof districtId === "string" ? (districtId as DistrictId) : null;
+      return null;
     };
 
     // Pointers currently down, so one finger can drag and two can pinch.
@@ -418,7 +405,6 @@ export function CityCanvas({
       clock = t;
       stage.frame(focus, height);
       cityRef.current?.update(t);
-      markersRef.current?.update(t);
       worksRef.current?.update(t);
       stage.renderer.render(stage.scene, stage.camera);
     };
@@ -473,24 +459,6 @@ export function CityCanvas({
         /**
          * Where a district's marker is on screen, in CSS pixels.
          *
-         * For tests and the capture harness: clicking the world is the primary
-         * way to select a district, and a test that cannot find the target
-         * cannot prove that works.
-         */
-        markerPoint: (districtId: string) => {
-          const markers = markersRef.current;
-          const marker = markers?.markers.find((m) => m.districtId === districtId);
-          if (!marker) return null;
-          const rect = stage.renderer.domElement.getBoundingClientRect();
-          const world = marker.group.position.clone();
-          world.y += marker.lampHeight(); // low and tall masts differ
-          world.project(stage.camera);
-          return {
-            x: rect.left + ((world.x + 1) / 2) * rect.width,
-            y: rect.top + ((1 - world.y) / 2) * rect.height,
-          };
-        },
-
         /** Where a plot is on screen, in CSS pixels. For tests and captures. */
         plotPoint: (plotId: string) => {
           const world = worksRef.current?.anchor(plotId);
@@ -574,11 +542,6 @@ export function CityCanvas({
       canvas.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", fit);
       delete (window as { __city?: unknown }).__city;
-      if (markersRef.current) {
-        stage.scene.remove(markersRef.current.group);
-        markersRef.current.dispose();
-        markersRef.current = null;
-      }
       if (worksRef.current) {
         stage.scene.remove(worksRef.current.group);
         worksRef.current.dispose();
@@ -598,7 +561,7 @@ export function CityCanvas({
   const projectionKey = JSON.stringify(projection);
   // Only levels and trades change the architecture. A tick changes lamps, and
   // lamps are the works layer, which never triggers a rebuild.
-  const planKey = plots.map((plot) => `${plot.id}:${plot.level}:${plot.trade}:${plot.derelict}`).join("|");
+  const planKey = JSON.stringify(levels);
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -608,26 +571,18 @@ export function CityCanvas({
       disposeCity(cityRef.current);
     }
 
-    const city = buildCity(projection, plots.length > 0 ? plotPlan(plots) : undefined);
+    const city = buildCity(projection, levelPlan(levels));
     cityRef.current = city;
     stage.scene.add(city.group);
 
-    // Markers live alongside the city rather than inside it, so a rebuild does
-    // not have to recreate them and picking survives a projection change.
-    if (!markersRef.current) {
-      const markers = createMarkers(projection.districts.map((district) => district.id));
-      markersRef.current = markers;
-      stage.scene.add(markers.group);
-    }
-
-    // The works stand outside the city group for the same reason the markers
-    // do: a rebuild must not take the player's lamps and pick targets with it.
-    if (!worksRef.current && plots.length > 0) {
-      const works = createWorks(plots.map((plot) => plot.id));
+    // The works stand outside the city group: a rebuild must not take the
+    // player's lamps and pick targets with it.
+    if (!worksRef.current) {
+      const works = createWorks(Object.keys(levels));
       worksRef.current = works;
       stage.scene.add(works.group);
     }
-    worksRef.current?.apply(plots, selectedPlot);
+    worksRef.current?.apply(levels, selected);
 
     const f = framingFor(viewRef.current.framing);
     stage.frame(new THREE.Vector3(...f.focus), f.height * viewRef.current.zoom);
@@ -640,42 +595,19 @@ export function CityCanvas({
   // Cheap, and runs on every tick: the works are materials and visibility, not
   // geometry, so the state of the city can change once every five seconds
   // without the city being rebuilt once every five seconds.
-  const worksKey = plots
-    .map((plot) => `${plot.id}:${plot.level}:${plot.trade}:${plot.derelict}:${plot.offline}`)
-    .join("|");
+  const worksKey = JSON.stringify(levels);
   useEffect(() => {
     const stage = stageRef.current;
     const works = worksRef.current;
     if (!stage || !works) return;
-    works.apply(plots, selectedPlot);
+    works.apply(levels, selected);
     if (isCaptureMode()) {
       works.update(0);
       stage.renderer.render(stage.scene, stage.camera);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worksKey, selectedPlot]);
+  }, [worksKey, selected]);
 
-  const progressKey = JSON.stringify(progress);
-  useEffect(() => {
-    const stage = stageRef.current;
-    const markers = markersRef.current;
-    if (!stage || !markers) return;
-
-    for (const marker of markers.markers) {
-      const district = projection.districts.find((d) => d.id === marker.districtId);
-      if (!district) continue;
-      // Condition comes from Whop; progress comes from the browser. Two calls,
-      // two marks, and the first never depends on the second.
-      marker.setCondition(evidenceKind(district));
-      marker.setProgress(progress[marker.districtId] ?? "none");
-      marker.setSelected(framing === marker.districtId);
-    }
-    if (isCaptureMode()) {
-      markers.update(0);
-      stage.renderer.render(stage.scene, stage.camera);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectionKey, progressKey, framing]);
 
   // On a phone the dossier is a sheet over the lower two thirds, so the framing
   // is pushed up into the part of the screen that is still the city.
