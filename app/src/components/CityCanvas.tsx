@@ -5,6 +5,9 @@ import { evidenceKind } from "../city/evidence";
 import type { DistrictId, PublicCityProjection } from "../city/projection";
 import { buildCity, disposeCity, type City } from "../render/city/city";
 import { createMarkers, type ProgressMark } from "../render/city/markers";
+import { createWorks, type Works } from "../render/city/works";
+import { plotPlan } from "../game/plots";
+import type { Plot } from "../game/state";
 import { applySurfaceDetail } from "../render/scene/materials";
 import { SUPERSAMPLE_DEFAULT, VIEW, createStage } from "../render/scene/stage";
 import { FRAMING_ORDER, framingFor, type FramingKey } from "./framings";
@@ -32,6 +35,10 @@ type Props = {
    * the condition, never instead of it.
    */
   progress: Readonly<Record<DistrictId, ProgressMark>>;
+  /** The simulated city: what is standing on each plot. */
+  plots: readonly Plot[];
+  selectedPlot: string | null;
+  onSelectPlot: (plotId: string) => void;
   /** A district was picked in the world. The shell decides what that means. */
   onSelectDistrict: (districtId: DistrictId) => void;
   /** WebGL could not start. The shell swaps in the readable fallback. */
@@ -80,6 +87,9 @@ export function CityCanvas({
   framing,
   zoom,
   progress,
+  plots,
+  selectedPlot,
+  onSelectPlot,
   onSelectDistrict,
   onUnavailable,
 }: Props) {
@@ -87,6 +97,11 @@ export function CityCanvas({
   const stageRef = useRef<ReturnType<typeof createStage> | null>(null);
   const cityRef = useRef<City | null>(null);
   const markersRef = useRef<ReturnType<typeof createMarkers> | null>(null);
+  const worksRef = useRef<Works | null>(null);
+  // Held in a ref so the pointer handler, which is installed once, always
+  // calls the current one.
+  const onSelectPlotRef = useRef(onSelectPlot);
+  onSelectPlotRef.current = onSelectPlot;
   // Kept in refs so the animation loop reads the current value without being
   // torn down and restarted on every camera change.
   const viewRef = useRef({ framing, zoom });
@@ -179,6 +194,7 @@ export function CityCanvas({
       glide(dt);
       cityRef.current?.update(clock);
       markersRef.current?.update(clock);
+      worksRef.current?.update(clock);
       stage.renderer.render(stage.scene, stage.camera);
       raf = requestAnimationFrame(loop);
     };
@@ -199,6 +215,19 @@ export function CityCanvas({
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, stage.camera);
+      // Plots are the finer target and win ties: clicking a building the
+      // player put up should open that building, not the district around it.
+      const plotHits = worksRef.current
+        ? raycaster.intersectObjects(worksRef.current.picks, false)
+        : [];
+      if (plotHits.length > 0) {
+        const plotId = plotHits[0].object.userData.plotId as string | undefined;
+        if (plotId) {
+          onSelectPlotRef.current(plotId);
+          return null;
+        }
+      }
+
       const hits = raycaster.intersectObjects(
         markers.markers.flatMap((marker) => marker.targets),
         false,
@@ -245,6 +274,7 @@ export function CityCanvas({
       stage.frame(focus, height);
       cityRef.current?.update(t);
       markersRef.current?.update(t);
+      worksRef.current?.update(t);
       stage.renderer.render(stage.scene, stage.camera);
     };
 
@@ -309,6 +339,18 @@ export function CityCanvas({
           const rect = stage.renderer.domElement.getBoundingClientRect();
           const world = marker.group.position.clone();
           world.y += marker.lampHeight(); // low and tall masts differ
+          world.project(stage.camera);
+          return {
+            x: rect.left + ((world.x + 1) / 2) * rect.width,
+            y: rect.top + ((1 - world.y) / 2) * rect.height,
+          };
+        },
+
+        /** Where a plot is on screen, in CSS pixels. For tests and captures. */
+        plotPoint: (plotId: string) => {
+          const world = worksRef.current?.anchor(plotId);
+          if (!world) return null;
+          const rect = stage.renderer.domElement.getBoundingClientRect();
           world.project(stage.camera);
           return {
             x: rect.left + ((world.x + 1) / 2) * rect.width,
@@ -390,6 +432,11 @@ export function CityCanvas({
         markersRef.current.dispose();
         markersRef.current = null;
       }
+      if (worksRef.current) {
+        stage.scene.remove(worksRef.current.group);
+        worksRef.current.dispose();
+        worksRef.current = null;
+      }
       black.dispose();
       stage.renderer.dispose();
       mount.removeChild(stage.renderer.domElement);
@@ -402,6 +449,9 @@ export function CityCanvas({
   // changes it. Serialised as the dependency so an identical projection
   // arriving as a new object does not throw the city away and build it again.
   const projectionKey = JSON.stringify(projection);
+  // Only levels and trades change the architecture. A tick changes lamps, and
+  // lamps are the works layer, which never triggers a rebuild.
+  const planKey = plots.map((plot) => `${plot.id}:${plot.level}:${plot.trade}:${plot.derelict}`).join("|");
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -411,7 +461,7 @@ export function CityCanvas({
       disposeCity(cityRef.current);
     }
 
-    const city = buildCity(projection);
+    const city = buildCity(projection, plots.length > 0 ? plotPlan(plots) : undefined);
     cityRef.current = city;
     stage.scene.add(city.group);
 
@@ -423,14 +473,41 @@ export function CityCanvas({
       stage.scene.add(markers.group);
     }
 
+    // The works stand outside the city group for the same reason the markers
+    // do: a rebuild must not take the player's lamps and pick targets with it.
+    if (!worksRef.current && plots.length > 0) {
+      const works = createWorks(plots.map((plot) => plot.id));
+      worksRef.current = works;
+      stage.scene.add(works.group);
+    }
+    worksRef.current?.apply(plots, selectedPlot);
+
     const f = framingFor(viewRef.current.framing);
     stage.frame(new THREE.Vector3(...f.focus), f.height * viewRef.current.zoom);
     city.update(0);
     stage.renderer.render(stage.scene, stage.camera);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectionKey]);
+  }, [projectionKey, planKey]);
 
   // ------------------------------------------------- markers follow the state
+  // Cheap, and runs on every tick: the works are materials and visibility, not
+  // geometry, so the state of the city can change once every five seconds
+  // without the city being rebuilt once every five seconds.
+  const worksKey = plots
+    .map((plot) => `${plot.id}:${plot.level}:${plot.trade}:${plot.derelict}:${plot.offline}`)
+    .join("|");
+  useEffect(() => {
+    const stage = stageRef.current;
+    const works = worksRef.current;
+    if (!stage || !works) return;
+    works.apply(plots, selectedPlot);
+    if (isCaptureMode()) {
+      works.update(0);
+      stage.renderer.render(stage.scene, stage.camera);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worksKey, selectedPlot]);
+
   const progressKey = JSON.stringify(progress);
   useEffect(() => {
     const stage = stageRef.current;

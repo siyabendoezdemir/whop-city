@@ -421,6 +421,16 @@ kbd {
   background: var(--accent);
 }
 
+.stud__levels {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
+.stud[aria-pressed="true"] .stud__levels {
+  color: var(--accent);
+}
+
 .stud__glyph {
   flex: none;
   width: 13px;

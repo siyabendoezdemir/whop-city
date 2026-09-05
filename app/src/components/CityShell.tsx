@@ -20,7 +20,22 @@ import {
   writeNote,
   type OperatorLog,
 } from "../state/operatorLog";
+
+import { PLOT_IDS } from "../game/plots";
+import {
+  advance,
+  build as buildPlot,
+  clear as clearPlot,
+  foundCity,
+  read as readCity,
+  repair as repairPlot,
+  ticksDue,
+  type GameState,
+} from "../game/state";
+import { loadCity, saveCity } from "../state/simStore";
 import { CityFallback } from "./CityFallback";
+import { DistrictPanel } from "./DistrictPanel";
+import { Resources } from "./Resources";
 import { CommandBar } from "./CommandBar";
 import { Dossier } from "./Dossier";
 import { PlanSheet } from "./PlanSheet";
@@ -100,6 +115,10 @@ export function CityShell() {
   const [about, setAbout] = useState(false);
   const [showPlan, setShowPlan] = useState(false);
   const [hint, setHint] = useState(false);
+  const [game, setGame] = useState<GameState | null>(null);
+  const [plot, setPlot] = useState<string | null>(null);
+  const [away, setAway] = useState<{ ticks: number; earned: number } | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const dossierRef = useRef<HTMLElement>(null);
 
   const projection = load.status === "ready" ? load.projection : null;
@@ -114,6 +133,18 @@ export function CityShell() {
         setLoad({ status: "ready", projection: next });
         setLog(loadLog(next.seed));
         setHint(!hasVisited());
+
+        // Resume the city if there is one, otherwise found it. Either way the
+        // clock is caught up before the first frame, so returning tomorrow
+        // shows what the city did rather than starting it from where it was.
+        const saved = loadCity(next.seed);
+        const now = Date.now();
+        const start = saved ?? foundCity(next, PLOT_IDS, now);
+        const due = saved ? ticksDue(saved, now) : 0;
+        const caught = advance(start, due, now);
+        setGame(caught.state);
+        saveCity(caught.state);
+        if (caught.ticks > 2) setAway({ ticks: caught.ticks, earned: caught.earned });
       })
       .catch(() => {
         if (!cancelled) setLoad({ status: "failed" });
@@ -122,6 +153,55 @@ export function CityShell() {
       cancelled = true;
     };
   }, []);
+
+  // A toast is a sentence, not a log. It says the last thing that happened and
+  // then gets out of the way.
+  useEffect(() => {
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), 4_000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
+
+  // The city runs on the wall clock, not on frames: a page rendering at a
+  // fraction of a frame per second must still keep time, and the same
+  // arithmetic has to produce the same city whether it ran live or was caught
+  // up in one go on return.
+  useEffect(() => {
+    if (!game) return;
+    const timer = window.setInterval(() => {
+      setGame((current) => {
+        if (!current) return current;
+        const now = Date.now();
+        const due = ticksDue(current, now);
+        if (due <= 0) return current;
+        const next = advance(current, due, now).state;
+        saveCity(next);
+        return next;
+      });
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [game !== null]);
+
+  const cityReading = useMemo(() => (game ? readCity(game) : null), [game]);
+
+  /** Apply a move, saving it and saying why if the game refused. */
+  const move = useCallback(
+    (action: (state: GameState) => ReturnType<typeof buildPlot>) => {
+      setGame((current) => {
+        if (!current) return current;
+        const result = action(current);
+        if (!result.ok) {
+          setToast({ id: Date.now(), text: result.why });
+          return current;
+        }
+        saveCity(result.state);
+        const latest = result.state.events[0];
+        if (latest) setToast({ id: Date.now(), text: latest.text });
+        return result.state;
+      });
+    },
+    [],
+  );
 
   const session = useMemo(() => {
     if (!projection) return null;
@@ -249,17 +329,37 @@ export function CityShell() {
     [log, persist],
   );
 
-  /** The one control: start where the work is, resume where it stopped. */
+  /**
+   * The one control: take me somewhere worth building.
+   *
+   * Whatever is most wrong first — a derelict plot, then the district that
+   * would relieve the constraint the city is actually under, then simply the
+   * emptiest ground.
+   */
   const primary = useCallback(() => {
-    if (!session) return;
-    if (session.complete) {
-      setShowPlan(true);
+    if (!game || !cityReading) return;
+    const empty = game.plots.filter((entry) => entry.level === 0);
+    const wanted: DistrictId | null = cityReading.overCapacity
+      ? "offer-forge"
+      : cityReading.shortOfFootfall
+        ? "creator-quarter"
+        : cityReading.income === 0
+          ? "creator-quarter"
+          : "commerce-core";
+
+    const target =
+      game.plots.find((entry) => entry.derelict) ??
+      empty.find((entry) => entry.district === wanted) ??
+      empty[0] ??
+      null;
+
+    if (!target) {
+      setToast({ id: Date.now(), text: "Every plot is built on. Raise one instead." });
       return;
     }
-    const next = session.outstanding[0] ?? session.work.find((entry) => entry.activity && !entry.complete);
-    if (next) select(next.district.id);
-    else setShowPlan(true);
-  }, [session, select]);
+    setPlot(target.id);
+    select(target.district);
+  }, [game, cityReading, select]);
 
   // ----------------------------------------------------------- keyboard
   useEffect(() => {
@@ -361,6 +461,13 @@ export function CityShell() {
             framing={framing}
             zoom={zoom}
             progress={progress}
+            plots={game?.plots ?? []}
+            selectedPlot={plot}
+            onSelectPlot={(id) => {
+              setPlot(id);
+              const owner = game?.plots.find((entry) => entry.id === id)?.district;
+              if (owner && owner !== framing) select(owner);
+            }}
             onSelectDistrict={select}
             onUnavailable={() => setWorldUnavailable(true)}
           />
@@ -399,6 +506,8 @@ export function CityShell() {
         onBack={() => select("city")}
         onPrimary={primary}
         planOpen={showPlan}
+        plots={game?.plots ?? []}
+        reading={cityReading}
       />
 
       {hint && !selected && session.outstanding.length > 0 ? (
@@ -426,6 +535,33 @@ export function CityShell() {
         <button type="button" data-cam="reset" aria-label="Reset view" onClick={() => setZoom(1)}>⌂</button>
       </div>
 
+      {game && cityReading ? <Resources credits={game.credits} reading={cityReading} /> : null}
+
+      {toast ? (
+        <p className="toast surface" key={toast.id} role="status">
+          {toast.text}
+        </p>
+      ) : null}
+
+      {away ? (
+        <div className="away" role="dialog" aria-modal="true" aria-label="While you were away">
+          <div className="away__card">
+            <h1 className="away__title">The city kept going</h1>
+            <p className="away__line" data-local="true">
+              <strong data-testid="away-ticks">{away.ticks}</strong> ticks passed and the city took{" "}
+              <strong data-testid="away-earned">{Math.floor(away.earned)}</strong> credits.
+            </p>
+            <p className="away__note">
+              Simulated time, caught up on the same arithmetic that would have run had you left the
+              tab open. Nothing about the business changed.
+            </p>
+            <button type="button" className="btn btn--primary" data-action="away-done" onClick={() => setAway(null)}>
+              Back to the city
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {/* ---------------------------------------------------------- dossier */}
       {selected && !showPlan ? (
         <aside
@@ -438,14 +574,35 @@ export function CityShell() {
           data-condition={selected.district.signal === "unreadable" ? "unread" : undefined}
           data-progress={progressMark(selected)}
         >
-          <Dossier
-            work={selected}
-            onAnswer={(prompt, value) => answer(selected, prompt, value)}
-            onReopen={(promptId) => reopen(selected, promptId)}
-            onNote={(text) => note(selected, text)}
-            onUndoLast={() => undoLast(selected)}
-            onRestart={() => persist(clearDistrict(log, selected.district.id))}
-          />
+          {game && cityReading ? (
+            <DistrictPanel
+              district={selected.district.id}
+              condition={evidenceKind(selected.district)}
+              reading={cityReading}
+              credits={game.credits}
+              plots={game.plots.filter((entry) => entry.district === selected.district.id)}
+              selected={game.plots.find((entry) => entry.id === plot) ?? null}
+              onSelectPlot={setPlot}
+              onBuild={(plotId, trade) => move((state) => buildPlot(state, plotId, trade))}
+              onRepair={(plotId) => move((state) => repairPlot(state, plotId))}
+              onClear={(plotId) => move((state) => clearPlot(state, plotId))}
+              notes={
+                <details className="fieldnotes">
+                  <summary className="fieldnotes__summary">Field notes on the real business</summary>
+                  <div className="fieldnotes__body">
+                    <Dossier
+                      work={selected}
+                      onAnswer={(prompt, value) => answer(selected, prompt, value)}
+                      onReopen={(promptId) => reopen(selected, promptId)}
+                      onNote={(text) => note(selected, text)}
+                      onUndoLast={() => undoLast(selected)}
+                      onRestart={() => persist(clearDistrict(log, selected.district.id))}
+                    />
+                  </div>
+                </details>
+              }
+            />
+          ) : null}
         </aside>
       ) : null}
 

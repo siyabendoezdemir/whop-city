@@ -112,9 +112,17 @@ export function numericSeed(seed: string): number {
   return hash % 2_147_483_647;
 }
 
-export function buildCity(projection: PublicCityProjection): City {
+/**
+ * @param plan Overrides the projection's own development plan. The game passes
+ *   the player's plots here, so what is standing in the street is what they
+ *   built rather than what the reading seeded.
+ */
+export function buildCity(
+  projection: PublicCityProjection,
+  plan?: Record<string, StateName>,
+): City {
   const seed = numericSeed(projection.seed);
-  const states = statePlan(projection);
+  const states = plan ?? statePlan(projection);
 
   const group = new THREE.Group();
   group.name = "city";
