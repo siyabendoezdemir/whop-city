@@ -347,14 +347,23 @@ export function CityShell() {
           ? "creator-quarter"
           : "commerce-core";
 
+    // Bare ground first, then the lowest thing standing in the district that
+    // would relieve the constraint. A city seeded full has nothing to build on
+    // and every reason to build *up*, and the one control has to know that.
+    const lowest = (where: DistrictId | null) =>
+      [...game.plots]
+        .filter((entry) => entry.level > 0 && (where === null || entry.district === where))
+        .sort((a, b) => a.level - b.level)[0] ?? null;
+
     const target =
       game.plots.find((entry) => entry.derelict) ??
       empty.find((entry) => entry.district === wanted) ??
       empty[0] ??
-      null;
+      lowest(wanted) ??
+      lowest(null);
 
     if (!target) {
-      setToast({ id: Date.now(), text: "Every plot is built on. Raise one instead." });
+      setToast({ id: Date.now(), text: "Nothing to do here yet." });
       return;
     }
     setPlot(target.id);

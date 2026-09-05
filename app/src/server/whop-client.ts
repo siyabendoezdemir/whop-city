@@ -274,8 +274,21 @@ function isDefaultPlan(value: unknown): boolean {
 }
 
 /** `{ amount, currency }`, or null. The amount is what becomes a price. */
+/**
+ * A plan's price, in either shape the API has been seen to use.
+ *
+ * The live API returns a plain number with the currency as a sibling field.
+ * This validator originally accepted only an `{ amount, currency }` object,
+ * which was an assumption about a response nobody had ever received: the first
+ * deployment read a real business, every plan failed this check, and the whole
+ * capture failed closed to the unavailable projection.
+ *
+ * Both shapes are accepted now. The object form is kept because rejecting it
+ * would trade one unverified assumption for another.
+ */
 function isInitialPrice(value: unknown): boolean {
   if (value === null) return true;
+  if (typeof value === "number") return Number.isFinite(value) && value >= 0;
   if (!isObject(value)) return false;
   return field(value, "amount", isNullableQuantity) && field(value, "currency", isNullableString);
 }
@@ -311,7 +324,7 @@ function isWhopProduct(value: unknown): value is WhopProduct {
   );
 }
 
-function isWhopPlan(value: unknown): value is WhopPlan {
+export function isWhopPlan(value: unknown): value is WhopPlan {
   if (!isObject(value)) return false;
   return (
     field(value, "id", isNonEmptyString) &&

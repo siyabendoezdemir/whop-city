@@ -1,5 +1,5 @@
 import { isLiveSource } from "../src/server/snapshotRoute";
-import { apiOrigin, boundAppId } from "../src/server/whop-client";
+import { apiOrigin, boundAppId, isWhopPlan } from "../src/server/whop-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -1190,5 +1190,35 @@ describe("the deployment's bindings are the ones the runtime actually sets", () 
     expect(
       isLiveSource({ WHOP_APP_ID: "app_1", CITY_SEED_SECRET: "vI8IN_Yo_zJMdil3-QzndMH0Xua7PP_TpwxN7DHaYGM" }),
     ).toBe(true);
+  });
+});
+
+describe("a plan's price, in the shape the live API actually sends", () => {
+  const plan = (over: Record<string, unknown> = {}) => ({
+    id: "plan_1",
+    plan_type: "one_time",
+    visibility: "visible",
+    created_at: "2026-09-03T12:04:29.963Z",
+    initial_price: 0,
+    ...over,
+  });
+
+  it("accepts a plain number, which is what a real business returns", () => {
+    // The validator originally required an { amount, currency } object. Nobody
+    // had ever received one: the first deployment read a real business, every
+    // plan failed this check, and the city fell back to unavailable.
+    expect(isWhopPlan(plan({ initial_price: 0 }))).toBe(true);
+    expect(isWhopPlan(plan({ initial_price: 29.99 }))).toBe(true);
+  });
+
+  it("still accepts the object form, and an absent price", () => {
+    expect(isWhopPlan(plan({ initial_price: { amount: 2999, currency: "usd" } }))).toBe(true);
+    expect(isWhopPlan(plan({ initial_price: null }))).toBe(true);
+  });
+
+  it("rejects a price that is not a price", () => {
+    for (const bad of ["29.99", Number.NaN, Number.POSITIVE_INFINITY, -1, [], true]) {
+      expect(isWhopPlan(plan({ initial_price: bad })), String(bad)).toBe(false);
+    }
   });
 });
