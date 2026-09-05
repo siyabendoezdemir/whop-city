@@ -1,81 +1,20 @@
 /**
  * Who is looking, and are they allowed to see the numbers.
  *
- * Whop renders an app inside an iframe on its own domain and attaches a
- * short-lived signed token to every same-origin request. Verifying it server
- * side is the whole of the authentication story: no OAuth, no redirect URIs,
- * no session of our own to get wrong, and no credential ever in the browser.
+ * A Whop **website** has no iframe and no injected user token: the hosting
+ * docs say plainly that the runtime authenticates as the business and never as
+ * the visitor, and that visitor identity means OAuth. So identity arrives as a
+ * signed session cookie minted by `oauth.ts` after Whop vouched for the user
+ * and the access check said they run this business.
  *
- * Two things have to be true before a real figure crosses the wire:
- *
- *   the token is genuinely Whop's, signed ES256 against their published keys
- *   and issued for *this* app rather than some other one, and
- *
- *   the user it names is an admin of the very business this deployment is
- *   bound to — not a member of it, not an admin of a different one.
- *
- * Anything less is the public view, which carries no figures at all. There is
+ * Everyone else is the public view, which carries no figures at all. There is
  * no third state and no way to ask for one.
  */
 
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { readSession } from "./session";
+import { apiOrigin, readOwningAccountId, type Env } from "./whop-client";
 
-import { apiOrigin, boundAppId, readOwningAccountId, type Env } from "./whop-client";
-
-const JWKS_PATH = "/.well-known/jwks.json";
-const TOKEN_HEADER = "x-whop-user-token";
 const CHECK_TIMEOUT_MS = 5_000;
-
-/**
- * Cached per origin.
- *
- * `createRemoteJWKSet` does its own caching and honours the key set's
- * cache headers; what this avoids is building a fresh fetcher, and therefore
- * a fresh cache, on every single request.
- */
-const keySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
-
-function keysFor(origin: string) {
-  const existing = keySets.get(origin);
-  if (existing) return existing;
-  const created = createRemoteJWKSet(new URL(`${origin}${JWKS_PATH}`));
-  keySets.set(origin, created);
-  return created;
-}
-
-/** What a key resolver looks like, so tests can supply their own. */
-export type KeyResolver = Parameters<typeof jwtVerify>[1];
-
-/**
- * The user Whop says is looking, or null. Never throws.
- *
- * `keys` exists for tests: the real path always resolves Whop's published set
- * from the API origin, and nothing in a request can redirect it.
- */
-export async function verifyViewer(
-  request: Request,
-  env: Env,
-  keys?: KeyResolver,
-): Promise<string | null> {
-  const token = request.headers.get(TOKEN_HEADER);
-  if (!token) return null;
-
-  const origin = apiOrigin(env);
-  const appId = boundAppId(env);
-  if (!origin || !appId) return null;
-
-  try {
-    const { payload } = await jwtVerify(token, keys ?? keysFor(origin), {
-      algorithms: ["ES256"],
-      // A token minted for another app is not a token for this one.
-      audience: appId,
-    });
-    const subject = payload.sub;
-    return typeof subject === "string" && subject.length > 0 ? subject : null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Does this user run this business.
@@ -120,12 +59,11 @@ export async function isAdminOf(userId: string, env: Env): Promise<boolean> {
  * app, unreachable check — lands on public, because the safe answer and the
  * error answer have to be the same one.
  */
-export async function audienceFor(
-  request: Request,
-  env: Env,
-  keys?: KeyResolver,
-): Promise<"public" | "owner"> {
-  const userId = await verifyViewer(request, env, keys);
-  if (!userId) return "public";
-  return (await isAdminOf(userId, env)) ? "owner" : "public";
+export async function audienceFor(request: Request, env: Env): Promise<"public" | "owner"> {
+  const account = await readOwningAccountId(env);
+  if (!account.ok) return "public";
+
+  const secret = typeof env.CITY_SESSION_SECRET === "string" ? env.CITY_SESSION_SECRET : undefined;
+  const session = await readSession(request, secret, account.data);
+  return session ? "owner" : "public";
 }

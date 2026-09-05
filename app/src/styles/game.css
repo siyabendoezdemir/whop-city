@@ -785,3 +785,61 @@
   line-height: 1.5;
   color: var(--stone);
 }
+
+/* --------------------------------------------------------------------------
+   Sign in with Whop
+   --------------------------------------------------------------------------
+   A website has no iframe and no injected identity, so the owner signs in and
+   the figures appear. Everyone else gets the city with the numbers withheld,
+   which is the honest public view rather than a locked door.
+   -------------------------------------------------------------------------- */
+
+.signin {
+  position: absolute;
+  top: calc(var(--pad) + 58px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  max-width: min(32rem, calc(100vw - 2 * var(--pad)));
+  padding: 13px 18px 15px;
+  text-align: center;
+  border-radius: var(--card-radius);
+  background: linear-gradient(180deg, var(--wood-lit), var(--wood) 60%);
+  border: 3px solid var(--wood-dark);
+  box-shadow: inset 0 2px 0 rgba(255, 220, 160, 0.18), 0 6px 0 var(--wood-dark);
+}
+
+.signin__line {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--parchment-dim);
+}
+
+.signin__go {
+  min-height: 46px;
+  padding: 0 22px;
+  text-decoration: none;
+  font-size: 17px;
+}
+
+.signout {
+  position: absolute;
+  top: calc(var(--pad) + 58px);
+  right: var(--pad);
+  z-index: 4;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  text-decoration: none;
+  color: var(--parchment-dim);
+  background: rgba(26, 18, 9, 0.9);
+  border: 2px solid var(--wood-dark);
+  border-radius: var(--pill-radius);
+}
+
+.signout:hover {
+  color: var(--parchment);
+}

@@ -63,6 +63,25 @@ export function CityShell() {
   const [advisorOpen, setAdvisorOpen] = useState(true);
   const [tooSmall, setTooSmall] = useState(false);
 
+  /** What came back from the sign-in round trip, if anything. */
+  const authNote = useMemo(() => {
+    if (typeof location === "undefined") return null;
+    switch (new URLSearchParams(location.search).get("auth")) {
+      case "notadmin":
+        return "That Whop account does not run this business, so the figures stay hidden.";
+      case "denied":
+        return "Sign-in was cancelled. The public city is still here.";
+      case "failed":
+        return "Sign-in did not complete. Try again.";
+      case "unavailable":
+        return "This deployment is not set up for sign-in yet.";
+      case "out":
+        return "Signed out. This is the public city.";
+      default:
+        return null;
+    }
+  }, []);
+
   /**
    * A phone is not a screen you can play this on.
    *
@@ -274,11 +293,19 @@ export function CityShell() {
       <Advisor metrics={metrics} open={advisorOpen && !pickedView} onToggle={() => setAdvisorOpen((was) => !was)} />
 
       {metrics.source !== "owner" ? (
-        <p className="public-note">
-          This is the public view, so the figures read zero. Open it from your Whop dashboard to play
-          with your own.
-        </p>
-      ) : null}
+        <div className="signin">
+          <p className="signin__line">
+            {authNote ?? "This is the public city. Sign in to play it with your own business."}
+          </p>
+          <a className="press signin__go" href="/api/auth/start" data-action="signin">
+            Sign in with Whop
+          </a>
+        </div>
+      ) : (
+        <a className="signout" href="/api/auth/logout" data-action="signout">
+          Sign out
+        </a>
+      )}
 
       {pickedView ? (
         <BuildingCard view={pickedView} onUpgrade={() => upgrade(pickedView.building.id)} onClose={() => setPicked(null)} />

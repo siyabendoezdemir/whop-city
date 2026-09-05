@@ -11,6 +11,14 @@
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { createServerEntry } from "@tanstack/react-start/server-entry";
 
+import {
+  AUTH_CALLBACK,
+  AUTH_LOGOUT,
+  AUTH_START,
+  handleAuthCallback,
+  handleAuthLogout,
+  handleAuthStart,
+} from "./server/oauth";
 import { SNAPSHOT_PATH, handleSnapshotRequest } from "./server/snapshotRoute";
 import { resolveEnv } from "./server/env";
 
@@ -36,6 +44,12 @@ export default createServerEntry({
     if (pathname === SNAPSHOT_PATH) {
       return handleSnapshotRequest(request, await resolveEnv());
     }
+
+    // Sign in with Whop. Three fixed paths, matched by equality like the
+    // snapshot is: still no dispatcher and still nothing a caller can steer.
+    if (pathname === AUTH_START) return handleAuthStart(request, await resolveEnv());
+    if (pathname === AUTH_CALLBACK) return handleAuthCallback(request, await resolveEnv());
+    if (pathname === AUTH_LOGOUT) return handleAuthLogout(request);
 
     if (pathname === SERVER_FN_PREFIX || pathname.startsWith(`${SERVER_FN_PREFIX}/`)) {
       return new Response(null, { status: 404 });
