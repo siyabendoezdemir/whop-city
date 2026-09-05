@@ -53,10 +53,10 @@ function ease(t: number): number {
  * The world is an island. These are its shoulders, so a player who flings the
  * camera never ends up staring at empty water wondering where the city went.
  */
-const PAN_BOUNDS = { minX: -90, maxX: 90, minZ: -100, maxZ: 60 };
+const PAN_BOUNDS = { minX: -150, maxX: 150, minZ: -170, maxZ: 120 };
 /** Zoom stops. Close enough to read a shopfront, wide enough to see the island. */
-const MIN_FRUSTUM = 34;
-const MAX_FRUSTUM = 150;
+const MIN_FRUSTUM = 26;
+const MAX_FRUSTUM = 220;
 
 const GLIDE_RATE = 3.2;
 
@@ -198,8 +198,11 @@ export function CityCanvas({
       }
       // Exponential approach, framerate-independent. Roughly nine tenths of the
       // way there in three quarters of a second.
+      coast(dt);
       const k = 1 - Math.exp(-dt * GLIDE_RATE);
-      held.focus.lerp(want.focus, k);
+      // Zoom is always eased; position is eased only when flying somewhere,
+      // because a drag has already put it exactly where the hand wants it.
+      if (!want.free || down.size === 0) held.focus.lerp(want.focus, k);
       held.height += (want.height - held.height) * k;
       stage.frame(held.focus, held.height);
     };
@@ -232,19 +235,45 @@ export function CityCanvas({
       want.free = true;
     };
 
+    /** Pixels per second, carried after the pointer lifts. */
+    const drift = { x: 0, z: 0 };
+
     const panBy = (dxPixels: number, dyPixels: number) => {
       takeOver();
       // One screen pixel is this many world units at the current zoom.
       const perPixel = held.height / Math.max(1, stage.renderer.domElement.clientHeight);
+      const before = want.focus.clone();
       want.focus.addScaledVector(groundRight, -dxPixels * perPixel);
       want.focus.addScaledVector(groundUp, dyPixels * perPixel);
       clampFocus(want.focus);
+      // Direct, not eased: the ground has to stay under the cursor. Easing here
+      // is what made dragging feel like pulling the city on a rubber band.
+      held.focus.copy(want.focus);
+      drift.x = want.focus.x - before.x;
+      drift.z = want.focus.z - before.z;
+    };
+
+    /** Let go and the city keeps sliding, then settles. */
+    const coast = (dt: number) => {
+      if (!want.free) return;
+      if (Math.abs(drift.x) < 0.004 && Math.abs(drift.z) < 0.004) return;
+      if (down.size > 0) return;
+      want.focus.x += drift.x;
+      want.focus.z += drift.z;
+      clampFocus(want.focus);
+      held.focus.copy(want.focus);
+      const decay = Math.exp(-dt * 5.2);
+      drift.x *= decay;
+      drift.z *= decay;
     };
 
     const zoomBy = (factor: number) => {
       takeOver();
       want.height = THREE.MathUtils.clamp(want.height * factor, MIN_FRUSTUM, MAX_FRUSTUM);
     };
+
+    // `down` is declared below the handlers that read it, so the pan helpers
+    // above see it through the closure rather than at definition time.
 
     /**
      * Fit the authored aspect into whatever space there is.
@@ -361,6 +390,13 @@ export function CityCanvas({
         return;
       }
 
+      if (previous && event.buttons === 0) {
+        // The button came up somewhere we never heard about. Let go.
+        down.delete(event.pointerId);
+        canvas.style.cursor = "grab";
+        return;
+      }
+
       if (previous) {
         const dx = event.clientX - previous.x;
         const dy = event.clientY - previous.y;
@@ -379,7 +415,7 @@ export function CityCanvas({
       // Trackpads report small pixel deltas and mice report large ones, so the
       // step is capped rather than proportional — otherwise one mouse notch
       // crosses the whole zoom range.
-      const step = Math.sign(event.deltaY) * Math.min(0.16, Math.abs(event.deltaY) / 600);
+      const step = Math.sign(event.deltaY) * Math.min(0.3, Math.abs(event.deltaY) / 280);
       zoomBy(1 + step);
     };
 

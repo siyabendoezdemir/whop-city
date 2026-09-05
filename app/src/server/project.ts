@@ -1,4 +1,5 @@
 import type { CityMetrics } from "../city/projection";
+import { NO_STATS, type BusinessStats } from "./stats";
 
 /**
  * The privacy boundary.
@@ -196,30 +197,6 @@ function freshnessFor(snapshot: BusinessSnapshot, now: number): Freshness {
  *   the snapshot's `accountId`.
  */
 /**
- * The business, counted.
- *
- * Six numbers, straight off the snapshot: the resources the game spends. A
- * business City could not read has nothing to count, and says so by handing
- * back the withheld zeros rather than a plausible-looking nothing.
- */
-function metricsFor(snapshot: BusinessSnapshot): CityMetrics {
-  if (!snapshot.reachable) return ZERO_METRICS;
-  const { products, plans } = snapshot;
-  const affiliate = products.filter((product) => product.affiliateEnabled);
-  return {
-    // Floored, not refused. Upstream has been seen to send a quantity as a
-    // string or with a decimal on it, and a fractional member is a rounding
-    // artefact, not a reason to take the whole city offline.
-    customers: Math.floor(products.reduce((sum, p) => sum + Math.max(0, p.memberCount || 0), 0)),
-    products: products.filter((product) => product.visible).length,
-    waysToBuy: plans.filter((plan) => plan.visible).length,
-    affiliates: affiliate.length,
-    bestRate: Math.min(100, Math.round(affiliate.reduce((max, p) => Math.max(max, p.affiliatePercentage || 0), 0))),
-    source: "owner",
-  };
-}
-
-/**
  * Who is going to read this.
  *
  * The default is `public`, and it is the default on purpose: the counts are
@@ -229,11 +206,35 @@ function metricsFor(snapshot: BusinessSnapshot): CityMetrics {
  */
 export type Audience = "public" | "owner";
 
+/**
+ * The business, as the game's four resources and its health signals.
+ *
+ * Straight off the stats read. A figure Whop could not give us comes through
+ * as zero here and the interface says so separately — the seal is what reports
+ * whether the read worked, not the numbers.
+ */
+function metricsFor(stats: BusinessStats): CityMetrics {
+  const whole = (value: number | null | undefined) => Math.max(0, Math.round(value ?? 0));
+  return {
+    gold: whole(stats.revenue?.now),
+    goldBefore: whole(stats.revenue?.before),
+    recurring: whole(stats.recurring?.now),
+    citizens: whole(stats.members?.now),
+    traffic: whole(stats.traffic?.now),
+    trafficBefore: whole(stats.traffic?.before),
+    churn: whole((stats.churn ?? 0) * 100),
+    refunds: whole((stats.refundRate ?? 0) * 100),
+    joined: whole(stats.newMembers?.now),
+    source: "owner",
+  };
+}
+
 export function toPublicProjection(
   snapshot: BusinessSnapshot,
   seed: string,
   now: number = Date.now(),
   audience: Audience = "public",
+  stats: BusinessStats = NO_STATS,
 ): PublicCityProjection {
   const next = seedStream(seed);
 
@@ -252,7 +253,7 @@ export function toPublicProjection(
   });
 
   return {
-    metrics: audience === "owner" ? metricsFor(snapshot) : ZERO_METRICS,
+    metrics: audience === "owner" ? metricsFor(stats) : ZERO_METRICS,
     schema: PROJECTION_SCHEMA,
     freshness: freshnessFor(snapshot, now),
     seed,

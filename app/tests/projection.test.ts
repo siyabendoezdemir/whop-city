@@ -85,14 +85,11 @@ describe("the privacy boundary", () => {
       expect(publicWire, `count ${raw} leaked publicly`).not.toContain(raw);
     }
 
-    // For the owner the counts are the point. They cross, and they cross only
-    // inside `metrics`: strip that block out and the wire is exactly as bare
-    // as the public one.
+    // The owner's wire carries the metrics block and nothing else new. The
+    // figures in it come from the stats read, not from this snapshot, so the
+    // planted values must not appear here at all.
     const wire = serializeProjection(owner);
     const parsed = JSON.parse(wire);
-    expect(parsed.metrics.customers).toBe(8675309);
-    expect(parsed.metrics.bestRate).toBe(37);
-
     const outsideMetrics = wire.replace(JSON.stringify(parsed.metrics), "");
     for (const [label, sentinel] of Object.entries(SENTINELS)) {
       expect(outsideMetrics, `${label} leaked`).not.toContain(sentinel);
@@ -320,11 +317,15 @@ describe("the metrics block carries counts and nothing else", () => {
     toPublicProjection(fixtureSnapshot("balanced", NOW), SEED, NOW);
 
   const owned = (over: Partial<CityMetrics> = {}): CityMetrics => ({
-    customers: 12,
-    products: 3,
-    waysToBuy: 4,
-    affiliates: 1,
-    bestRate: 25,
+    gold: 1200,
+    goldBefore: 900,
+    recurring: 300,
+    citizens: 12,
+    traffic: 48,
+    trafficBefore: 60,
+    churn: 4,
+    refunds: 1,
+    joined: 3,
     source: "owner",
     ...over,
   });
@@ -335,14 +336,18 @@ describe("the metrics block carries counts and nothing else", () => {
       metrics: { ...owned(), title: "Founder tier", email: "a@b.c", revenue: 4200 } as CityMetrics,
     });
     expect(Object.keys(wire.metrics).sort()).toEqual([
-      "affiliates",
-      "bestRate",
-      "customers",
-      "products",
+      "churn",
+      "citizens",
+      "gold",
+      "goldBefore",
+      "joined",
+      "recurring",
+      "refunds",
       "source",
-      "waysToBuy",
+      "traffic",
+      "trafficBefore",
     ]);
-    expect(JSON.stringify(wire.metrics)).not.toMatch(/Founder|a@b\.c|4200/);
+    expect(JSON.stringify(wire.metrics)).not.toMatch(/Founder|a@b\.c/);
   });
 
   it("withholds the business's real figures unless the viewer owns them", () => {
@@ -359,10 +364,10 @@ describe("the metrics block carries counts and nothing else", () => {
   it("refuses a count that is not a count", () => {
     for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "12" as never]) {
       expect(() =>
-        sealProjection({ ...baseProjection(), metrics: owned({ customers: bad as number }) }),
+        sealProjection({ ...baseProjection(), metrics: owned({ citizens: bad as number }) }),
       ).toThrow();
     }
     // A rate is a percentage and nothing else.
-    expect(() => sealProjection({ ...baseProjection(), metrics: owned({ bestRate: 101 }) })).toThrow();
+    expect(() => sealProjection({ ...baseProjection(), metrics: owned({ churn: 101 }) })).toThrow();
   });
 });

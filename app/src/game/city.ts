@@ -126,7 +126,7 @@ export function changesSince(state: CityState, metrics: CityMetrics): Change[] {
   const before = state.lastSeen;
   if (!before) return [];
   const changes: Change[] = [];
-  for (const key of ["customers", "products", "waysToBuy", "affiliates", "bestRate"] as const) {
+  for (const key of ["gold", "citizens", "traffic", "recurring", "joined"] as const) {
     if (metrics[key] !== before[key]) changes.push({ resource: key, from: before[key], to: metrics[key] });
   }
   return changes;

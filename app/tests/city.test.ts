@@ -47,24 +47,24 @@ describe("the ladder is made of real numbers", () => {
   });
 
   it("spreads the city across more than one number", () => {
-    // A business that only adds products should still see most of its city
+    // A business that only drives traffic should still see most of its city
     // standing still. That is the nudge.
     const used = new Set(BUILDINGS.map((building) => building.resource));
     expect(used.size).toBeGreaterThanOrEqual(4);
   });
 
   it("earns a level exactly when the business reaches the rung", () => {
-    expect(earnedLevel(grand, metrics({ customers: 0 }))).toBe(0);
-    expect(earnedLevel(grand, metrics({ customers: grand.ladder[0] - 1 }))).toBe(0);
-    expect(earnedLevel(grand, metrics({ customers: grand.ladder[0] }))).toBe(1);
-    expect(earnedLevel(grand, metrics({ customers: grand.ladder[2] }))).toBe(3);
-    expect(earnedLevel(grand, metrics({ customers: 9_999_999 }))).toBe(MAX_LEVEL);
+    expect(earnedLevel(grand, metrics({ gold: 0 }))).toBe(0);
+    expect(earnedLevel(grand, metrics({ gold: grand.ladder[0] - 1 }))).toBe(0);
+    expect(earnedLevel(grand, metrics({ gold: grand.ladder[0] }))).toBe(1);
+    expect(earnedLevel(grand, metrics({ gold: grand.ladder[2] }))).toBe(3);
+    expect(earnedLevel(grand, metrics({ gold: 9_999_999 }))).toBe(MAX_LEVEL);
   });
 });
 
 describe("a building reads its own progress", () => {
   it("says what it needs and how far off it is", () => {
-    const view = viewOf(grand, city(), metrics({ customers: 4 }));
+    const view = viewOf(grand, city(), metrics({ gold: 4 }));
     expect(view.level).toBe(0);
     expect(view.need).toBe(grand.ladder[0]);
     expect(view.has).toBe(4);
@@ -76,8 +76,8 @@ describe("a building reads its own progress", () => {
     // most of the way there because the bar started at nothing.
     const [one, two] = grand.ladder;
     const half = Math.round(one + (two - one) / 2);
-    const state = claim(city(), grand.id, metrics({ customers: half }));
-    const view = viewOf(grand, state, metrics({ customers: half }));
+    const state = claim(city(), grand.id, metrics({ gold: half }));
+    const view = viewOf(grand, state, metrics({ gold: half }));
     expect(view.level).toBe(1);
     expect(view.progress).toBeGreaterThan(0.4);
     expect(view.progress).toBeLessThan(0.6);
@@ -85,7 +85,7 @@ describe("a building reads its own progress", () => {
 
   it("is finished at the top and asks for nothing more", () => {
     let state = city();
-    const rich = metrics({ customers: 9_999_999 });
+    const rich = metrics({ gold: 9_999_999 });
     for (let step = 0; step < MAX_LEVEL; step++) state = claim(state, grand.id, rich);
     const view = viewOf(grand, state, rich);
     expect(view.maxed).toBe(true);
@@ -97,13 +97,13 @@ describe("a building reads its own progress", () => {
 
 describe("claiming", () => {
   it("refuses a level the business has not earned", () => {
-    const poor = metrics({ customers: 0 });
+    const poor = metrics({ gold: 0 });
     expect(claim(city(), grand.id, poor).claimed[grand.id]).toBeUndefined();
     expect(totalLevels(claim(city(), grand.id, poor), poor)).toBe(0);
   });
 
   it("takes one level at a time, and only up to what was earned", () => {
-    const enough = metrics({ customers: grand.ladder[1] });
+    const enough = metrics({ gold: grand.ladder[1] });
     let state = claim(city(), grand.id, enough);
     expect(state.claimed[grand.id]).toBe(1);
     state = claim(state, grand.id, enough);
@@ -117,16 +117,16 @@ describe("claiming", () => {
     // A hand-edited level is capped by what the numbers back, everywhere it is
     // read — the claim map is not the source of truth, the business is.
     const forged = { ...city(), claimed: { [grand.id]: MAX_LEVEL } };
-    const poor = metrics({ customers: 0 });
+    const poor = metrics({ gold: 0 });
     expect(viewOf(grand, forged, poor).level).toBe(0);
     expect(totalLevels(forged, poor)).toBe(0);
 
-    const earned = metrics({ customers: grand.ladder[0] });
+    const earned = metrics({ gold: grand.ladder[0] });
     expect(viewOf(grand, forged, earned).level).toBe(1);
   });
 
   it("counts what is waiting, and can take it all at once", () => {
-    const busy = metrics({ customers: 60, products: 4, waysToBuy: 4, affiliates: 3, bestRate: 22 });
+    const busy = metrics({ gold: 600, citizens: 60, traffic: 120, recurring: 300 });
     const waiting = readyCount(city(), busy);
     expect(waiting).toBeGreaterThan(0);
 
@@ -150,7 +150,7 @@ describe("the skyline grows with the city", () => {
   });
 
   it("climbs only as levels are actually taken", () => {
-    const huge = metrics({ customers: 9_999_999, products: 99, waysToBuy: 99, affiliates: 99, bestRate: 90 });
+    const huge = metrics({ gold: 9_999_999, citizens: 999_999, traffic: 999_999, recurring: 999_999 });
     // Earned but unclaimed is not a bigger city: you have to press the button.
     expect(tierFor(totalLevels(city(), huge)).level).toBe(1);
     expect(tierFor(totalLevels(claimAll(city(), huge), huge)).level).toBeGreaterThan(1);
@@ -159,24 +159,24 @@ describe("the skyline grows with the city", () => {
 
 describe("coming back", () => {
   it("reports what moved in the business since you last looked", () => {
-    const before = metrics({ customers: 3, products: 1 });
+    const before = metrics({ gold: 30, citizens: 3 });
     const state = markSeen(city(), before, 1_000);
-    const after = metrics({ customers: 9, products: 1, affiliates: 2 });
+    const after = metrics({ gold: 30, citizens: 9, traffic: 2 });
 
     const changes = changesSince(state, after);
-    expect(changes).toContainEqual({ resource: "customers", from: 3, to: 9 });
-    expect(changes).toContainEqual({ resource: "affiliates", from: 0, to: 2 });
-    expect(changes.find((change) => change.resource === "products")).toBeUndefined();
+    expect(changes).toContainEqual({ resource: "citizens", from: 3, to: 9 });
+    expect(changes).toContainEqual({ resource: "traffic", from: 0, to: 2 });
+    expect(changes.find((change) => change.resource === "gold")).toBeUndefined();
   });
 
   it("says nothing on a first visit rather than inventing a baseline", () => {
-    expect(changesSince(city(), metrics({ customers: 100 }))).toEqual([]);
+    expect(changesSince(city(), metrics({ gold: 100 }))).toEqual([]);
   });
 });
 
 describe("the game holds no business data", () => {
   it("saves nothing but building ids and the levels taken", () => {
-    const busy = metrics({ customers: 60, products: 4, waysToBuy: 4, affiliates: 3, bestRate: 22 });
+    const busy = metrics({ gold: 600, citizens: 60, traffic: 120, recurring: 300 });
     const state = markSeen(claimAll(city(), busy), busy, 1);
     const saved = JSON.stringify({ ...state, lastSeen: null });
     expect(saved).not.toMatch(/revenue|title|email|prod_|plan_|biz_/i);

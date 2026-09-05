@@ -76,26 +76,38 @@ export type PublicDistrict = {
  * route serves them zeroed; the owner's dashboard view serves them for real.
  */
 export type CityMetrics = {
-  /** People holding a membership across everything the business sells. */
-  readonly customers: number;
-  /** Things on sale that a buyer can actually see. */
-  readonly products: number;
-  /** Ways to buy those things: visible plans. */
-  readonly waysToBuy: number;
-  /** Products with an affiliate programme switched on. */
-  readonly affiliates: number;
-  /** The best commission rate on offer, as whole percent. */
-  readonly bestRate: number;
+  /** Gross revenue this month, in whole units of the account's currency. */
+  readonly gold: number;
+  /** Monthly recurring revenue: the part that comes back on its own. */
+  readonly recurring: number;
+  /** Paying members right now. */
+  readonly citizens: number;
+  /** People who came through today. */
+  readonly traffic: number;
+  /** Yesterday's traffic, so the city can say it fell. */
+  readonly trafficBefore: number;
+  /** Last month's revenue, for the same reason. */
+  readonly goldBefore: number;
+  /** Members lost, as whole percent. */
+  readonly churn: number;
+  /** Refunds, as whole percent. */
+  readonly refunds: number;
+  /** New members this month. */
+  readonly joined: number;
   /** Whether these are the business's own figures or a zeroed public stand-in. */
   readonly source: "owner" | "withheld";
 };
 
 export const ZERO_METRICS: CityMetrics = {
-  customers: 0,
-  products: 0,
-  waysToBuy: 0,
-  affiliates: 0,
-  bestRate: 0,
+  gold: 0,
+  recurring: 0,
+  citizens: 0,
+  traffic: 0,
+  trafficBefore: 0,
+  goldBefore: 0,
+  churn: 0,
+  refunds: 0,
+  joined: 0,
   source: "withheld",
 };
 
@@ -205,11 +217,15 @@ export function sealProjection(input: PublicCityProjection): PublicCityProjectio
 function sealMetrics(input: CityMetrics | undefined): CityMetrics {
   if (!input || input.source !== "owner") return ZERO_METRICS;
   return {
-    customers: boundedInt(input.customers, 0, METRIC_MAX, "metrics.customers"),
-    products: boundedInt(input.products, 0, METRIC_MAX, "metrics.products"),
-    waysToBuy: boundedInt(input.waysToBuy, 0, METRIC_MAX, "metrics.waysToBuy"),
-    affiliates: boundedInt(input.affiliates, 0, METRIC_MAX, "metrics.affiliates"),
-    bestRate: boundedInt(input.bestRate, 0, 100, "metrics.bestRate"),
+    gold: boundedInt(input.gold, 0, METRIC_MAX, "metrics.gold"),
+    goldBefore: boundedInt(input.goldBefore, 0, METRIC_MAX, "metrics.goldBefore"),
+    recurring: boundedInt(input.recurring, 0, METRIC_MAX, "metrics.recurring"),
+    citizens: boundedInt(input.citizens, 0, METRIC_MAX, "metrics.citizens"),
+    traffic: boundedInt(input.traffic, 0, METRIC_MAX, "metrics.traffic"),
+    trafficBefore: boundedInt(input.trafficBefore, 0, METRIC_MAX, "metrics.trafficBefore"),
+    churn: boundedInt(input.churn, 0, 100, "metrics.churn"),
+    refunds: boundedInt(input.refunds, 0, 100, "metrics.refunds"),
+    joined: boundedInt(input.joined, 0, METRIC_MAX, "metrics.joined"),
     source: "owner",
   };
 }

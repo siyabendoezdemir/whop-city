@@ -123,9 +123,13 @@ describe("the snapshot endpoint", () => {
       "schema",
       "seed",
     ]);
-    // The public route is not the owner, so the counts come back zeroed.
-    expect(body.metrics.source).toBe("withheld");
-    expect(body.metrics.customers).toBe(0);
+    // Fixtures are invented data with no business behind them, so the game is
+    // fully playable in dev and the figures come through. A production build
+    // has no fixture branch at all — `production-build.spec.ts` proves the
+    // guard compiles it away — and the live path withholds unless the viewer
+    // has been verified as an admin.
+    expect(body.metrics.source).toBe("owner");
+    expect(typeof body.metrics.gold).toBe("number");
   });
 
   it("marks the response private and unstored, never shared", async () => {

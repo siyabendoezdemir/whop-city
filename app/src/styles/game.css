@@ -34,7 +34,11 @@
 }
 
 /* --------------------------------------------------------------------------
-   Resource bar — the real numbers, always on
+   Resource bar
+   --------------------------------------------------------------------------
+   A capsule per resource with a jewelled badge proud of its left edge. Fixed
+   widths and no shrinking: the earlier version let flex squeeze five pills
+   into ovals with the words wrapping inside them.
    -------------------------------------------------------------------------- */
 
 .res {
@@ -44,46 +48,73 @@
   transform: translateX(-50%);
   z-index: 4;
   display: flex;
-  gap: 8px;
-  max-width: calc(100vw - 2 * var(--pad));
-  padding: 0;
+  gap: 10px;
 }
 
 .res__pill {
+  flex: 0 0 auto;
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 7px 15px 7px 9px;
+  gap: 10px;
+  height: 46px;
+  padding: 0 16px 0 30px;
   border-radius: var(--pill-radius);
-  background: linear-gradient(180deg, var(--wood-lit), var(--wood));
-  border: 2px solid var(--wood-dark);
+  background: linear-gradient(180deg, #2c2115, #1a1209);
+  border: 2px solid #0d0904;
   box-shadow:
-    inset 0 1px 0 rgba(255, 220, 160, 0.22),
-    0 3px 0 var(--wood-dark),
-    0 8px 18px rgba(0, 0, 0, 0.35);
+    inset 0 1px 0 rgba(255, 220, 160, 0.16),
+    0 3px 0 #0d0904,
+    0 8px 18px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
 }
 
-.res__icon {
-  width: 26px;
-  height: 26px;
-  flex: none;
+.res__badge {
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #fff3d0, var(--gold) 55%, var(--gold-deep));
-  border: 2px solid var(--wood-dark);
-  color: var(--gold-ink);
+  border: 3px solid #0d0904;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.4);
 }
 
-.res__icon svg {
-  width: 15px;
-  height: 15px;
+.res__badge svg {
+  width: 21px;
+  height: 21px;
+}
+
+/* One material per resource, the way gold, elixir and dark elixir differ. */
+.res__pill[data-tone="gold"] .res__badge {
+  background: radial-gradient(circle at 34% 26%, #fff4c9, #ffc247 52%, #c8830f);
+  color: #6b4405;
+}
+.res__pill[data-tone="green"] .res__badge {
+  background: radial-gradient(circle at 34% 26%, #d8ffe4, #6fe08a 52%, #218a45);
+  color: #0f4a25;
+}
+.res__pill[data-tone="violet"] .res__badge {
+  background: radial-gradient(circle at 34% 26%, #f5d9ff, #c77dff 52%, #7a2fc0);
+  color: #3d0a63;
+}
+.res__pill[data-tone="dark"] .res__badge {
+  background: radial-gradient(circle at 34% 26%, #b9a6d8, #6a4f9c 52%, #2b1a4d);
+  color: #eadcff;
+}
+
+.res__figures {
+  display: grid;
+  gap: 1px;
+  min-width: 3.4rem;
 }
 
 .res__value {
   font-family: var(--face-narrow);
-  font-size: 19px;
+  font-size: 21px;
   font-weight: 600;
   line-height: 1;
   color: var(--parchment);
@@ -91,29 +122,28 @@
 }
 
 .res__name {
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1;
+  letter-spacing: 0.04em;
   color: var(--parchment-dim);
 }
 
-.res__stack {
-  display: grid;
-  gap: 3px;
+.res__move {
+  font-size: 11px;
+  line-height: 1;
+}
+
+.res__move[data-move="up"] {
+  color: var(--grow);
+}
+
+.res__move[data-move="down"] {
+  color: #ff7a5c;
 }
 
 /* Withheld: the public view does not get the owner's figures. */
 .res[data-source="withheld"] .res__value {
   color: var(--stone);
-}
-
-.res__locked {
-  align-self: center;
-  padding: 6px 12px;
-  border-radius: var(--pill-radius);
-  font-size: 12.5px;
-  color: var(--parchment-dim);
-  background: rgba(36, 24, 9, 0.85);
-  border: 2px solid var(--wood-dark);
 }
 
 /* --------------------------------------------------------------------------

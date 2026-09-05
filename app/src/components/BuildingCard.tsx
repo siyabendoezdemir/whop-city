@@ -1,4 +1,4 @@
-import { MAX_LEVEL, RESOURCE } from "../game/buildings";
+import { MAX_LEVEL, RESOURCE, money } from "../game/buildings";
 import type { BuildingView } from "../game/city";
 import { ResourceIcon } from "./ResourceBar";
 
@@ -23,7 +23,7 @@ function plural(n: number, resource: BuildingView["building"]["resource"]) {
 }
 
 export function BuildingCard({ view, onUpgrade, onClose }: Props) {
-  const { building, level, need, has, short, progress, maxed, ready } = view;
+  const { building, level, need, has, short: shortfall, progress, maxed, ready } = view;
   const words = RESOURCE[building.resource];
   const state = maxed ? "maxed" : ready > 0 ? "ready" : "waiting";
 
@@ -56,12 +56,10 @@ export function BuildingCard({ view, onUpgrade, onClose }: Props) {
                 <ResourceIcon resource={building.resource} />
               </span>
               <span className="req__count" data-testid="have">
-                {has}
-                {words.suffix ?? ""}
+                {money(building.resource, has)}
               </span>
               <span className="req__of" data-testid="need">
-                / {need}
-                {words.suffix ?? ""}
+                / {money(building.resource, need!)}
               </span>
               <span>{words.name.toLowerCase()}</span>
             </p>
@@ -71,10 +69,10 @@ export function BuildingCard({ view, onUpgrade, onClose }: Props) {
             </span>
 
             <p className="req__short">
-              {short > 0 ? (
+              {shortfall > 0 ? (
                 <>
-                  Level {level + 1} needs <strong>{need}{words.suffix ?? ""}</strong> — {short} more{" "}
-                  {plural(short, building.resource)} to go.
+                  Level {level + 1} needs <strong>{money(building.resource, need!)}</strong> — {money(building.resource, shortfall)}{" "}
+                  {plural(shortfall, building.resource)} to go.
                 </>
               ) : (
                 <>Level {level + 1} is paid for. Take it.</>

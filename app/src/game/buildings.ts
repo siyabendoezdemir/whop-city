@@ -16,16 +16,44 @@
 import type { CityMetrics } from "../city/projection";
 import type { DistrictId } from "../city/projection";
 
-/** The real numbers a building can be gated on. */
-export const RESOURCES = ["customers", "products", "waysToBuy", "affiliates", "bestRate"] as const;
+/** The four things the city runs on. */
+export const RESOURCES = ["gold", "citizens", "traffic", "recurring"] as const;
 export type Resource = (typeof RESOURCES)[number];
 
-export const RESOURCE: Record<Resource, { name: string; one: string; many: string; suffix?: string }> = {
-  customers: { name: "Customers", one: "customer", many: "customers" },
-  products: { name: "Products", one: "product", many: "products" },
-  waysToBuy: { name: "Ways to buy", one: "plan", many: "plans" },
-  affiliates: { name: "Affiliates", one: "affiliate offer", many: "affiliate offers" },
-  bestRate: { name: "Commission", one: "percent", many: "percent", suffix: "%" },
+export const RESOURCE: Record<
+  Resource,
+  { name: string; one: string; many: string; prefix?: string; tone: string; blurb: string }
+> = {
+  gold: {
+    name: "Gold",
+    one: "in revenue",
+    many: "in revenue",
+    prefix: "$",
+    tone: "gold",
+    blurb: "Everything the business took this month.",
+  },
+  citizens: {
+    name: "Citizens",
+    one: "member",
+    many: "members",
+    tone: "green",
+    blurb: "People paying you right now. They live here.",
+  },
+  traffic: {
+    name: "Footfall",
+    one: "visitor",
+    many: "visitors",
+    tone: "violet",
+    blurb: "People who came through today.",
+  },
+  recurring: {
+    name: "Reserve",
+    one: "a month",
+    many: "a month",
+    prefix: "$",
+    tone: "dark",
+    blurb: "The part that comes back on its own every month.",
+  },
 };
 
 export const MAX_LEVEL = 5;
@@ -50,44 +78,44 @@ export type Building = {
 /**
  * Eleven buildings on the eleven authored parcels.
  *
- * Spread across four of the five resources on purpose: a business that only
- * adds products still watches most of its city stand still, which is the
- * nudge. Nothing here is gated on money — Whop reports what is on sale and who
- * holds it, and inventing a revenue figure from that would be a lie.
+ * Spread across all four resources on purpose: a business that only drives
+ * traffic still watches most of its city stand still, which is the nudge. The
+ * ladders are absolute figures rather than counts of objects, so they mean the
+ * same thing to a newsletter, a coaching programme and a software product.
  */
 export const BUILDINGS: readonly Building[] = [
   // ---------------------------------------------------- Commerce Core
   {
     id: "core-landmark",
     district: "commerce-core",
-    name: "Grand Exchange",
-    role: "The house your buyers walk into.",
-    resource: "customers",
-    ladder: [1, 10, 50, 250, 1000],
+    name: "The Treasury",
+    role: "Rises with everything the business takes.",
+    resource: "gold",
+    ladder: [1, 100, 1_000, 10_000, 100_000],
   },
   {
     id: "core-north",
     district: "commerce-core",
-    name: "Trade Hall",
-    role: "One floor for every thing you sell.",
-    resource: "products",
-    ladder: [1, 2, 4, 8, 16],
+    name: "Grand Exchange",
+    role: "One floor for every hundred a month you can count on.",
+    resource: "recurring",
+    ladder: [1, 100, 1_000, 10_000, 50_000],
   },
   {
     id: "core-east",
     district: "commerce-core",
     name: "Merchant Row",
-    role: "Shopfronts fill as the customers do.",
-    resource: "customers",
-    ladder: [3, 25, 100, 500, 2000],
+    role: "Shopfronts fill as the members do.",
+    resource: "citizens",
+    ladder: [1, 10, 100, 1_000, 10_000],
   },
   {
     id: "core-southeast",
     district: "commerce-core",
     name: "Counting House",
-    role: "Every way to pay you gets a window.",
-    resource: "waysToBuy",
-    ladder: [1, 2, 4, 8, 16],
+    role: "Keeps the books, and grows with them.",
+    resource: "gold",
+    ladder: [50, 500, 5_000, 50_000, 250_000],
   },
 
   // ------------------------------------------------------ Offer Forge
@@ -95,59 +123,59 @@ export const BUILDINGS: readonly Building[] = [
     id: "forge-hero",
     district: "offer-forge",
     name: "The Mint",
-    role: "Where a price becomes an offer.",
-    resource: "waysToBuy",
-    ladder: [1, 3, 6, 12, 24],
+    role: "Where recurring money is struck.",
+    resource: "recurring",
+    ladder: [10, 250, 2_500, 25_000, 100_000],
   },
   {
     id: "forge-north",
     district: "offer-forge",
     name: "Foundry",
-    role: "Raises a chimney for every product on the line.",
-    resource: "products",
-    ladder: [1, 3, 6, 12, 24],
+    role: "Runs hotter the more comes through the gates.",
+    resource: "traffic",
+    ladder: [5, 50, 500, 5_000, 25_000],
   },
   {
     id: "forge-south",
     district: "offer-forge",
     name: "The Vault",
-    role: "It grows with the size of the book.",
-    resource: "customers",
-    ladder: [5, 50, 200, 800, 3000],
+    role: "As deep as the book is big.",
+    resource: "gold",
+    ladder: [500, 5_000, 25_000, 100_000, 1_000_000],
   },
 
   // -------------------------------------------------- Creator Quarter
   {
     id: "creator-park",
     district: "creator-quarter",
-    name: "Signal Tower",
-    role: "Reaches further for every affiliate carrying you.",
-    resource: "affiliates",
-    ladder: [1, 2, 4, 8, 16],
+    name: "The Gates",
+    role: "Widen for every visitor who walks through.",
+    resource: "traffic",
+    ladder: [1, 25, 250, 2_500, 20_000],
   },
   {
     id: "creator-terrace",
     district: "creator-quarter",
-    name: "Commission House",
-    role: "Stands as tall as the cut you pay.",
-    resource: "bestRate",
-    ladder: [5, 10, 20, 30, 50],
+    name: "Signal Tower",
+    role: "Reaches further the more people find you.",
+    resource: "traffic",
+    ladder: [10, 100, 1_000, 10_000, 50_000],
   },
   {
     id: "creator-venue",
     district: "creator-quarter",
     name: "Amphitheatre",
     role: "Fills up as the crowd does.",
-    resource: "customers",
-    ladder: [5, 40, 150, 600, 2500],
+    resource: "citizens",
+    ladder: [5, 50, 500, 5_000, 25_000],
   },
   {
     id: "creator-struggling",
     district: "creator-quarter",
-    name: "The Beacon",
-    role: "Lit by everyone selling on your behalf.",
-    resource: "affiliates",
-    ladder: [1, 3, 6, 12, 24],
+    name: "The Quarter",
+    role: "A home for everyone who stayed.",
+    resource: "citizens",
+    ladder: [25, 250, 2_500, 20_000, 100_000],
   },
 ];
 
@@ -162,6 +190,23 @@ export function buildingsIn(district: DistrictId): Building[] {
 /** What the business has of the thing this building runs on. */
 export function have(metrics: CityMetrics, resource: Resource): number {
   return metrics[resource];
+}
+
+/**
+ * A figure as the city writes it.
+ *
+ * Big numbers are the point of the late game and a six-digit revenue figure
+ * cannot sit in a resource pill, so anything over a thousand is abbreviated.
+ */
+export function short(value: number): string {
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}m`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1)}k`;
+  return String(Math.round(value));
+}
+
+/** The same, with the resource's own prefix on the front. */
+export function money(resource: Resource, value: number): string {
+  return `${RESOURCE[resource].prefix ?? ""}${short(value)}`;
 }
 
 /** What the next level needs, or null when the building is finished. */
