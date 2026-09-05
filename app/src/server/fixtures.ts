@@ -21,6 +21,7 @@
  */
 
 import type { FixtureScenario } from "./scenarios";
+import { NO_STATS, type BusinessStats } from "./stats";
 import type { BusinessSnapshot, SnapshotPlan, SnapshotProduct } from "./snapshot";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -147,4 +148,70 @@ function build(scenario: FixtureScenario): BusinessSnapshot {
 
 export function fixtureSnapshot(scenario: FixtureScenario, now: number = Date.now()): BusinessSnapshot {
   return anchor(build(scenario), now);
+}
+
+/**
+ * Invented stats to go with the invented business.
+ *
+ * The game runs on figures from the stats API, so a fixture business needs
+ * fixture figures or every scenario reads as a founder with nothing. Each one
+ * is shaped to put the advisor in a different corner: a business nobody can
+ * find, one nobody buys from, one that is leaking members, one that is simply
+ * working.
+ */
+export function fixtureStats(scenario: FixtureScenario): BusinessStats {
+  switch (scenario) {
+    case "blank":
+      return NO_STATS;
+
+    case "launch":
+      // People arriving, nobody buying yet. The advisor should call it a page
+      // problem rather than send them for more traffic.
+      return {
+        revenue: { now: 0, before: 0 },
+        recurring: { now: 0, before: 0 },
+        members: { now: 0, before: 0 },
+        traffic: { now: 420, before: 260 },
+        newMembers: { now: 0, before: 0 },
+        churn: 0,
+        refundRate: 0,
+      };
+
+    case "struggling":
+      // Selling, and leaking members faster than it wins them.
+      return {
+        revenue: { now: 2_400, before: 3_900 },
+        recurring: { now: 900, before: 1_600 },
+        members: { now: 48, before: 71 },
+        traffic: { now: 60, before: 140 },
+        newMembers: { now: 4, before: 12 },
+        churn: 0.28,
+        refundRate: 0.04,
+      };
+
+    case "balanced":
+      return {
+        revenue: { now: 6_200, before: 5_400 },
+        recurring: { now: 3_100, before: 2_700 },
+        members: { now: 130, before: 118 },
+        traffic: { now: 340, before: 300 },
+        newMembers: { now: 18, before: 15 },
+        churn: 0.05,
+        refundRate: 0.02,
+      };
+
+    case "thriving":
+      return {
+        revenue: { now: 48_000, before: 39_000 },
+        recurring: { now: 26_500, before: 21_000 },
+        members: { now: 1_240, before: 1_060 },
+        traffic: { now: 2_900, before: 2_400 },
+        newMembers: { now: 190, before: 160 },
+        churn: 0.03,
+        refundRate: 0.01,
+      };
+
+    default:
+      return NO_STATS;
+  }
 }

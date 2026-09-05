@@ -25,9 +25,10 @@
  */
 
 import { serializeProjection, unavailableProjection } from "../city/projection";
-import { fixtureSnapshot } from "./fixtures";
+import { fixtureSnapshot, fixtureStats } from "./fixtures";
 import { DEFAULT_SCENARIO, resolveScenario } from "./scenarios";
-import { toPublicProjection } from "./project";
+import { toPublicProjection, type Audience } from "./project";
+import { readStats } from "./stats";
 import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
 import { captureSnapshot } from "./snapshot";
 import { withSingleFlight } from "./snapshotCache";
@@ -118,7 +119,11 @@ function jsonResponse(body: string, status = 200): Response {
  * value is safe to share between coalesced callers and safe to retain for the
  * cache's short window.
  */
-async function buildProjection(env: Env, scenario: string | null): Promise<PublicCityProjection> {
+async function buildProjection(
+  env: Env,
+  scenario: string | null,
+  audience: Audience = "public",
+): Promise<PublicCityProjection> {
   const source = resolveSource(env);
 
   if (source === "none") return unavailableProjection(ANONYMOUS_SEED);
@@ -132,7 +137,14 @@ async function buildProjection(env: Env, scenario: string | null): Promise<Publi
     // Fixtures are invented data with no business behind them, so there is
     // nothing to withhold and the game is fully playable in dev. This branch
     // cannot exist in a production build — see the compile-time guard above.
-    return toPublicProjection(fixtureSnapshot(resolveScenario(scenario), now), ANONYMOUS_SEED, now, "owner");
+    const picked = resolveScenario(scenario);
+    return toPublicProjection(
+      fixtureSnapshot(picked, now),
+      ANONYMOUS_SEED,
+      now,
+      "owner",
+      fixtureStats(picked),
+    );
   }
   if (source === "fixture") return unavailableProjection(ANONYMOUS_SEED);
 
@@ -153,7 +165,12 @@ async function buildProjection(env: Env, scenario: string | null): Promise<Publi
     return unavailableProjection(ANONYMOUS_SEED);
   }
 
-  return toPublicProjection(capture.snapshot, seed, now);
+  // The stats read is what the game runs on, and it is separate from the
+  // snapshot on purpose: a business with no products still has traffic, and a
+  // stats node that will not answer should cost that one figure rather than
+  // the whole city. It is only performed for a viewer entitled to the numbers.
+  const stats = audience === "owner" ? await readStats(env) : undefined;
+  return toPublicProjection(capture.snapshot, seed, now, audience, stats);
 }
 
 export async function handleSnapshotRequest(request: Request, env: Env): Promise<Response> {

@@ -1163,6 +1163,12 @@
   position: absolute;
   left: var(--pad);
   bottom: var(--pad);
+  transition: left 200ms ease;
+}
+
+/* Slide clear of the advisor rather than sitting under it. */
+.districts[data-shifted="true"] {
+  left: calc(var(--pad) + min(23rem, 60vw) + 12px);
   z-index: 4;
   display: flex;
   gap: 8px;

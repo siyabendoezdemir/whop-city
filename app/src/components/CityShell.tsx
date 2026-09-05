@@ -15,7 +15,9 @@ import {
   type CityState,
 } from "../game/city";
 import { loadCity, saveCity } from "../state/cityStore";
+import { Advisor } from "./Advisor";
 import { BuildingCard } from "./BuildingCard";
+import { DesktopOnly } from "./DesktopOnly";
 import { ResourceBar } from "./ResourceBar";
 import { Seal } from "./Glyphs";
 
@@ -58,6 +60,21 @@ export function CityShell() {
   const [zoom, setZoom] = useState(1);
   const [badges, setBadges] = useState<Array<{ id: string; x: number; y: number; n: number }>>([]);
   const [flash, setFlash] = useState<string | null>(null);
+  const [advisorOpen, setAdvisorOpen] = useState(true);
+  const [tooSmall, setTooSmall] = useState(false);
+
+  /**
+   * A phone is not a screen you can play this on.
+   *
+   * Measured rather than sniffed: what matters is whether there is room for a
+   * city and a card side by side, not what the device calls itself.
+   */
+  useEffect(() => {
+    const check = () => setTooSmall(window.innerWidth < 900 || window.innerHeight < 560);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const projection = load.status === "ready" ? load.projection : null;
   const metrics = projection?.metrics ?? null;
@@ -180,6 +197,8 @@ export function CityShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  if (tooSmall) return <DesktopOnly />;
+
   if (load.status === "loading") {
     return (
       <main className="city">
@@ -252,6 +271,15 @@ export function CityShell() {
         </button>
       ))}
 
+      <Advisor metrics={metrics} open={advisorOpen && !pickedView} onToggle={() => setAdvisorOpen((was) => !was)} />
+
+      {metrics.source !== "owner" ? (
+        <p className="public-note">
+          This is the public view, so the figures read zero. Open it from your Whop dashboard to play
+          with your own.
+        </p>
+      ) : null}
+
       {pickedView ? (
         <BuildingCard view={pickedView} onUpgrade={() => upgrade(pickedView.building.id)} onClose={() => setPicked(null)} />
       ) : null}
@@ -292,7 +320,7 @@ export function CityShell() {
         </button>
       </div>
 
-      <nav className="districts" aria-label="Districts">
+      <nav className="districts" aria-label="Districts" data-shifted={advisorOpen && !pickedView ? "true" : "false"}>
         {(["commerce-core", "offer-forge", "creator-quarter"] as const).map((id) => {
           const built = views.filter((view) => view.building.district === id);
           const ready = built.reduce((sum, view) => sum + view.ready, 0);

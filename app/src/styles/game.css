@@ -549,3 +549,239 @@
     animation: none !important;
   }
 }
+
+/* --------------------------------------------------------------------------
+   The Advisor
+   -------------------------------------------------------------------------- */
+
+.advisor,
+.advisor__tab {
+  position: absolute;
+  left: var(--pad);
+  bottom: var(--pad);
+  z-index: 5;
+  border-radius: var(--card-radius);
+  background: linear-gradient(180deg, var(--wood-lit), var(--wood) 60%);
+  border: 3px solid var(--wood-dark);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 220, 160, 0.18),
+    0 6px 0 var(--wood-dark),
+    0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+.advisor {
+  width: min(23rem, calc(100vw - 2 * var(--pad)));
+  overflow: hidden;
+  animation: card-in 200ms cubic-bezier(0.2, 1.3, 0.5, 1);
+}
+
+.advisor__tab {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  max-width: min(21rem, calc(100vw - 2 * var(--pad)));
+  padding: 10px 16px 10px 11px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.advisor__tab:hover {
+  filter: brightness(1.08);
+}
+
+/* The exclamation a Clash player looks for. */
+.advisor__mark {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-family: var(--face-narrow);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: radial-gradient(circle at 34% 26%, #fff4c9, var(--gold) 52%, var(--gold-deep));
+  border: 2px solid var(--wood-dark);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22);
+  animation: press-breathe 2.2s ease-in-out infinite;
+}
+
+.advisor__tabText,
+.advisor__who {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.advisor__tabTitle {
+  font-family: var(--face-narrow);
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--parchment);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.advisor__tabStage,
+.advisor__stage {
+  font-size: 12px;
+  color: var(--parchment-dim);
+}
+
+.advisor__head {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 15px;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.16), transparent);
+  border-bottom: 2px solid var(--wood-dark);
+}
+
+.advisor__name {
+  font-family: var(--face-narrow);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--gold);
+  line-height: 1;
+}
+
+.advisor__body {
+  display: grid;
+  gap: 9px;
+  padding: 15px;
+}
+
+.advisor__reads {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--parchment-dim);
+  background: rgba(0, 0, 0, 0.26);
+  border-left: 3px solid var(--gold);
+}
+
+.advisor__title {
+  margin: 2px 0 0;
+  font-family: var(--face-narrow);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--parchment);
+}
+
+.advisor__why {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--parchment-dim);
+}
+
+.advisor__track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+.advisor__track .req__bar {
+  flex: 1;
+  height: 13px;
+}
+
+.advisor__pct {
+  font-family: var(--face-narrow);
+  font-size: 13px;
+  color: var(--parchment-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.advisor__measure {
+  margin: 0;
+  font-size: 12px;
+  color: var(--stone);
+}
+
+.advisor__howBtn {
+  justify-self: start;
+  padding: 7px 13px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--parchment);
+  background: rgba(0, 0, 0, 0.28);
+  border: 2px solid var(--wood-dark);
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.advisor__howBtn:hover {
+  filter: brightness(1.2);
+}
+
+.advisor__how {
+  margin: 2px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 7px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--parchment);
+}
+
+.advisor__how li::marker {
+  color: var(--gold);
+  font-family: var(--face-narrow);
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------------------
+   Too small to play
+   -------------------------------------------------------------------------- */
+
+.gate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 28px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 30%, #23303f, #0a0f16 70%);
+}
+
+.gate__crest {
+  width: 54px;
+  height: 54px;
+  color: var(--gold);
+}
+
+.gate__title {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--parchment);
+}
+
+.gate__line {
+  margin: 0;
+  max-width: 26rem;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--parchment-dim);
+}
+
+.gate__small {
+  margin: 0;
+  max-width: 24rem;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--stone);
+}
