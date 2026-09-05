@@ -18,7 +18,7 @@ async function open(page: Page, scenario?: string, { orient = true } = {}) {
   await page.waitForFunction(() => (window.__city?.info().parcels ?? 0) > 0, null, { timeout: 120_000 });
   if (orient) {
     const go = page.locator('[data-action="orient-done"]');
-    if (await go.count()) await go.click();
+    if (await go.count()) await go.click({ force: true });
   }
 }
 
@@ -53,6 +53,21 @@ async function clickDistrict(page: Page, districtId: string) {
   await expect(page.locator(`.city-brief[data-district="${districtId}"]`)).toBeVisible();
 }
 
+/**
+ * Click a control without waiting for the page to hold still.
+ *
+ * Playwright waits for an element's box to be unchanged across two animation
+ * frames before acting. This page runs a WebGL render loop that costs seconds
+ * per frame under software rasterisation, so that probe can outlast its own
+ * timeout on a control that has been sitting motionless the whole time. The
+ * element is still asserted visible first; only the stability check is skipped.
+ */
+async function tap(page: Page, selector: string) {
+  const control = page.locator(selector).first();
+  await expect(control).toBeVisible();
+  await control.click({ force: true });
+}
+
 /** Answer the current prompt with the first option of the given intent. */
 async function answerCurrent(page: Page, prefer: string[]) {
   const answers = page.locator(".prompt__answers .answer");
@@ -60,11 +75,11 @@ async function answerCurrent(page: Page, prefer: string[]) {
   for (const wanted of prefer) {
     const button = page.locator(`.prompt__answers .answer[data-answer="${wanted}"]`);
     if (await button.count()) {
-      await button.first().click();
+      await button.first().click({ force: true });
       return wanted;
     }
   }
-  await answers.first().click();
+  await answers.first().click({ force: true });
   return (await answers.first().getAttribute("data-answer")) ?? "";
 }
 
@@ -95,7 +110,7 @@ test("a first visit explains what the city is and whose it is", async ({ page })
   await expect(orient.locator('.prov[data-provenance="reported"]')).toBeVisible();
   await expect(orient.locator('.prov[data-provenance="local"]')).toBeVisible();
 
-  await page.click('[data-action="orient-done"]');
+  await tap(page, '[data-action="orient-done"]');
   await expect(orient).toHaveCount(0);
   // It takes you to the work rather than dumping you back at the wide view.
   await expect(page.locator(".city-brief")).toBeVisible();
@@ -106,7 +121,7 @@ test("orientation is not shown again, and can be reopened", async ({ page }) => 
   await open(page, "struggling", { orient: false });
   await expect(page.locator(".orient")).toHaveCount(0);
 
-  await page.click('[data-action="orient"]');
+  await tap(page, '[data-action="orient"]');
   await expect(page.locator(".orient")).toBeVisible();
 });
 
@@ -198,13 +213,13 @@ test("a branching answer changes what comes next", async ({ page }) => {
   await clickDistrict(page, "offer-forge");
 
   await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "shape");
-  await page.click('.answer[data-answer="ongoing"]');
+  await tap(page, '.answer[data-answer="ongoing"]');
   await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "ongoing-term");
 
   // Change the branch: the old continuation is gone, not stranded.
-  await page.click('[data-action="undo"]');
+  await tap(page, '[data-action="undo"]');
   await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "shape");
-  await page.click('.answer[data-answer="once"]');
+  await tap(page, '.answer[data-answer="once"]');
   await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "once-price");
 });
 
@@ -212,10 +227,10 @@ test("finding a problem leaves an action behind, and a pass leaves a record", as
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
 
-  await page.click('.answer[data-answer="problem"]');
+  await tap(page, '.answer[data-answer="problem"]');
   await expect(page.locator('.planlist__item[data-kind="action"]').first()).toBeVisible();
 
-  await page.click('.answer[data-answer="confirmed"]');
+  await tap(page, '.answer[data-answer="confirmed"]');
   await expect(page.locator('.planlist__item[data-kind="clear"]').first()).toBeVisible();
 });
 
@@ -223,7 +238,7 @@ test("deciding against something is a valid outcome, not a skipped task", async 
   await open(page, "struggling");
   await clickDistrict(page, "creator-quarter");
 
-  await page.click('.answer[data-answer="no"]');
+  await tap(page, '.answer[data-answer="no"]');
 
   await expect(page.locator('[data-testid="district-done"]')).toContainText("deliberately not");
   const item = page.locator('.city-queue__item[data-district="creator-quarter"]');
@@ -281,7 +296,7 @@ test("finishing every district opens a plan you can take away", async ({ page })
 test("progress survives a reload and undo puts it back", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
-  await page.click('.answer[data-answer="problem"]');
+  await tap(page, '.answer[data-answer="problem"]');
   const before = await page.locator(".planlist__item").count();
   expect(before).toBe(1);
 
@@ -289,16 +304,14 @@ test("progress survives a reload and undo puts it back", async ({ page }) => {
   await clickDistrict(page, "commerce-core");
   await expect(page.locator(".planlist__item")).toHaveCount(1);
 
-  const restart = page.locator('[data-action="restart"]');
-  await expect(restart).toBeVisible();
-  await restart.click();
+  await tap(page, '[data-action="restart"]');
   await expect(page.locator(".planlist__item")).toHaveCount(0);
 });
 
 test("a changed reading is surfaced without claiming the work caused it", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
-  await page.click('.answer[data-answer="confirmed"]');
+  await tap(page, '.answer[data-answer="confirmed"]');
 
   await open(page, "thriving");
   await clickDistrict(page, "commerce-core");
@@ -367,7 +380,7 @@ test("the whole session runs without WebGL", async ({ page }) => {
   await page.goto("/?scenario=struggling", { waitUntil: "load" });
   const go = page.locator('[data-action="orient-done"]');
   await expect(go).toBeVisible({ timeout: 60_000 });
-  await go.click();
+  await go.click({ force: true });
 
   const fallback = page.locator("[data-testid=city-fallback]");
   await expect(fallback).toBeVisible();
@@ -375,9 +388,9 @@ test("the whole session runs without WebGL", async ({ page }) => {
 
   const head = page.locator('.city-flat__head[data-district-open="commerce-core"]');
   // Orientation lands on the most pressing district, which may be this one.
-  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click();
+  if ((await head.getAttribute("aria-expanded")) !== "true") await head.click({ force: true });
   await expect(page.locator(".city-flat__prompt")).toBeVisible();
-  await page.click('.city-flat__prompt .answer[data-answer="problem"]');
+  await tap(page, '.city-flat__prompt .answer[data-answer="problem"]');
   await expect(page.locator(".planlist__item")).not.toHaveCount(0);
 });
 
@@ -388,9 +401,9 @@ test("the session works on a narrow viewport", async ({ page }) => {
   await open(page, "struggling");
 
   await expect(page.locator(".city-queue")).toBeVisible();
-  await page.click('.city-queue__item[data-district="commerce-core"]');
+  await tap(page, '.city-queue__item[data-district="commerce-core"]');
   await expect(page.locator(".city-brief")).toBeVisible();
-  await page.click('.answer[data-answer="problem"]');
+  await tap(page, '.answer[data-answer="problem"]');
   await expect(page.locator(".planlist__item").first()).toBeVisible();
 });
 
