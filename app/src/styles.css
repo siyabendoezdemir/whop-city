@@ -118,9 +118,9 @@
 
 .sheet__where {
   margin: 0;
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.5;
-  color: var(--ink-4);
+  color: var(--ink-3);
 }
 
 .sheet__acts {
@@ -134,8 +134,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-  font-size: 12.5px;
-  color: var(--ink-4);
+  font-size: 13px;
+  color: var(--ink-3);
 }
 
 .legend span {
@@ -212,21 +212,19 @@
 }
 
 .source {
-  display: grid;
-  grid-template-columns: 7.5rem 1fr;
-  gap: 12px;
-  font-size: 13px;
-  line-height: 1.5;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
 }
 
 .source__who {
-  font-family: var(--face-narrow);
   font-weight: 600;
   color: var(--ink);
 }
 
-.source__what {
-  color: var(--ink-3);
+.source__who::after {
+  content: " — ";
+  color: var(--ink-4);
 }
 
 .about__acts {
@@ -532,11 +530,6 @@
 
   .sheet__title {
     font-size: 23px;
-  }
-
-  .source {
-    grid-template-columns: 1fr;
-    gap: 1px;
   }
 
   .about {
