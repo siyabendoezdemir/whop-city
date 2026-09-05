@@ -373,9 +373,22 @@ Creator Quarter opens by asking whether affiliates are wanted at all — "no,
 deliberately" ends the district as decided, not skipped. Answers are the
 operator's own report: unverified, and never sent anywhere.
 
-**Payoff.** Finishing produces the round's plan — actions, decisions, findings
-and passed checks, grouped by district, copyable as text, with each district's
-observed condition kept visibly apart from the items you recorded under it.
+**Your own line.** Each district takes one optional note, bounded at 400
+characters. It is the only field in the product, it is kept in this browser, and
+it goes into the plan marked as yours.
+
+**Payoff.** Finishing produces the round's plan — actions first, then your
+notes, findings, decisions and passed checks, grouped by district, with each
+district's observed condition kept visibly apart from the items under it. Copy
+it, or download it as Markdown. Copy reports what actually happened: where the
+browser refuses both routes it says so and puts the text on screen to be taken
+by hand.
+
+**Another round.** Finishing files the round — its title, its items, and the
+condition each district was showing at the time — and clears the desk. Filed
+rounds stay listed in the plan sheet, still exportable; the newest six are kept.
+Discarding the round in progress is a separate act, asks first, and leaves filed
+rounds alone.
 
 **Return.** Come back and the city may read differently. Notes are kept and
 flagged as recorded under an older reading. Nothing claims the work caused the

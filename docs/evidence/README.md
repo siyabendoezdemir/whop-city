@@ -51,8 +51,8 @@ zoom rather than a bug, and it is worth a decision rather than a silent tweak.
 
 ## The round (`pnpm capture:round`)
 
-A recorded playthrough of the current interface. Every scenario named below is
-a **fixture**, not a live business: `pnpm build:fixtures` serves deterministic
+A recorded playthrough of the release build. Every scenario named below is a
+**fixture**, not a live business: `pnpm build:fixtures` serves deterministic
 states so each condition can be shown. A live deployment runs the same code
 against a real projection.
 
@@ -65,18 +65,26 @@ Captured at 1440x900 (the phone frames at 390x780), supersampling 1.
 | `ui-3-district` | struggling | Entering a district: identity, condition, one next action |
 | `ui-4-evidence` | struggling | The observation and its ambiguity, one click away |
 | `ui-5-survey` | struggling | A survey: the answered step collapses, carrying what was said |
+| `ui-5b-note` | struggling | The operator's own line, added to the plan and kept locally |
 | `ui-6-worked` | struggling | **The key frame.** Worked and still not adding up: the hazard mark still stands |
 | `ui-7-optional` | struggling | A fork: affiliates asked about, not assumed |
 | `ui-8-declined` | struggling | Set aside deliberately: an outcome, not a gap |
 | `ui-9-blank` | blank | A new business gets a different round |
 | `ui-10-decision` | blank | A pricing decision composed as a fork, not a form |
 | `ui-11-plan` | thriving | The deliverable, with observed and reported kept apart |
+| `ui-11b-newround` | thriving | Filed, and a fresh round open — the finished one is kept |
+| `ui-11c-filed` | thriving | Earlier rounds, still copyable and downloadable |
 | `ui-12-return` | struggling | Returning to a changed reading: kept, flagged, not claimed |
 | `ui-13-unavailable` | unavailable | No reading, so nothing suggested |
 | `ui-14-phone-rest` | struggling | A phone: the city fills the window |
 | `ui-15-phone-district` | struggling | A phone: the sheet takes the lower part, the city keeps the top |
+| `ui-16-phone-note` | struggling | A phone: typing, with the last line clear of the command bar |
 
-`city-round.mp4` — 34.7s, the thirteen desktop beats in order at reading pace.
+`city-round.mp4` — 42.7s. **These are the sixteen captured frames held at
+reading pace, not a live screen recording.** This machine has no GPU and
+presenting a WebGL frame costs seconds, so a live capture would misrepresent
+the timing. Every frame is a real capture of the built app; the film proves the
+sequence and the states, not motion quality.
 
 ### Before and after, same camera framing
 
@@ -97,5 +105,5 @@ Captured at 1440x900 (the phone frames at 390x780), supersampling 1.
 | struggling, 390x780 | 108 | 146,072 |
 
 Budgets are 220 draw calls and 250,000 triangles. The desktop figures are
-identical to those measured before the interface work: at the authored aspect
-and wider the projection is unchanged.
+unchanged from before the interface work: at the authored aspect and wider the
+projection is identical.
