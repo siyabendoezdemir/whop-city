@@ -24,8 +24,8 @@ export const DISTRICT_SUBTITLES: Record<DistrictId, string> = {
 
 /** A short, honest line about how current the reading is. */
 export const FRESHNESS_NOTE = {
-  live: "Reading the business now.",
-  recent: "Reading from a few minutes ago.",
-  stale: "Reading from over an hour ago.",
-  unavailable: "The business could not be read. Its districts are shown unbuilt.",
+  live: "Read just now",
+  recent: "Read minutes ago",
+  stale: "Read over an hour ago",
+  unavailable: "Could not be read",
 } as const;

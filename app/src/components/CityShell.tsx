@@ -1,11 +1,10 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Prompt } from "../city/activities";
-import { ATTENTION_LABEL, attentionFor } from "../city/attention";
-import { evidenceKind } from "../city/evidence";
+import { PROVENANCE_NOTE } from "../city/evidence";
 import { DISTRICT_NAMES, FRESHNESS_NOTE } from "../city/explain";
 import { parseProjection, type DistrictId, type PublicCityProjection } from "../city/projection";
-import { buildSession, planAsText, runActivity, type DistrictWork } from "../city/session";
+import { buildSession, runActivity, type DistrictWork } from "../city/session";
 import {
   EMPTY_LOG,
   answersForDistrict,
@@ -19,8 +18,11 @@ import {
   type OperatorLog,
 } from "../state/operatorLog";
 import { CityFallback } from "./CityFallback";
-import { DistrictPanel, Provenance } from "./DistrictPanel";
-import { FRAMING_ORDER, type FramingKey } from "./framings";
+import { CommandBar } from "./CommandBar";
+import { Dossier } from "./Dossier";
+import { PlanSheet } from "./PlanSheet";
+import { Seal } from "./Glyphs";
+import type { FramingKey } from "./framings";
 import type { ProgressMark } from "../render/city/markers";
 
 const CityCanvas = lazy(() =>
@@ -28,23 +30,28 @@ const CityCanvas = lazy(() =>
 );
 
 /**
- * The city shell.
+ * The shell.
  *
- * Mission control, not a dashboard. The world owns the viewport; everything on
- * top of it exists to answer, in order: what needs attention, why, what to do,
- * and what came out of doing it.
+ * At rest there are three things over the world: the seal, the command bar and
+ * the camera. Selecting a district adds a fourth and changes the bar; nothing
+ * else appears. The earlier arrangement had a crest, a session card, a full
+ * district list, a second row of district buttons, a progress widget and an
+ * introductory dialog on screen simultaneously, which is how a game ends up
+ * looking like a dashboard.
  *
- * The rule the whole interface is built around is that three kinds of fact stay
- * apart — what Whop reported, what the operator answered, and what this browser
- * remembers. They are stored separately in `city/session.ts`, labelled
- * separately here, and drawn as separate objects in the world.
+ * What went and where it went:
+ *   the district list and the district pill row   -> the studs in the bar
+ *   the progress pip widget                       -> the count in the bar
+ *   the arrival essay                             -> About, on demand
+ *   the reading, ambiguity and limit, always on   -> "Why City says this"
+ *   the per-answer disclaimer, repeated           -> one line under the notes
  */
 
 const SNAPSHOT_ENDPOINT = "/api/city/snapshot";
 const ZOOM_MIN = 0.45;
 const ZOOM_MAX = 1.6;
 const ZOOM_STEP = 0.15;
-const ORIENTED_KEY = "whop-city.oriented.v1";
+const VISITED_KEY = "whop-city.visited.v2";
 
 type LoadState =
   | { status: "loading" }
@@ -57,24 +64,22 @@ function endpointUrl(): string {
   return scenario ? `${SNAPSHOT_ENDPOINT}?scenario=${encodeURIComponent(scenario)}` : SNAPSHOT_ENDPOINT;
 }
 
-/** Orientation is shown once per browser, and can be reopened. */
-function hasBeenOriented(): boolean {
+function hasVisited(): boolean {
   try {
-    return typeof localStorage !== "undefined" && localStorage.getItem(ORIENTED_KEY) === "1";
+    return typeof localStorage !== "undefined" && localStorage.getItem(VISITED_KEY) === "1";
   } catch {
     return false;
   }
 }
 
-function rememberOriented(): void {
+function rememberVisit(): void {
   try {
-    localStorage?.setItem(ORIENTED_KEY, "1");
+    localStorage?.setItem(VISITED_KEY, "1");
   } catch {
-    /* storage refused; the card simply shows again next time */
+    /* storage refused; the pointer simply shows again */
   }
 }
 
-/** What the player has done here, as one word the world can draw. */
 function progressMark(work: DistrictWork): ProgressMark {
   if (work.changed) return "changed";
   if (work.declined) return "declined";
@@ -89,10 +94,10 @@ export function CityShell() {
   const [log, setLog] = useState<OperatorLog>(EMPTY_LOG);
   const [worldUnavailable, setWorldUnavailable] = useState(false);
   const [announcement, setAnnouncement] = useState("");
-  const [orienting, setOrienting] = useState(false);
+  const [about, setAbout] = useState(false);
   const [showPlan, setShowPlan] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const panelRef = useRef<HTMLElement>(null);
+  const [hint, setHint] = useState(false);
+  const dossierRef = useRef<HTMLElement>(null);
 
   const projection = load.status === "ready" ? load.projection : null;
 
@@ -105,7 +110,7 @@ export function CityShell() {
         if (cancelled) return;
         setLoad({ status: "ready", projection: next });
         setLog(loadLog(next.seed));
-        setOrienting(!hasBeenOriented());
+        setHint(!hasVisited());
       })
       .catch(() => {
         if (!cancelled) setLoad({ status: "failed" });
@@ -131,15 +136,18 @@ export function CityShell() {
     return marks as Record<DistrictId, ProgressMark>;
   }, [session]);
 
+  /** Selection moves the camera and the interface together: one gesture. */
   const select = useCallback((key: FramingKey) => {
     setFraming(key);
     setZoom(1);
     setShowPlan(false);
+    setHint(false);
+    rememberVisit();
     if (key !== "city") {
-      setAnnouncement(`${DISTRICT_NAMES[key as DistrictId]} selected.`);
-      window.requestAnimationFrame(() => panelRef.current?.focus());
+      setAnnouncement(`${DISTRICT_NAMES[key as DistrictId]}.`);
+      window.requestAnimationFrame(() => dossierRef.current?.focus());
     } else {
-      setAnnouncement("Whole city.");
+      setAnnouncement("Whop City.");
     }
   }, []);
 
@@ -151,13 +159,6 @@ export function CityShell() {
     [projection],
   );
 
-  /**
-   * Records an answer.
-   *
-   * Answering a branching question again invalidates everything that followed
-   * the old branch, so those answers are dropped rather than left orphaned in
-   * a path nobody is on any more.
-   */
   const answer = useCallback(
     (work: DistrictWork, prompt: Prompt, value: string) => {
       if (!work.activity) return;
@@ -172,9 +173,13 @@ export function CityShell() {
         at: Date.now(),
       });
 
+      // Re-answering a fork strands whatever followed the old branch. Drop it
+      // rather than leave answers on a path nobody is walking.
       const reachable = new Set(
-        runActivity(activity, next.answers.filter((entry) => entry.activityId === activity.id))
-          .answered.map((entry) => entry.id),
+        runActivity(
+          activity,
+          next.answers.filter((entry) => entry.activityId === activity.id),
+        ).answered.map((entry) => entry.id),
       );
       for (const entry of next.answers) {
         if (entry.activityId !== activity.id) continue;
@@ -183,7 +188,7 @@ export function CityShell() {
       }
 
       persist(next);
-      setAnnouncement("Recorded in this browser.");
+      setAnnouncement("Recorded.");
     },
     [log, persist],
   );
@@ -198,6 +203,18 @@ export function CityShell() {
     [log, persist],
   );
 
+  /** The one control: start where the work is, resume where it stopped. */
+  const primary = useCallback(() => {
+    if (!session) return;
+    if (session.complete) {
+      setShowPlan(true);
+      return;
+    }
+    const next = session.outstanding[0] ?? session.work.find((entry) => entry.activity && !entry.complete);
+    if (next) select(next.district.id);
+    else setShowPlan(true);
+  }, [session, select]);
+
   // ----------------------------------------------------------- keyboard
   useEffect(() => {
     if (!projection) return;
@@ -211,12 +228,12 @@ export function CityShell() {
         select(districts[Number(event.key) - 1].id);
         event.preventDefault();
       } else if (event.key === "0" || event.key === "Escape") {
-        select("city");
+        if (about) setAbout(false);
+        else if (showPlan) setShowPlan(false);
+        else select("city");
         event.preventDefault();
       } else if (event.key.toLowerCase() === "f") {
-        const next = session?.outstanding[0];
-        if (next) select(next.district.id);
-        else setAnnouncement("Nothing is outstanding.");
+        primary();
         event.preventDefault();
       } else if (event.key.toLowerCase() === "p") {
         setShowPlan((open) => !open);
@@ -225,46 +242,36 @@ export function CityShell() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [projection, session, select]);
+  }, [projection, about, showPlan, primary, select]);
 
-  // Finishing the last outstanding district is the payoff; open the plan.
+  // Finishing the last district is the payoff: the sheet comes up by itself.
   const complete = session?.complete ?? false;
-  const previouslyComplete = useRef(false);
+  const wasComplete = useRef(false);
   useEffect(() => {
-    if (complete && !previouslyComplete.current && projection) {
+    if (complete && !wasComplete.current && projection) {
       setShowPlan(true);
-      setAnnouncement("Session complete. Your plan is ready.");
+      setAnnouncement("Round finished. Your plan is ready.");
       persist(completeSession(log));
     }
-    previouslyComplete.current = complete;
+    wasComplete.current = complete;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complete]);
 
   // ------------------------------------------------------------- render
-  if (load.status === "loading") {
+  if (load.status === "loading" || load.status === "failed" || !projection || !session) {
     return (
       <main className="city">
-        <div className="city-first-load" role="status">
-          <span className="city-first-load__crest">Whop City</span>
-          <span className="city-first-load__note">Surveying the ground…</span>
+        <div className="boot" role="status">
+          <span className="boot__name">Whop City</span>
+          <span>
+            {load.status === "failed"
+              ? "The business could not be read."
+              : "Surveying the ground…"}
+          </span>
         </div>
       </main>
     );
   }
-
-  if (load.status === "failed" || !projection || !session) {
-    return (
-      <main className="city">
-        <div className="city-first-load" role="status">
-          <span className="city-first-load__crest">Whop City</span>
-          <span className="city-first-load__note">{FRESHNESS_NOTE.unavailable}</span>
-        </div>
-      </main>
-    );
-  }
-
-  const worked = session.work.filter((entry) => entry.complete).length;
-  const total = session.work.filter((entry) => entry.activity !== null).length;
 
   return (
     <main className="city" data-freshness={projection.freshness}>
@@ -292,120 +299,74 @@ export function CityShell() {
         {announcement}
       </p>
 
-      {/* ------------------------------------------------------------ crest */}
-      <div className="city-crest">
-        <span className="city-crest__name">Whop City</span>
-        <span className="city-crest__state" data-freshness={projection.freshness}>
-          {FRESHNESS_NOTE[projection.freshness]}
+      {/* ------------------------------------------------------------- seal */}
+      <div className="seal surface">
+        <Seal className="seal__mark" />
+        <span className="seal__text">
+          <span className="seal__name">Whop City</span>
+          <span className="seal__state" data-freshness={projection.freshness}>
+            {FRESHNESS_NOTE[projection.freshness]}
+          </span>
         </span>
-        <span className="city-crest__mode">
-          This city shows the business that deployed it. Public, read-only.
-        </span>
-        <button type="button" className="ghost ghost--tiny" data-action="orient"
-          onClick={() => setOrienting(true)}>
-          What is this?
+        <button
+          type="button"
+          className="btn seal__about"
+          data-action="about"
+          aria-label="About Whop City"
+          onClick={() => setAbout(true)}
+        >
+          i
         </button>
       </div>
 
-      {/* ---------------------------------------------------------- session */}
-      <section className="city-queue" aria-label="This session">
-        <div className="session">
-          <h2 className="session__title">{session.title}</h2>
-          <p className="session__purpose">{session.purpose}</p>
-          {total > 0 ? (
-            <p className="session__count" data-local="true">
-              <span data-testid="session-progress">
-                {worked} of {total}
-              </span>{" "}
-              districts worked
-            </p>
-          ) : null}
-        </div>
+      {/* -------------------------------------------------------------- bar */}
+      <CommandBar
+        session={session}
+        selected={selected?.district.id ?? null}
+        onSelect={select}
+        onBack={() => select("city")}
+        onPrimary={primary}
+        planOpen={showPlan}
+      />
 
-        <ul className="city-queue__list">
-          {session.work.map((entry) => {
-            const kind = evidenceKind(entry.district);
-            const mark = progressMark(entry);
-            return (
-              <li key={entry.district.id}>
-                <button
-                  type="button"
-                  className="city-queue__item"
-                  data-district={entry.district.id}
-                  data-condition={kind}
-                  data-progress={mark}
-                  data-level={attentionFor(entry.district)}
-                  aria-pressed={framing === entry.district.id}
-                  onClick={() => select(entry.district.id)}
-                >
-                  <span className="city-queue__level" aria-hidden="true" />
-                  <span className="city-queue__text">
-                    <span className="city-queue__name">{DISTRICT_NAMES[entry.district.id]}</span>
-                    {/* Two separate chips: what Whop reported, and what you did.
-                        Local progress never overwrites the business condition. */}
-                    <span className="city-queue__chips">
-                      <span className="chip chip--observed" data-condition={kind}>
-                        {ATTENTION_LABEL[attentionFor(entry.district)]}
-                      </span>
-                      {mark !== "none" ? (
-                        <span className="chip chip--local" data-progress={mark}>
-                          {mark === "worked"
-                            ? "You worked here"
-                            : mark === "declined"
-                              ? "You decided against"
-                              : "Reading changed"}
-                        </span>
-                      ) : null}
-                    </span>
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-
-        <div className="city-queue__actions">
-          {session.plan.length > 0 ? (
-            <button type="button" className="ghost" data-action="plan" onClick={() => setShowPlan(true)}>
-              Open plan
-            </button>
-          ) : null}
-          <p className="city-queue__hint">
-            Click a district in the city, or press <kbd>F</kbd> for the next one.
-          </p>
-        </div>
-      </section>
-
-      <nav className="city-jump" aria-label="Camera">
-        {FRAMING_ORDER.map((key) => (
-          <button key={key} type="button" data-district={key} aria-pressed={key === framing}
-            onClick={() => select(key)}>
-            {key === "city" ? "Whop City" : DISTRICT_NAMES[key as DistrictId]}
+      {hint && !selected && session.outstanding.length > 0 ? (
+        <div className="hint surface">
+          <span>Click a district in the city, or begin the round.</span>
+          <button
+            type="button"
+            className="btn btn--quiet hint__dismiss"
+            data-action="dismiss-hint"
+            onClick={() => {
+              setHint(false);
+              rememberVisit();
+            }}
+          >
+            Got it
           </button>
-        ))}
-      </nav>
+        </div>
+      ) : null}
 
-      <div className="city-camera" role="group" aria-label="Zoom">
+      <div className="camera surface" role="group" aria-label="Camera">
         <button type="button" data-cam="in" aria-label="Zoom in"
           onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}>+</button>
         <button type="button" data-cam="out" aria-label="Zoom out"
           onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}>−</button>
-        <button type="button" data-cam="reset" aria-label="Reset zoom" onClick={() => setZoom(1)}>⌂</button>
+        <button type="button" data-cam="reset" aria-label="Reset view" onClick={() => setZoom(1)}>⌂</button>
       </div>
 
-      {/* -------------------------------------------------- the district panel */}
+      {/* ---------------------------------------------------------- dossier */}
       {selected && !showPlan ? (
         <aside
-          className="city-brief"
-          ref={panelRef}
+          className="dossier"
+          ref={dossierRef}
           tabIndex={-1}
-          aria-label={`${DISTRICT_NAMES[selected.district.id]} panel`}
+          aria-label={DISTRICT_NAMES[selected.district.id]}
           data-district={selected.district.id}
           data-state={selected.district.state}
-          data-condition={evidenceKind(selected.district)}
+          data-condition={selected.district.signal === "unreadable" ? "unread" : undefined}
           data-progress={progressMark(selected)}
         >
-          <DistrictPanel
+          <Dossier
             work={selected}
             onAnswer={(prompt, value) => answer(selected, prompt, value)}
             onUndoLast={() => undoLast(selected)}
@@ -414,148 +375,56 @@ export function CityShell() {
         </aside>
       ) : null}
 
-      {/* --------------------------------------------------------- the payoff */}
+      {/* ------------------------------------------------------------- plan */}
       {showPlan ? (
-        <aside className="city-brief city-brief--plan" aria-label="Session plan" data-testid="plan">
-          <header className="panel__head">
-            <p className="panel__subtitle">Session plan</p>
-            <h1 className="panel__name">{session.complete ? "Round finished" : "What you have so far"}</h1>
-          </header>
+        <PlanSheet
+          session={session}
+          rounds={log.sessionsCompleted}
+          onClose={() => setShowPlan(false)}
+          onClear={() => {
+            persist(clearAll(log));
+            setShowPlan(false);
+            setAnnouncement("All answers cleared.");
+          }}
+          onCopied={() => setAnnouncement("Plan copied.")}
+        />
+      ) : null}
 
-          {session.complete ? (
-            <p className="panel__payoff">
-              Every district in this round is worked through. Nothing about the business changed
-              because of it — this is your plan, not a result.
-              {log.sessionsCompleted > 0 ? (
-                <>
-                  {" "}
-                  <span data-local="true">
-                    Rounds finished in this browser: <span data-testid="rounds">{log.sessionsCompleted}</span>.
-                  </span>
-                </>
-              ) : null}
+      {/* ------------------------------------------------------------ about */}
+      {about ? (
+        <div className="about" role="dialog" aria-modal="true" aria-label="About Whop City">
+          <div className="about__card">
+            <h1 className="about__title">A city built from a business</h1>
+            <p>
+              Every district stands for one part of how this business sells. What is built, lit or
+              staked out comes from what Whop reports about it.
             </p>
-          ) : null}
-
-          {session.work.map((entry) =>
-            entry.plan.length === 0 ? null : (
-              <section key={entry.district.id} className="planblock" data-district={entry.district.id}>
-                <div className="planblock__head">
-                  <h2>{DISTRICT_NAMES[entry.district.id]}</h2>
-                  <span className="chip chip--observed" data-condition={evidenceKind(entry.district)}>
-                    Whop reported: {entry.district.state}
-                  </span>
-                </div>
-                <ul className="planlist">
-                  {entry.plan.map((item) => (
-                    <li key={item.promptId} className="planlist__item" data-kind={item.kind}>
-                      <span className="planlist__mark" aria-hidden="true" />
-                      <span className="planlist__text">{item.text}</span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ),
-          )}
-
-          {session.plan.length === 0 ? (
-            <p className="panel__blocked">Nothing recorded yet. Pick a district and start.</p>
-          ) : null}
-
-          <footer className="panel__planFoot">
-            <Provenance kind="reported" />
-            <p className="panel__local">
-              Your answers, kept in this browser only. Not sent to Whop, and not a record that the
-              work was done.
+            <div className="sources">
+              <p className="source">
+                <span className="source__who">From Whop</span>
+                <span className="source__what">{PROVENANCE_NOTE.observed}</span>
+              </p>
+              <p className="source">
+                <span className="source__who">Your answers</span>
+                <span className="source__what">{PROVENANCE_NOTE.reported}</span>
+              </p>
+              <p className="source">
+                <span className="source__who">This browser</span>
+                <span className="source__what">{PROVENANCE_NOTE.local}</span>
+              </p>
+            </div>
+            <p>
+              The city shows the business that deployed this site, and it is public and read-only.
+              If that business is not yours you can look around and take notes, but nothing here
+              operates it.
             </p>
-            <div className="panel__undo">
-              <button
-                type="button"
-                className="ghost"
-                data-action="copy-plan"
-                onClick={() => {
-                  const text = planAsText(session, (id) => DISTRICT_NAMES[id]);
-                  navigator.clipboard?.writeText(text).catch(() => undefined);
-                  setCopied(true);
-                  setAnnouncement("Plan copied.");
-                }}
-              >
-                {copied ? "Copied" : "Copy plan as text"}
-              </button>
-              <button type="button" className="ghost" data-action="close-plan" onClick={() => setShowPlan(false)}>
+            <div className="about__acts">
+              <button type="button" className="btn btn--primary" data-action="about-done"
+                onClick={() => setAbout(false)}>
                 Back to the city
               </button>
-              <button
-                type="button"
-                className="ghost"
-                data-action="reset-all"
-                onClick={() => {
-                  persist(clearAll(log));
-                  setShowPlan(false);
-                  setAnnouncement("All answers cleared.");
-                }}
-              >
-                Clear all answers
-              </button>
             </div>
-          </footer>
-        </aside>
-      ) : null}
-
-      {/* ---------------------------------------------------------- orientation */}
-      {orienting ? (
-        <div className="orient" role="dialog" aria-modal="true" aria-label="What Whop City is">
-          <div className="orient__card">
-            <h1 className="orient__title">This is a city built from a business</h1>
-            <p>
-              Every district stands for one part of how the business sells. What is built, lit or
-              boarded up comes from what Whop reports about it — <Provenance kind="observed" />
-            </p>
-            <p>
-              City suggests work and records what you answer. It cannot see your storefront, cannot
-              try a purchase, and does not change anything in Whop. Your answers stay in this
-              browser — <Provenance kind="reported" /> <Provenance kind="local" />
-            </p>
-            <p className="orient__whose">
-              The city shows the business that deployed this site. If that is not you, you can look
-              around and take notes, but nothing you do here operates their business.
-            </p>
-            <button
-              type="button"
-              className="orient__go"
-              data-action="orient-done"
-              onClick={() => {
-                setOrienting(false);
-                rememberOriented();
-                const first = session.outstanding[0];
-                if (first) select(first.district.id);
-              }}
-            >
-              {session.outstanding.length > 0 ? "Show me what needs attention" : "Look around"}
-            </button>
           </div>
-        </div>
-      ) : null}
-
-      {/* ------------------------------------------------------- progression */}
-      {!session.unreadable ? (
-        <div className="city-progress" data-local="true" aria-label="Districts worked">
-          <span className="city-progress__label">Worked</span>
-          <span
-            className="city-progress__pips"
-            role="img"
-            aria-label={`${worked} of ${total} districts worked in this browser`}
-          >
-            {session.work.map((entry) => (
-              <span
-                key={entry.district.id}
-                className="city-progress__pip"
-                data-district={entry.district.id}
-                data-filled={entry.complete ? "true" : "false"}
-                data-declined={entry.declined ? "true" : "false"}
-              />
-            ))}
-          </span>
         </div>
       ) : null}
     </main>

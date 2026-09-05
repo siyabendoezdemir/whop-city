@@ -170,6 +170,8 @@ export type DistrictWork = {
   readonly level: AttentionLevel;
   readonly activity: Activity | null;
   readonly run: ActivityRun | null;
+  /** This district's answers, so a ledger can show what was said. */
+  readonly answers: AnswerSet;
   readonly plan: readonly PlanItem[];
   /** The operator declined this district's whole subject, deliberately. */
   readonly declined: boolean;
@@ -273,6 +275,7 @@ export function buildSession(projection: PublicCityProjection, answers: AnswerSe
       level,
       activity,
       run,
+      answers: relevant,
       plan: activity ? planForActivity(activity, relevant, district.state) : [],
       declined,
       // Answered under one reading, and City now reads it differently. The

@@ -20,6 +20,15 @@ const FRAMING_CITY = FRAMING_TABLE.city;
  * open rather than studio-lit.
  */
 
+export const AUTHORED_ASPECT = 1440 / 900;
+
+/**
+ * How much taller than authored the frustum may grow on a narrow window.
+ *
+ * Past this the ground plane runs out and the horizon shows its edge.
+ */
+const MAX_VERTICAL_GROWTH = 1.3;
+
 export const VIEW = { width: 1440, height: 900 } as const;
 
 /**
@@ -102,6 +111,8 @@ export type Stage = {
   sun: THREE.DirectionalLight;
   focus: THREE.Vector3;
   resize: (width: number, height: number) => void;
+  /** Push the framing up the screen, for when a sheet covers the lower part. */
+  setBias: (bias: number) => void;
   /** Dolly and zoom to a framing. The view angle never changes. */
   frame: (at: THREE.Vector3, frustumHeight: number) => void;
 };
@@ -202,6 +213,8 @@ export function createStage(mount: HTMLElement, options: StageOptions = {}): Sta
   const focus = CITY_FOCUS.clone();
 
   let aspect = VIEW.width / VIEW.height;
+  /** Fraction of the view height the framing is pushed up the screen. */
+  let bias = 0;
   let halfH = CITY_FRUSTUM / 2;
   const camera = new THREE.OrthographicCamera(-halfH * aspect, halfH * aspect, halfH, -halfH, 1, 700);
   placeOnSphere(camera, CAM_AZIMUTH, CAM_ELEVATION, CAM_DISTANCE);
@@ -251,12 +264,41 @@ export function createStage(mount: HTMLElement, options: StageOptions = {}): Sta
   rim.position.set(-24, 14, -22);
   scene.add(rim);
 
+  /**
+   * Fit the authored composition to whatever shape the window is.
+   *
+   * At the authored aspect and wider, nothing changes: the framing is exactly
+   * what it always was.
+   *
+   * Narrower than that — a phone held upright — the frustum grows vertically
+   * so the window is filled with world instead of black bars, but only up to
+   * a limit. The city is an island on a finite plane, and past about a third
+   * more height than it was composed for you start seeing the edge of it.
+   * Beyond the limit the view crops horizontally instead, which is what a
+   * phone showing part of a city is supposed to look like.
+   *
+   * `bias` slides the whole window down in camera space, which puts the focus
+   * higher on screen. That is what keeps a selected district visible above a
+   * sheet covering the lower two thirds of a phone.
+   */
   function applyFrustum() {
-    camera.left = -halfH * aspect;
-    camera.right = halfH * aspect;
-    camera.top = halfH;
-    camera.bottom = -halfH;
+    const wide = aspect >= AUTHORED_ASPECT;
+    const grown = Math.min((halfH * AUTHORED_ASPECT) / aspect, halfH * MAX_VERTICAL_GROWTH);
+    const halfHeight = wide ? halfH : grown;
+    const halfWidth = wide ? halfH * aspect : halfHeight * aspect;
+    const shift = bias * 2 * halfHeight;
+
+    camera.left = -halfWidth;
+    camera.right = halfWidth;
+    camera.top = halfHeight - shift;
+    camera.bottom = -halfHeight - shift;
     camera.updateProjectionMatrix();
+  }
+
+  function setBias(next: number) {
+    if (bias === next) return;
+    bias = next;
+    applyFrustum();
   }
 
   function resize(width: number, height: number) {
@@ -281,5 +323,5 @@ export function createStage(mount: HTMLElement, options: StageOptions = {}): Sta
     applyFrustum();
   }
 
-  return { renderer, scene, camera, sun, focus, resize, frame };
+  return { renderer, scene, camera, sun, focus, resize, frame, setBias };
 }

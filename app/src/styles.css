@@ -1,796 +1,550 @@
-@import "tailwindcss";
+@import "./styles/base.css";
+@import "./styles/dossier.css";
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+/* ==========================================================================
+   The plan sheet — the round's deliverable
+   --------------------------------------------------------------------------
+   The one surface allowed to take the middle of the screen, because it is the
+   thing the operator came away with rather than a thing laid over the world.
+   ========================================================================== */
 
-html,
-body,
-#app {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  background: #0d1420;
-  color: #f4f7fb;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  overflow: hidden;
-}
-
-/*
- * The city owns the viewport.
- *
- * Everything below is edge-anchored and deliberately small: a crest, district
- * navigation, camera controls, and one panel that appears only once a place is
- * selected. No header, no bottom bar, no dashboard chrome.
- */
-
-.city {
-  position: fixed;
+.sheet {
+  position: absolute;
   inset: 0;
+  z-index: 6;
   display: grid;
   place-items: center;
-  background: radial-gradient(120% 90% at 50% 0%, #21324a 0%, #0d1420 70%);
+  padding: 28px 20px 96px;
+  background: rgba(4, 8, 14, 0.62);
+  animation: sheet-in 180ms ease-out;
 }
 
-/*
- * The renderer sets the canvas element's own width and height so the drawing
- * buffer and the displayed size agree exactly. Overriding either here would
- * stretch the city, so this only positions it.
- */
-.city-canvas {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+  }
 }
 
-.city-canvas canvas {
-  display: block;
-}
-
-/* ------------------------------------------------------------- first load */
-
-.city-first-load {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-content: center;
-  gap: 0.6rem;
-  justify-items: center;
-  background: radial-gradient(120% 90% at 50% 30%, #2b405e 0%, #0d1420 72%);
-  z-index: 3;
-}
-
-.city-first-load__crest {
-  font-size: 1.6rem;
-  font-weight: 620;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: #ffd9a0;
-}
-
-.city-first-load__note {
-  font-size: 0.86rem;
-  color: #9fb2ca;
-}
-
-/* ------------------------------------------------------------- edge chrome */
-
-.city-crest,
-.city-jump,
-.city-camera,
-.city-queue,
-.city-brief {
-  position: absolute;
-  z-index: 2;
-  /* Quiet, glassy, and never a card with a metric in it. */
-  background: color-mix(in srgb, #0d1726 78%, transparent);
-  border: 1px solid color-mix(in srgb, #7ea3d4 22%, transparent);
-  border-radius: 12px;
-  backdrop-filter: blur(9px);
-  box-shadow: 0 10px 30px rgb(3 8 16 / 38%);
-}
-
-.city-crest {
-  top: 18px;
-  left: 18px;
-  display: grid;
-  gap: 2px;
-  padding: 10px 14px;
-}
-
-.city-crest__name {
-  font-size: 0.94rem;
-  font-weight: 650;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #ffd9a0;
-}
-
-.city-crest__state,
-.city-crest__mode {
-  font-size: 0.72rem;
-  color: #9fb2ca;
-}
-
-.city-crest__state[data-freshness="unavailable"] {
-  color: #e2a08a;
-}
-
-.city-jump {
-  left: 18px;
-  bottom: 18px;
-  display: flex;
-  gap: 4px;
-  padding: 5px;
-}
-
-.city-jump button {
-  appearance: none;
-  border: 0;
-  border-radius: 8px;
-  padding: 7px 12px;
-  font: inherit;
-  font-size: 0.78rem;
-  color: #cddcef;
-  background: transparent;
-  cursor: pointer;
-  transition: background 140ms ease, color 140ms ease;
-}
-
-.city-jump button:hover {
-  background: color-mix(in srgb, #7ea3d4 16%, transparent);
-  color: #f4f7fb;
-}
-
-.city-jump button[aria-pressed="true"] {
-  background: color-mix(in srgb, #ffb457 88%, transparent);
-  color: #26170a;
-  font-weight: 600;
-}
-
-.city-camera {
-  right: 18px;
-  bottom: 18px;
-  display: flex;
-  gap: 4px;
-  padding: 5px;
-}
-
-.city-camera button {
-  appearance: none;
-  border: 0;
-  border-radius: 8px;
-  width: 32px;
-  height: 32px;
-  font: inherit;
-  font-size: 0.95rem;
-  line-height: 1;
-  color: #cddcef;
-  background: transparent;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-
-.city-camera button:hover {
-  background: color-mix(in srgb, #7ea3d4 16%, transparent);
-}
-
-/* ------------------------------------------------- the attention queue */
-
-.city-queue {
-  top: 138px;
-  left: 18px;
-  width: 15.5rem;
-  padding: 12px 12px 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.city-queue__title {
-  margin: 0;
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #8ea4c0;
-}
-
-.city-queue__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 3px;
-}
-
-.city-queue__item {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #cddcef;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 140ms ease;
-}
-
-.city-queue__item:hover {
-  background: color-mix(in srgb, #7ea3d4 14%, transparent);
-}
-
-.city-queue__item[aria-pressed="true"] {
-  background: color-mix(in srgb, #7ea3d4 22%, transparent);
-}
-
-/* The lamp, mirrored from the world so the queue and the city agree. */
-.city-queue__level {
-  width: 9px;
-  height: 9px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--level, #8ea4c0);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--level, #8ea4c0) 22%, transparent);
-}
-
-.city-queue__item[data-level="urgent"] { --level: #ff6b4a; }
-.city-queue__item[data-level="opportunity"] { --level: #7fc4ff; }
-.city-queue__item[data-level="watch"] { --level: #ffb457; }
-.city-queue__item[data-level="steady"] { --level: #6fd39a; }
-.city-queue__item[data-level="unknown"] { --level: #7c8ba1; }
-
-.city-queue__item[data-level="urgent"][data-resolved="false"] .city-queue__level {
-  animation: city-pulse 2.2s ease-in-out infinite;
-}
-
-@keyframes city-pulse {
-  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--level) 20%, transparent); }
-  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--level) 8%, transparent); }
-}
-
-.city-queue__item[data-resolved="true"] .city-queue__level {
-  background: #6fd39a;
-  box-shadow: none;
-}
-
-.city-queue__text {
-  display: grid;
-  gap: 1px;
-  min-width: 0;
-}
-
-.city-queue__name {
-  font-size: 0.82rem;
-  font-weight: 550;
-  color: #f4f7fb;
-}
-
-.city-queue__status {
-  font-size: 0.68rem;
-  color: #8ea4c0;
-}
-
-.city-queue__hint {
-  margin: 2px 0 0;
-  font-size: 0.66rem;
-  color: #7c8ba1;
-}
-
-.city-queue__hint kbd {
-  font: inherit;
-  padding: 0 4px;
-  border-radius: 4px;
-  border: 1px solid color-mix(in srgb, #7ea3d4 30%, transparent);
-  color: #cddcef;
-}
-
-/* -------------------------------------------------------- the briefing */
-
-.city-brief {
-  right: 18px;
-  top: 18px;
-  width: 25rem;
-  max-height: calc(100vh - 96px);
+.sheet__paper {
+  width: min(46rem, 100%);
+  max-height: 100%;
   overflow-y: auto;
-  padding: 16px 18px 14px;
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  /* A left rule tinted by attention: the one place the level is named in the
-     interface rather than only shown in the world. */
-  border-left: 3px solid var(--level, #7ea3d4);
-}
-
-.city-brief[data-level="urgent"] { --level: #ff6b4a; }
-.city-brief[data-level="opportunity"] { --level: #7fc4ff; }
-.city-brief[data-level="watch"] { --level: #ffb457; }
-.city-brief[data-level="steady"] { --level: #6fd39a; }
-.city-brief[data-level="unknown"] { --level: #7c8ba1; }
-
-/* The panel takes focus when a district is selected so a keyboard user lands on
-   the content. A container ring is quieter than a control's on purpose. */
-.city-brief:focus-visible {
-  outline: 1px solid color-mix(in srgb, #ffb457 55%, transparent);
-  outline-offset: -1px;
-}
-
-.city-brief__head {
-  display: grid;
-  gap: 3px;
-}
-
-.city-brief__subtitle {
-  margin: 0;
-  font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #8ea4c0;
-}
-
-.city-brief__name {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 640;
-  color: #f4f7fb;
-}
-
-.city-brief__reading {
-  margin: 4px 0 0;
-  font-size: 0.88rem;
-  line-height: 1.5;
-  color: #dfe9f6;
-}
-
-.city-brief__signal {
-  margin: 0;
-  font-size: 0.7rem;
-  letter-spacing: 0.02em;
-  color: var(--level, #8ea4c0);
-}
-
-.city-brief__changed {
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: color-mix(in srgb, #ffb457 14%, transparent);
-  border: 1px solid color-mix(in srgb, #ffb457 30%, transparent);
-  font-size: 0.76rem;
-  line-height: 1.45;
-  color: #ffd9a0;
-}
-
-.city-brief__stake {
-  margin: 0;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: #9fb2ca;
-}
-
-.city-brief__moves {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 4px;
-  counter-reset: move;
-}
-
-.city-move__mark {
-  width: 100%;
-  display: flex;
-  gap: 10px;
-  align-items: start;
-  padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, #7ea3d4 16%, transparent);
-  border-radius: 9px;
-  background: color-mix(in srgb, #16233a 60%, transparent);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease;
-}
-
-.city-move__mark:hover {
-  border-color: color-mix(in srgb, #7ea3d4 34%, transparent);
-}
-
-.city-move__mark:focus-visible {
-  outline: 2px solid #ffb457;
-  outline-offset: 1px;
-}
-
-.city-move__tick {
-  flex: none;
-  width: 17px;
-  height: 17px;
-  margin-top: 1px;
-  border-radius: 5px;
-  border: 1.5px solid color-mix(in srgb, #7ea3d4 45%, transparent);
-  display: grid;
-  place-items: center;
-  font-size: 0.7rem;
-  line-height: 1;
-  color: #0f1a2b;
-}
-
-.city-move[data-reviewed="true"] .city-move__tick,
-.city-move__mark[aria-pressed="true"] .city-move__tick {
-  background: #6fd39a;
-  border-color: #6fd39a;
-}
-
-.city-move[data-reviewed="true"] .city-move__title {
-  color: #8ea4c0;
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, #8ea4c0 55%, transparent);
-}
-
-.city-move__text {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.city-move__title {
-  font-size: 0.82rem;
-  font-weight: 560;
-  color: #f4f7fb;
-}
-
-.city-move__detail {
-  font-size: 0.74rem;
-  line-height: 1.45;
-  color: #9fb2ca;
-}
-
-.city-brief__foot {
-  display: grid;
-  gap: 2px;
-  padding-top: 2px;
-}
-
-.city-brief__progress {
-  margin: 0;
-  font-size: 0.72rem;
-  font-weight: 560;
-  color: #cddcef;
-}
-
-.city-brief__local {
-  margin: 0;
-  font-size: 0.68rem;
-  line-height: 1.4;
-  color: #7c8ba1;
-}
-
-/* ------------------------------------------------------- progression */
-
-.city-progress {
-  position: absolute;
-  z-index: 2;
-  right: 18px;
-  bottom: 18px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: color-mix(in srgb, #0d1726 78%, transparent);
-  border: 1px solid color-mix(in srgb, #7ea3d4 22%, transparent);
-  backdrop-filter: blur(9px);
-}
-
-.city-camera {
-  right: 18px;
-  bottom: 64px;
-}
-
-.city-progress__label {
-  font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: #8ea4c0;
-}
-
-.city-progress__pips {
-  display: flex;
-  gap: 5px;
-}
-
-.city-progress__pip {
-  width: 16px;
-  height: 5px;
-  border-radius: 3px;
-  background: color-mix(in srgb, #7ea3d4 24%, transparent);
-  transition: background 220ms ease;
-}
-
-.city-progress__pip[data-filled="true"] {
-  background: #6fd39a;
-}
-
-/* ------------------------------------------- the world could not be drawn */
-
-.city-flat {
-  position: absolute;
-  inset: 0;
-  overflow-y: auto;
-  padding: 96px 18px 96px 17.5rem;
   display: grid;
   align-content: start;
-  gap: 12px;
-  z-index: 1;
+  gap: 22px;
+  padding: 30px 34px 26px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge-strong);
+  border-top: 2px solid var(--accent);
+  box-shadow: var(--shadow);
 }
 
-.city-flat__note {
-  margin: 0;
-  max-width: 44rem;
-  font-size: 0.82rem;
-  line-height: 1.5;
-  color: #9fb2ca;
-}
-
-.city-flat__districts {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.sheet__head {
   display: grid;
-  gap: 8px;
-  max-width: 44rem;
+  gap: 4px;
 }
 
-.city-flat__district {
-  border: 1px solid color-mix(in srgb, #7ea3d4 20%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, #0d1726 72%, transparent);
-  overflow: hidden;
+.sheet__title {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink);
 }
 
-.city-flat__head {
-  width: 100%;
+.sheet__sub {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.sheet__rounds {
+  color: var(--ink-4);
+}
+
+.sheet__empty {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-3);
+}
+
+/* One district's worth. Observed condition on the left, reported items under
+   it — the separation the whole product turns on, in the deliverable too. */
+.entry {
+  display: grid;
+  gap: 10px;
+  padding-top: 18px;
+  border-top: 1px solid var(--edge);
+}
+
+.entry__head {
   display: flex;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  border: 0;
-  background: transparent;
-  color: #f4f7fb;
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 560;
-  text-align: left;
-  cursor: pointer;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
-.city-flat__status {
-  color: #8ea4c0;
-  font-weight: 400;
-  font-size: 0.78rem;
-}
-
-.city-flat__body {
-  display: grid;
-  gap: 8px;
-  padding: 0 14px 14px;
-}
-
-.city-flat__body p {
+.entry__name {
   margin: 0;
-  font-size: 0.8rem;
-  line-height: 1.5;
-  color: #c6d5e8;
+  font-family: var(--face-narrow);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ink);
 }
 
-.city-flat__subtitle {
-  font-size: 0.68rem !important;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #8ea4c0 !important;
-}
-
-.city-flat__moves {
+.entry__items {
   margin: 0;
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 4px;
+  gap: 8px;
 }
 
-/* Announcements for screen readers, off-screen but not display:none. */
-.city-live {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
+.entry__changed {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--tone-active);
 }
 
-:where(.city button):focus-visible {
-  outline: 2px solid #ffb457;
-  outline-offset: 2px;
+.sheet__foot {
+  display: grid;
+  gap: 12px;
+  padding-top: 18px;
+  border-top: 1px solid var(--edge);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .city-jump button,
-  .city-camera button,
-  .city-queue__item,
-  .city-move__mark,
-  .city-progress__pip {
-    transition: none;
-  }
+.sheet__where {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-4);
+}
 
-  .city-queue__item[data-level="urgent"][data-resolved="false"] .city-queue__level {
-    animation: none;
-  }
+.sheet__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Legend, so the marks on the items mean something without a tooltip. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend i {
+  width: 2px;
+  height: 12px;
+  background: currentColor;
+}
+
+.legend .is-action {
+  color: var(--accent);
+}
+.legend .is-clear {
+  color: var(--tone-steady);
+}
+.legend .is-finding {
+  color: var(--tone-open);
 }
 
 /* ==========================================================================
-   The operator session
+   About — what this is, on demand rather than on arrival
    ========================================================================== */
 
-.city-queue { width: 17.5rem; }
-
-.session { display: grid; gap: 3px; padding-bottom: 8px; border-bottom: 1px solid color-mix(in srgb, #7ea3d4 16%, transparent); }
-.session__title { margin: 0; font-size: 0.92rem; font-weight: 640; color: #f4f7fb; }
-.session__purpose { margin: 0; font-size: 0.72rem; line-height: 1.45; color: #8ea4c0; }
-.session__count { margin: 3px 0 0; font-size: 0.7rem; color: #cddcef; }
-
-.city-queue__chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
-
-/* Two chips, two authorities. Observed keeps its condition colour; local is
-   always the same neutral, so player progress can never read as business health. */
-.chip {
-  font-size: 0.62rem; letter-spacing: 0.03em; padding: 1px 6px; border-radius: 999px;
-  border: 1px solid currentColor; white-space: nowrap;
+.about {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(4, 8, 14, 0.66);
+  animation: sheet-in 160ms ease-out;
 }
-.chip--observed { color: var(--cond, #8ea4c0); }
-.chip--observed[data-condition="mixed"] { --cond: #ff8a70; }
-.chip--observed[data-condition="nothing"] { --cond: #7fc4ff; }
-.chip--observed[data-condition="recent"] { --cond: #ffb457; }
-.chip--observed[data-condition="working"] { --cond: #6fd39a; }
-.chip--observed[data-condition="unread"] { --cond: #7c8ba1; }
-.chip--local { color: #a9b8cc; border-style: dashed; }
 
-/* The queue lamp mirrors the world's condition mark, never the player's. */
-.city-queue__item[data-condition="mixed"] { --level: #ff6b4a; }
-.city-queue__item[data-condition="nothing"] { --level: #7fc4ff; }
-.city-queue__item[data-condition="recent"] { --level: #ffb457; }
-.city-queue__item[data-condition="working"] { --level: #6fd39a; }
-.city-queue__item[data-condition="unread"] { --level: #7c8ba1; }
-.city-queue__item[data-condition="mixed"] .city-queue__level { animation: city-pulse 1.6s ease-in-out infinite; }
-/* Progress adds a rule down the side. It does not recolour the lamp. */
-.city-queue__item[data-progress="worked"] { box-shadow: inset 3px 0 0 #6fd39a; }
-.city-queue__item[data-progress="declined"] { box-shadow: inset 3px 0 0 #7c8ba1; }
-.city-queue__item[data-progress="changed"] { box-shadow: inset 3px 0 0 #ffb457; }
-
-.city-queue__actions { display: grid; gap: 6px; }
-
-/* ------------------------------------------------------------- the panel */
-
-.panel__head { display: grid; gap: 2px; }
-.panel__subtitle { margin: 0; font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: #8ea4c0; }
-.panel__name { margin: 0; font-size: 1.2rem; font-weight: 640; color: #f4f7fb; }
-
-.prov {
-  display: inline-block; font-size: 0.6rem; letter-spacing: 0.06em; text-transform: uppercase;
-  padding: 1px 6px; border-radius: 4px; vertical-align: middle;
+.about__card {
+  width: min(34rem, 100%);
+  display: grid;
+  gap: 14px;
+  padding: 28px 30px 24px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge-strong);
+  box-shadow: var(--shadow);
 }
-.prov[data-provenance="observed"] { background: color-mix(in srgb, #7fc4ff 20%, transparent); color: #bfe0ff; }
-.prov[data-provenance="reported"] { background: color-mix(in srgb, #ffb457 18%, transparent); color: #ffd9a0; }
-.prov[data-provenance="local"] { background: color-mix(in srgb, #8ea4c0 18%, transparent); color: #cddcef; }
 
-.panel__reading { display: grid; gap: 5px; justify-items: start; padding: 10px 12px; border-radius: 10px;
-  background: color-mix(in srgb, #7fc4ff 7%, transparent); border: 1px solid color-mix(in srgb, #7fc4ff 18%, transparent); }
-.panel__observed { margin: 0; font-size: 0.85rem; line-height: 1.5; color: #e6f0fb; }
-.panel__ambiguity { margin: 0; font-size: 0.76rem; line-height: 1.45; color: #a9c4e0; }
-.panel__limit { margin: 0; font-size: 0.66rem; color: #7f93ad; }
-
-.panel__changed { margin: 0; padding: 8px 10px; border-radius: 8px; font-size: 0.75rem; line-height: 1.45;
-  background: color-mix(in srgb, #ffb457 13%, transparent); border: 1px solid color-mix(in srgb, #ffb457 30%, transparent); color: #ffd9a0; }
-
-.panel__activity { display: grid; gap: 8px; }
-.panel__activityHead { display: grid; gap: 2px; }
-.panel__activityTitle { margin: 0; font-size: 0.95rem; font-weight: 620; color: #f4f7fb; }
-.panel__activityPurpose { margin: 0; font-size: 0.74rem; line-height: 1.45; color: #9fb2ca; }
-
-.prompt { display: grid; gap: 6px; padding: 12px; border-radius: 10px;
-  background: color-mix(in srgb, #16233a 72%, transparent); border: 1px solid color-mix(in srgb, #7ea3d4 20%, transparent); }
-.prompt__step { margin: 0; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; color: #8ea4c0; }
-.prompt__title { margin: 0; font-size: 0.9rem; font-weight: 600; color: #f4f7fb; }
-.prompt__why { margin: 0; font-size: 0.76rem; line-height: 1.5; color: #a9bacf; }
-.prompt__answers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
-.prompt__note { margin: 2px 0 0; font-size: 0.64rem; color: #7f93ad; }
-
-.answer {
-  flex: 1 1 auto; min-width: 7.5rem; padding: 8px 11px; border-radius: 8px; font: inherit; font-size: 0.78rem;
-  color: #f4f7fb; cursor: pointer; text-align: left;
-  border: 1px solid color-mix(in srgb, #7ea3d4 34%, transparent);
-  background: color-mix(in srgb, #7ea3d4 12%, transparent);
-  transition: background 140ms ease, border-color 140ms ease;
+.about__title {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--ink);
 }
-.answer:hover { background: color-mix(in srgb, #7ea3d4 24%, transparent); border-color: color-mix(in srgb, #7ea3d4 55%, transparent); }
-.answer--wide { flex-basis: 100%; }
-.answer[data-answer="problem"] { border-color: color-mix(in srgb, #ff6b4a 45%, transparent); }
-.answer[data-answer="confirmed"], .answer[data-answer="will-do"] { border-color: color-mix(in srgb, #6fd39a 45%, transparent); }
 
-.panel__done, .panel__blocked, .panel__payoff {
-  margin: 0; font-size: 0.8rem; line-height: 1.5; color: #c6d5e8;
-  padding: 10px 12px; border-radius: 9px; background: color-mix(in srgb, #16233a 60%, transparent);
+.about__card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-2);
 }
-.panel__payoff { border: 1px solid color-mix(in srgb, #6fd39a 30%, transparent); }
 
-.panel__plan, .panel__planFoot { display: grid; gap: 6px; }
-.panel__planHead { display: flex; align-items: center; gap: 8px; }
-.panel__planTitle { margin: 0; font-size: 0.82rem; font-weight: 600; color: #cddcef; }
-.panel__local { margin: 0; font-size: 0.66rem; line-height: 1.4; color: #7f93ad; }
-.panel__undo { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
-
-.planlist { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
-.planlist__item { display: flex; gap: 8px; align-items: start; font-size: 0.78rem; line-height: 1.45; color: #dfe9f6; }
-.planlist__mark { flex: none; width: 10px; height: 10px; margin-top: 4px; border-radius: 3px; background: #7c8ba1; }
-.planlist__item[data-kind="action"] .planlist__mark { background: #ffb457; }
-.planlist__item[data-kind="clear"] .planlist__mark { background: #6fd39a; }
-.planlist__item[data-kind="finding"] .planlist__mark { background: #7fc4ff; }
-.planlist__item[data-kind="decision"] .planlist__mark { background: #7c8ba1; border-radius: 50%; }
-.planlist__stale { color: #ffb457; }
-
-.planblock { display: grid; gap: 5px; }
-.planblock__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.planblock__head h2 { margin: 0; font-size: 0.86rem; font-weight: 620; color: #f4f7fb; }
-
-.ghost {
-  padding: 6px 10px; border-radius: 7px; font: inherit; font-size: 0.72rem; cursor: pointer;
-  color: #cddcef; background: transparent; border: 1px solid color-mix(in srgb, #7ea3d4 28%, transparent);
+/* Three sources, three lines, once — rather than a badge on every paragraph. */
+.sources {
+  display: grid;
+  gap: 9px;
+  margin: 2px 0;
+  padding: 14px 16px;
+  background: var(--panel-sunken);
+  border-left: 2px solid var(--edge-strong);
 }
-.ghost:hover { background: color-mix(in srgb, #7ea3d4 16%, transparent); }
-.ghost--tiny { justify-self: start; margin-top: 3px; font-size: 0.64rem; padding: 3px 7px; }
 
-.city-brief--plan { width: 27rem; }
+.source {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
 
-/* --------------------------------------------------------------- orientation */
+.source__who {
+  font-family: var(--face-narrow);
+  font-weight: 600;
+  color: var(--ink);
+}
 
-.orient { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center;
-  background: color-mix(in srgb, #060b14 72%, transparent); backdrop-filter: blur(6px); padding: 20px; }
-.orient__card { max-width: 34rem; display: grid; gap: 10px; padding: 22px 24px; border-radius: 14px;
-  background: color-mix(in srgb, #0d1726 94%, transparent); border: 1px solid color-mix(in srgb, #7ea3d4 26%, transparent); }
-.orient__title { margin: 0; font-size: 1.25rem; font-weight: 640; color: #ffd9a0; }
-.orient__card p { margin: 0; font-size: 0.84rem; line-height: 1.55; color: #c6d5e8; }
-.orient__whose { color: #9fb2ca !important; font-size: 0.78rem !important; }
-.orient__go { justify-self: start; margin-top: 4px; padding: 9px 15px; border: 0; border-radius: 9px;
-  font: inherit; font-size: 0.84rem; font-weight: 560; color: #26170a; background: #ffb457; cursor: pointer; }
+.source__what {
+  color: var(--ink-3);
+}
 
-.city-progress__pip[data-declined="true"] { background: color-mix(in srgb, #7c8ba1 70%, transparent); }
+.about__acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
 
-/* ------------------------------------------------------------ small screens */
+/* First run: a pointer, not an essay. */
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pad) + 74px);
+  z-index: 3;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  animation: hint-in 400ms 200ms both ease-out;
+}
 
-@media (max-width: 900px) {
-  .city-queue, .city-brief {
-    position: absolute; left: 12px; right: 12px; width: auto; max-width: none;
+@keyframes hint-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
   }
-  .city-queue { top: 132px; max-height: 38vh; overflow-y: auto; }
-  .city-brief { top: auto; bottom: 108px; max-height: 52vh; }
-  .city-brief--plan { width: auto; }
-  .city-crest { right: 12px; }
-  .city-jump { left: 12px; right: 12px; bottom: 12px; overflow-x: auto; }
-  .city-camera, .city-progress { display: none; }
-  .city-flat { padding: 92px 12px 24px; }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .answer, .ghost, .chip { transition: none; }
-  .city-queue__item[data-condition="mixed"] .city-queue__level { animation: none; }
+.hint__dismiss {
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+
+/* ==========================================================================
+   No WebGL — the same session, in words
+   ========================================================================== */
+
+.flat {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow-y: auto;
+  padding: 84px 20px 108px;
+  background: #070c14;
+}
+
+.flat__inner {
+  width: min(44rem, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 20px;
+}
+
+.flat__note {
+  margin: 0;
+  padding: 12px 15px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+  background: var(--panel-sunken);
+  border-left: 2px solid var(--edge-strong);
+}
+
+.flat__round h1 {
+  margin: 0 0 4px;
+  font-family: var(--face-narrow);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.flat__round p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--ink-2);
+}
+
+.flat__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 1px;
+}
+
+.flat__district {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+}
+
+.flat__district + .flat__district {
+  margin-top: -1px;
+}
+
+.flat__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  min-height: 56px;
+  padding: 12px 16px;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.flat__head:hover {
+  background: rgba(146, 178, 214, 0.07);
+}
+
+.flat__name {
+  font-family: var(--face-narrow);
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.flat__body {
+  display: grid;
+  gap: 14px;
+  padding: 4px 16px 20px;
+  border-top: 1px solid var(--edge);
+}
+
+.flat__status {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.flat__subtitle {
+  color: var(--ink-3) !important;
+}
+
+.flat__limit {
+  color: var(--ink-4) !important;
+  font-size: 12.5px !important;
+}
+
+.flat__body p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-2);
+}
+
+/* ==========================================================================
+   Narrow screens
+   --------------------------------------------------------------------------
+   The desktop composition is not squeezed onto a phone. The dossier becomes a
+   sheet rising from the bottom over roughly two thirds of the height, so the
+   city is still visible above it, and the command bar spans the full width.
+   ========================================================================== */
+
+@media (max-width: 780px) {
+  :root {
+    --pad: 10px;
+    --tap: 44px;
+  }
+
+  /* The bar stays where a thumb is, along the bottom, and stays there when a
+     district is open — it becomes the way back out of the sheet. */
+  .bar {
+    left: var(--pad);
+    right: var(--pad);
+    bottom: var(--pad);
+    transform: none;
+    max-width: none;
+    flex-wrap: wrap;
+    z-index: 5;
+    /* Opaque here: the dossier scrolls underneath it, and translucency turns
+       that into text bleeding through the controls. */
+    background: #0a121d;
+    backdrop-filter: none;
+  }
+
+  .bar__round {
+    flex: 1 1 auto;
+    padding: 8px 12px 6px;
+  }
+
+  .bar__go {
+    margin: 8px 8px 6px;
+  }
+
+  /* Labels are kept and the row scrolls, rather than shrinking three district
+     names into initials nobody can read. */
+  .studs {
+    flex: 1 1 100%;
+    margin: 0;
+    padding: 5px 6px 6px;
+    border-left: 0;
+    border-top: 1px solid var(--edge);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .studs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .stud {
+    flex: 0 0 auto;
+  }
+
+  .bar__back {
+    margin: 6px 0 6px 6px;
+  }
+
+  /* The sheet takes the lower two thirds; the city keeps the top third rather
+     than being reduced to a strip. */
+  .dossier {
+    top: 34vh;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    border-left: 0;
+    border-top: 1px solid var(--edge-strong);
+    box-shadow: 0 -20px 46px rgba(2, 6, 12, 0.5);
+    animation-name: dossier-up;
+  }
+
+  @keyframes dossier-up {
+    from {
+      transform: translateY(20px);
+      opacity: 0;
+    }
+  }
+
+  .dossier__inner {
+    padding: 20px 18px 124px;
+    gap: 18px;
+  }
+
+  .dossier__name {
+    font-size: 25px;
+  }
+
+  .seal {
+    padding: 7px 10px 7px 9px;
+  }
+
+  .seal__name {
+    font-size: 13.5px;
+  }
+
+  .camera {
+    display: none;
+  }
+
+  .hint {
+    left: var(--pad);
+    right: var(--pad);
+    bottom: calc(var(--pad) + 108px);
+    transform: none;
+    white-space: normal;
+  }
+
+  @keyframes hint-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .sheet {
+    padding: 12px 10px 96px;
+  }
+
+  .sheet__paper {
+    padding: 22px 18px 20px;
+  }
+
+  .sheet__title {
+    font-size: 23px;
+  }
+
+  .source {
+    grid-template-columns: 1fr;
+    gap: 1px;
+  }
+
+  .about {
+    padding: 16px;
+  }
+
+  .about__card {
+    padding: 22px 20px 20px;
+  }
+
+  .flat {
+    padding: 74px 12px 120px;
+  }
+
+  .flat__head {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
+
+/* Short viewports: the dossier keeps its full height, the bar stays put. */
+@media (max-height: 560px) and (min-width: 781px) {
+  .bar__round {
+    display: none;
+  }
 }

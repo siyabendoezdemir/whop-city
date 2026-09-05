@@ -160,11 +160,17 @@ export function CityCanvas({
     const fit = () => {
       const availableWidth = mount.clientWidth || window.innerWidth;
       const availableHeight = mount.clientHeight || window.innerHeight;
+      // Fill the window rather than letterboxing into it. The stage holds the
+      // authored composition and grows the frustum vertically when the window
+      // is narrower than it was authored for, so nothing is cropped and no
+      // black bars appear.
       const scale = Math.min(availableWidth / VIEW.width, availableHeight / VIEW.height);
+      const fitsWide = availableWidth / availableHeight >= VIEW.width / VIEW.height;
       stage.resize(
-        Math.max(320, Math.round(VIEW.width * scale)),
-        Math.max(200, Math.round(VIEW.height * scale)),
+        Math.max(320, Math.round(fitsWide ? VIEW.width * scale : availableWidth)),
+        Math.max(200, Math.round(fitsWide ? VIEW.height * scale : availableHeight)),
       );
+
     };
 
     const loop = () => {
@@ -446,6 +452,16 @@ export function CityCanvas({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectionKey, progressKey, framing]);
+
+  // On a phone the dossier is a sheet over the lower two thirds, so the framing
+  // is pushed up into the part of the screen that is still the city.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const narrow = (stage.renderer.domElement.clientWidth || 0) < 780;
+    stage.setBias(narrow && framing !== "city" ? 0.24 : 0);
+    if (isCaptureMode()) stage.renderer.render(stage.scene, stage.camera);
+  }, [framing]);
 
   // ------------------------------------------------------- camera, on demand
   // In capture mode there is no loop, so a framing change has to draw itself.

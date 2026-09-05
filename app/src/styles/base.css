@@ -1,0 +1,526 @@
+/* ==========================================================================
+   Whop City — interface
+   --------------------------------------------------------------------------
+   The world is the product. Everything here is a heads-up display over it and
+   is built to the rules city-builder HUDs follow for good reason: anchored to
+   the screen edges rather than floating in the middle, dark and muted so it
+   never competes with the render, and bright only where something is actually
+   wrong.
+
+   Three surfaces exist at rest — the seal, the command bar, the camera — and
+   one more appears on selection. There is no fourth.
+   ========================================================================== */
+
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-sans-condensed/latin-500.css";
+@import "@fontsource/ibm-plex-sans-condensed/latin-600.css";
+
+:root {
+  /* Ink. Four steps, and nothing between them. */
+  --ink: #eaf0f7;
+  --ink-2: #a9bacd;
+  --ink-3: #74889f;
+  --ink-4: #566a80;
+
+  /* Surfaces. Nearly solid: blur is a cost, not a style. */
+  --panel: rgba(9, 15, 24, 0.93);
+  --panel-raised: rgba(17, 27, 41, 0.96);
+  --panel-sunken: rgba(6, 11, 18, 0.6);
+
+  /* Edges. One hairline weight, one emphasis weight. */
+  --edge: rgba(146, 178, 214, 0.15);
+  --edge-strong: rgba(146, 178, 214, 0.3);
+
+  /* The single warm accent, taken from the world's own sun. */
+  --accent: #f0a44a;
+  --accent-ink: #241503;
+
+  /* Condition tones. Used for state, never for decoration. */
+  --tone-alert: #ec6f45;
+  --tone-open: #6aa9e0;
+  --tone-active: #e8b45c;
+  --tone-steady: #5fbf8a;
+  --tone-dark: #74889f;
+
+  --shadow: 0 18px 44px rgba(2, 6, 12, 0.5);
+
+  /* Type. One family, two widths. Condensed carries labels and names so they
+     stay readable when a district is called something long. */
+  --face: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --face-narrow: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+
+  --gap: 12px;
+  --pad: 18px;
+  --radius: 3px;
+  --tap: 40px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #05080e;
+}
+
+body {
+  font-family: var(--face);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+kbd {
+  font-family: var(--face-narrow);
+  font-size: 0.82em;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 2px;
+  border: 1px solid var(--edge-strong);
+  color: var(--ink-2);
+}
+
+/* --------------------------------------------------------------------------
+   Stage
+   -------------------------------------------------------------------------- */
+
+.city {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.city canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Screen-reader announcements. */
+.city-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Shared parts
+   -------------------------------------------------------------------------- */
+
+.surface {
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(3px);
+}
+
+/* Buttons. One shape, three weights of emphasis. Never smaller than a thumb. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 16px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+.btn:hover {
+  background: rgba(146, 178, 214, 0.1);
+  border-color: rgba(146, 178, 214, 0.45);
+}
+
+.btn:active {
+  background: rgba(146, 178, 214, 0.16);
+}
+
+.btn--primary {
+  color: var(--accent-ink);
+  background: var(--accent);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.btn--primary:hover {
+  background: #ffb75f;
+  border-color: #ffb75f;
+}
+
+.btn--quiet {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--ink-2);
+  border-color: transparent;
+}
+
+.btn--quiet:hover {
+  color: var(--ink);
+  background: rgba(146, 178, 214, 0.09);
+  border-color: transparent;
+}
+
+:where(button, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* A condition, wherever it appears: a drawn glyph and a word. Colour is the
+   third carrier, never the only one. */
+.cond {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--face-narrow);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--tone);
+  white-space: nowrap;
+}
+
+.cond[data-tone="alert"] {
+  --tone: var(--tone-alert);
+}
+.cond[data-tone="open"] {
+  --tone: var(--tone-open);
+}
+.cond[data-tone="active"] {
+  --tone: var(--tone-active);
+}
+.cond[data-tone="steady"] {
+  --tone: var(--tone-steady);
+}
+.cond[data-tone="dark"] {
+  --tone: var(--tone-dark);
+}
+
+.cond__glyph {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--tone);
+}
+
+/* Local progress. Deliberately typographic and grey: the player's own work is
+   real, and it is not a business condition. */
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.mark::before {
+  content: "";
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.mark[data-mark="changed"] {
+  color: var(--tone-active);
+}
+
+/* --------------------------------------------------------------------------
+   The seal — identity and freshness, top left, and nothing else
+   -------------------------------------------------------------------------- */
+
+.seal {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 13px 9px 12px;
+}
+
+.seal__mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  color: var(--accent);
+}
+
+.seal__text {
+  display: grid;
+  gap: 1px;
+}
+
+.seal__name {
+  font-family: var(--face-narrow);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.seal__state {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.seal__state[data-freshness="unavailable"] {
+  color: var(--tone-alert);
+}
+
+.seal__about {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  padding: 0;
+  margin-left: 2px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-3);
+  border-color: var(--edge);
+}
+
+/* --------------------------------------------------------------------------
+   The command bar — the one way to begin, resume, or step between districts
+   -------------------------------------------------------------------------- */
+
+.bar {
+  position: absolute;
+  left: 50%;
+  bottom: var(--pad);
+  z-index: 3;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  max-width: calc(100vw - 2 * var(--pad));
+  padding: 0;
+  overflow: hidden;
+}
+
+.bar__round {
+  display: grid;
+  align-content: center;
+  gap: 1px;
+  padding: 10px 18px;
+}
+
+.bar__title {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.bar__count {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+.bar__go {
+  margin: 8px;
+  white-space: nowrap;
+}
+
+/* The compact overview. Three studs, one per district: the only other way to
+   navigate, and it doubles as the at-rest status read. */
+.studs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 8px 0;
+  border-left: 1px solid var(--edge);
+  margin-left: 4px;
+  padding-left: 8px;
+}
+
+.stud {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: var(--tap);
+  padding: 0 11px;
+  font: inherit;
+  font-family: var(--face-narrow);
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+
+.stud:hover {
+  background: rgba(146, 178, 214, 0.1);
+  color: var(--ink);
+}
+
+.stud[aria-pressed="true"] {
+  background: rgba(240, 164, 74, 0.14);
+  color: var(--ink);
+}
+
+.stud[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.stud__glyph {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--tone);
+}
+
+.stud[data-tone="alert"] {
+  --tone: var(--tone-alert);
+}
+.stud[data-tone="open"] {
+  --tone: var(--tone-open);
+}
+.stud[data-tone="active"] {
+  --tone: var(--tone-active);
+}
+.stud[data-tone="steady"] {
+  --tone: var(--tone-steady);
+}
+.stud[data-tone="dark"] {
+  --tone: var(--tone-dark);
+}
+
+/* Worked districts get a hairline underscore, not a second badge. */
+.stud[data-done="true"] .stud__name::after {
+  content: "";
+  display: block;
+  height: 1px;
+  margin-top: 1px;
+  background: var(--ink-4);
+}
+
+.bar__back {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: var(--tap);
+  margin: 8px 0 8px 8px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bar__back:hover {
+  color: var(--ink);
+  background: rgba(146, 178, 214, 0.1);
+}
+
+/* --------------------------------------------------------------------------
+   Camera — bottom right, small, and never in the way
+   -------------------------------------------------------------------------- */
+
+.camera {
+  position: absolute;
+  right: var(--pad);
+  bottom: var(--pad);
+  z-index: 3;
+  display: flex;
+  padding: 3px;
+}
+
+.camera button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.camera button:hover {
+  color: var(--ink);
+  background: rgba(146, 178, 214, 0.11);
+}
+
+/* --------------------------------------------------------------------------
+   Loading
+   -------------------------------------------------------------------------- */
+
+.boot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  color: var(--ink-3);
+}
+
+.boot__name {
+  font-family: var(--face-narrow);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
