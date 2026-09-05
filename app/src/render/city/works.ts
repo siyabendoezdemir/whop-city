@@ -149,10 +149,10 @@ export function createWorks(ids: readonly string[]): Works {
 
   const picks = sites.map((site) => {
     const box = new THREE.Mesh(
-      keep(new THREE.BoxGeometry(site.width * 0.96, 3, site.depth * 0.96)),
+      keep(new THREE.BoxGeometry(site.width * 0.96, 8, site.depth * 0.96)),
       keep(new THREE.MeshBasicMaterial({ visible: false })),
     );
-    box.position.set(site.x, 1.5, site.z);
+    box.position.set(site.x, 4, site.z);
     box.userData.plotId = site.id;
     group.add(box);
     return box;
@@ -224,7 +224,9 @@ export function createWorks(ids: readonly string[]): Works {
     anchor: (plotId) => {
       const index = sites.findIndex((site) => site.id === plotId);
       if (index < 0) return null;
-      return new THREE.Vector3(sites[index].x, Math.max(3, slots[index].height + 1), sites[index].z);
+      // Well inside the pick box, not on its lid: a ray aimed at the exact top
+      // face is a coin toss.
+      return new THREE.Vector3(sites[index].x, 3, sites[index].z);
     },
 
     apply: (plots, selected) => {
