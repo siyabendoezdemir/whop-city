@@ -25,7 +25,7 @@
     "test:browser:production": "pnpm build && playwright test tests/browser/data-safety.spec.ts tests/browser/production-build.spec.ts",
     "test:browser:fixtures": "pnpm build:fixtures && playwright test tests/browser/world.spec.ts tests/browser/shell.spec.ts tests/browser/operator.spec.ts",
     "capture:loop": "node capture/operator-loop.mjs",
-    "capture:play": "node capture/playthrough.mjs"
+    "capture:round": "node capture/round.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

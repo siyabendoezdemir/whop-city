@@ -323,39 +323,80 @@ Measured on the built app, worst case across all eight captured states:
 
 `artifacts/renderer-stats.json` carries the per-state figures.
 
-## The session
+## The interface
 
-The city is played in rounds. A round is named after what the city is actually
-showing — "Find what is not adding up" over a business reading wrong, "Build out
-the city" over an empty one — and joins the districts into one objective.
+The world is the product; everything over it is a heads-up display, built the
+way restrained city-builder HUDs are built. Anchored to the screen edges rather
+than floating in the middle, dark and muted so it never competes with the
+render, bright only where something is actually wrong, and one dominant surface
+at a time.
+
+At rest there are three things over the city:
+
+- **the seal**, top left — the city's name and how fresh the reading is
+- **the command bar**, bottom centre — the round's name, the one control that
+  begins or resumes it, and three studs that are the compact district overview
+  and the only other way to navigate
+- **the camera**, bottom right — small, and never in the way
+
+Selecting a district is entering it: the camera moves in and a full-height
+dossier arrives from the right edge in the same gesture. It reads in a fixed
+order — who this is, what Whop says, the one thing to do, what you have
+recorded. The evidence behind the reading sits under "Why City says this"
+rather than in front of the work.
+
+On a phone the dossier is a sheet over the lower two thirds, the bar stays
+pinned along the bottom as the way back out, and the framing is pushed up so
+the district stays visible in the part of the screen that is still the city.
+
+## The round
+
+A round is named after what the city is actually showing — "Find what is not
+adding up" over a business reading wrong, "Build out the city" over an empty
+one — and joins the districts into one objective.
 
 **Signal.** Every district carries two marks. A *condition mark* is what Whop
 reported: survey stakes and a string line where nothing was built, a strobing
 mast with a hazard chevron where a district reads wrong, a turning scaffold ring
 over recent work, a low steady lamp where nothing is wrong, a blank question
-plate where City could not read at all. A *progress mark* is what the player did:
-a check plate, a cross plate for a deliberate no, a question pennant when the
-reading has changed since. They are separate objects, so local progress can never
-make a struggling business look healthy. Districts are selectable by their whole
-area, through an invisible ground proxy; the architecture stays merged.
+plate where City could not read at all. A *progress mark* is what the player
+did: a check plate, a cross plate for a deliberate no, a question pennant when
+the reading has changed since. They are separate objects, so local progress can
+never make a struggling business look healthy. Districts are selectable by their
+whole area through an invisible ground proxy; the architecture stays merged.
 
-**Focus.** Click a district in the world, pick it from the queue, or press its
-number. `F` jumps to the next one asking for attention. `P` opens the plan.
+**Work.** Each district has its own mechanic, and each is composed differently.
+Commerce Core runs surveys: a ledger you work down, answered steps collapsing
+behind you carrying what you said. Offer Forge asks branching questions as a
+fork of full-width plates, because pricing is easier to decide than to change.
+Creator Quarter opens by asking whether affiliates are wanted at all — "no,
+deliberately" ends the district as decided, not skipped. Answers are the
+operator's own report: unverified, and never sent anywhere.
 
-**Work.** Each district has its own mechanic, chosen for its subject.
-Commerce Core runs guided audits that record findings. Offer Forge asks branching
-questions about the shape of the pricing surface, because pricing is easier to
-decide than to change. Creator Quarter opens by asking whether affiliates are
-wanted at all — "deliberately not" ends the district as decided, not skipped.
-Answers are the operator's own report: unverified, and never sent anywhere.
-
-**Payoff.** Finishing produces a plan — the actions, decisions, findings and
-passed checks from the round, grouped by district, copyable as text with every
-line marked as reported rather than observed.
+**Payoff.** Finishing produces the round's plan — actions, decisions, findings
+and passed checks, grouped by district, copyable as text, with each district's
+observed condition kept visibly apart from the items you recorded under it.
 
 **Return.** Come back and the city may read differently. Notes are kept and
 flagged as recorded under an older reading. Nothing claims the work caused the
 change, because City cannot know that.
+
+## The vocabulary
+
+One set of words, in `src/city/vocabulary.ts`, used in the bar, the dossier, the
+plan and the fallback:
+
+| Condition | Means |
+| --- | --- |
+| Not adding up | Whop's reading is not what a working district looks like |
+| Unbuilt | Nothing has been built here yet |
+| New work | Something here was made in the last two weeks |
+| Steady | Nothing here is asking for attention |
+| No reading | City could not read this district |
+
+"Not adding up" is deliberately non-committal: the state behind it has two
+possible causes and the projection does not carry which. A more confident label
+would give away something City cannot see.
 
 ## Where every fact comes from
 

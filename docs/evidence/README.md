@@ -49,31 +49,42 @@ twelve pixels across and a canopy sways two or three, so at a glance the city
 reads more still than it is. That is a composition question about the default
 zoom rather than a bug, and it is worth a decision rather than a silent tweak.
 
-## The operator session (`pnpm capture:play`)
+## The round (`pnpm capture:round`)
 
-A recorded playthrough. Every scenario named below is a **fixture**, not a live
-business: `pnpm build:fixtures` serves deterministic states so each condition
-can be shown. A live deployment runs the same code with a real projection.
+A recorded playthrough of the current interface. Every scenario named below is
+a **fixture**, not a live business: `pnpm build:fixtures` serves deterministic
+states so each condition can be shown. A live deployment runs the same code
+against a real projection.
 
-Captured at 1440×900, supersampling 1.
+Captured at 1440x900 (the phone frames at 390x780), supersampling 1.
 
 | Frame | Scenario | What it shows |
 | --- | --- | --- |
-| `play-1-orientation` | struggling | First visit: whose business the city depicts, and that local actions do not operate it |
-| `play-2-signal` | struggling | Two districts reading wrong, one never built on — before reading a word of panel |
-| `play-3-reading` | struggling | The reading, its ambiguity, and the limit of what City can know |
-| `play-4-finding` | struggling | A finding recorded; an action lands in the plan |
-| `play-5-worked` | struggling | **The key frame.** Worked and still reading wrong: two chips, and the hazard beacon still standing |
-| `play-6-optional` | struggling | Affiliates asked about rather than assumed |
-| `play-7-declined` | struggling | "Deliberately not" recorded as a decision |
-| `play-8-blank` | blank | A brand-new business gets a different session |
-| `play-9-decision` | blank | A branching pricing decision, not a checklist |
-| `play-10-branch` | blank | The answer chose what comes next |
-| `play-11-plan` | thriving | The round finishes; the plan is the payoff |
-| `play-12-return` | struggling | Returning to a changed reading: kept, flagged, not claimed as caused |
-| `play-13-unavailable` | unavailable | No reading, so no work proposed |
+| `ui-1-rest` | struggling | The resting city: seal, one command bar, camera. Nothing else |
+| `ui-2-about` | struggling | What this is and whose, on demand rather than on arrival |
+| `ui-3-district` | struggling | Entering a district: identity, condition, one next action |
+| `ui-4-evidence` | struggling | The observation and its ambiguity, one click away |
+| `ui-5-survey` | struggling | A survey: the answered step collapses, carrying what was said |
+| `ui-6-worked` | struggling | **The key frame.** Worked and still not adding up: the hazard mark still stands |
+| `ui-7-optional` | struggling | A fork: affiliates asked about, not assumed |
+| `ui-8-declined` | struggling | Set aside deliberately: an outcome, not a gap |
+| `ui-9-blank` | blank | A new business gets a different round |
+| `ui-10-decision` | blank | A pricing decision composed as a fork, not a form |
+| `ui-11-plan` | thriving | The deliverable, with observed and reported kept apart |
+| `ui-12-return` | struggling | Returning to a changed reading: kept, flagged, not claimed |
+| `ui-13-unavailable` | unavailable | No reading, so nothing suggested |
+| `ui-14-phone-rest` | struggling | A phone: the city fills the window |
+| `ui-15-phone-district` | struggling | A phone: the sheet takes the lower part, the city keeps the top |
 
-`city-playthrough.mp4` — 33.6s, the thirteen beats in order.
+`city-round.mp4` — 34.7s, the thirteen desktop beats in order at reading pace.
+
+### Before and after, same camera framing
+
+| File | Pair |
+| --- | --- |
+| `before-after-rest.jpg` | The resting city, struggling, city framing |
+| `before-after-district.jpg` | Commerce Core selected, struggling |
+| `before-after-plan.jpg` | The finished round, thriving |
 
 ### Renderer, measured at the default framing
 
@@ -83,5 +94,8 @@ Captured at 1440×900, supersampling 1.
 | thriving | 152 | 213,910 |
 | blank | 136 | 152,178 |
 | unavailable | 121 | 151,602 |
+| struggling, 390x780 | 108 | 146,072 |
 
-Budgets are 220 draw calls and 250,000 triangles.
+Budgets are 220 draw calls and 250,000 triangles. The desktop figures are
+identical to those measured before the interface work: at the authored aspect
+and wider the projection is unchanged.
