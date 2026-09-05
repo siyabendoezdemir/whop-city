@@ -318,7 +318,17 @@ export function CityCanvas({
     const pointer = new THREE.Vector2();
     let pressedAt: { x: number; y: number } | null = null;
 
-    const pick = (event: PointerEvent): DistrictId | null => {
+    /**
+     * What is under the pointer. Pure.
+     *
+     * It used to select the plot it found, and the hover handler calls it to
+     * decide the cursor — so moving the mouse across a building selected it
+     * and flew the camera there. A hit test answers a question; it does not
+     * act on the answer.
+     */
+    type Hit = { kind: "plot"; id: string } | { kind: "district"; id: DistrictId };
+
+    const pickAt = (event: PointerEvent): Hit | null => {
       const rect = stage.renderer.domElement.getBoundingClientRect();
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -330,10 +340,7 @@ export function CityCanvas({
         : [];
       if (plotHits.length > 0) {
         const plotId = plotHits[0].object.userData.plotId as string | undefined;
-        if (plotId) {
-          onSelectPlotRef.current(plotId);
-          return null;
-        }
+        if (plotId) return { kind: "plot", id: plotId };
       }
 
       return null;
@@ -372,8 +379,12 @@ export function CityCanvas({
       if (!start || down.size > 0) return;
       if (wasDragging > 6) return;
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
-      const districtId = pick(event);
-      if (districtId) selectRef.current(districtId);
+
+      // Selection happens here, on a click that did not travel — never in the
+      // hover handler.
+      const hit = pickAt(event);
+      if (hit?.kind === "plot") onSelectPlotRef.current(hit.id);
+      else if (hit?.kind === "district") selectRef.current(hit.id);
     };
 
     const onPointerMove = (event: PointerEvent) => {
@@ -407,7 +418,7 @@ export function CityCanvas({
         return;
       }
 
-      canvas.style.cursor = pick(event) ? "pointer" : "grab";
+      canvas.style.cursor = pickAt(event) ? "pointer" : "grab";
     };
 
     const onWheel = (event: WheelEvent) => {

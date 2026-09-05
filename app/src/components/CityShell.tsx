@@ -290,7 +290,6 @@ export function CityShell() {
         </button>
       ))}
 
-      <Advisor metrics={metrics} open={advisorOpen && !pickedView} onToggle={() => setAdvisorOpen((was) => !was)} />
 
       {metrics.source !== "owner" ? (
         <div className="signin">
@@ -326,28 +325,10 @@ export function CityShell() {
         </p>
       ) : null}
 
-      <div className="camera surface" role="group" aria-label="Camera">
-        <button type="button" data-cam="in" aria-label="Zoom in" onClick={() => setZoom((z) => Math.max(0.45, z - 0.15))}>
-          +
-        </button>
-        <button type="button" data-cam="out" aria-label="Zoom out" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))}>
-          −
-        </button>
-        <button
-          type="button"
-          data-cam="reset"
-          aria-label="Back to the whole city"
-          onClick={() => {
-            setZoom(1);
-            setFraming("city");
-            setPicked(null);
-          }}
-        >
-          ⌂
-        </button>
-      </div>
-
-      <nav className="districts" aria-label="Districts" data-shifted={advisorOpen && !pickedView ? "true" : "false"}>
+      {/* One column, bottom left: where to go, then what to do about it. They
+          used to be two things anchored to the same corner. */}
+      <div className="leftrail">
+      <nav className="districts" aria-label="Districts">
         {(["commerce-core", "offer-forge", "creator-quarter"] as const).map((id) => {
           const built = views.filter((view) => view.building.district === id);
           const ready = built.reduce((sum, view) => sum + view.ready, 0);
@@ -371,6 +352,34 @@ export function CityShell() {
           );
         })}
       </nav>
+        <Advisor
+          metrics={metrics}
+          open={advisorOpen && !pickedView}
+          onToggle={() => setAdvisorOpen((was) => !was)}
+        />
+      </div>
+
+      <div className="camera surface" role="group" aria-label="Camera">
+        <button type="button" data-cam="in" aria-label="Zoom in" onClick={() => setZoom((z) => Math.max(0.45, z - 0.15))}>
+          +
+        </button>
+        <button type="button" data-cam="out" aria-label="Zoom out" onClick={() => setZoom((z) => Math.min(1.6, z + 0.15))}>
+          −
+        </button>
+        <button
+          type="button"
+          data-cam="reset"
+          aria-label="Back to the whole city"
+          onClick={() => {
+            setZoom(1);
+            setFraming("city");
+            setPicked(null);
+          }}
+        >
+          ⌂
+        </button>
+      </div>
+
     </main>
   );
 }
