@@ -63,6 +63,42 @@ export type PublicDistrict = {
   readonly variant: number;
 };
 
+/**
+ * The real numbers the game runs on.
+ *
+ * These are counts from the business's own Whop account, and they are the
+ * game's only resource: a building's next level costs *five customers*, not
+ * five invented credits. Nothing here is simulated, and nothing here is a
+ * name, a price, an identifier or a piece of anyone's personal data — they are
+ * counts, and they are what "you need five customers" is made of.
+ *
+ * Because these are real business figures they belong to the owner. The public
+ * route serves them zeroed; the owner's dashboard view serves them for real.
+ */
+export type CityMetrics = {
+  /** People holding a membership across everything the business sells. */
+  readonly customers: number;
+  /** Things on sale that a buyer can actually see. */
+  readonly products: number;
+  /** Ways to buy those things: visible plans. */
+  readonly waysToBuy: number;
+  /** Products with an affiliate programme switched on. */
+  readonly affiliates: number;
+  /** The best commission rate on offer, as whole percent. */
+  readonly bestRate: number;
+  /** Whether these are the business's own figures or a zeroed public stand-in. */
+  readonly source: "owner" | "withheld";
+};
+
+export const ZERO_METRICS: CityMetrics = {
+  customers: 0,
+  products: 0,
+  waysToBuy: 0,
+  affiliates: 0,
+  bestRate: 0,
+  source: "withheld",
+};
+
 export type PublicCityProjection = {
   readonly schema: "whop-city.public.v2";
   readonly freshness: Freshness;
@@ -72,9 +108,13 @@ export type PublicCityProjection = {
    */
   readonly seed: string;
   readonly districts: readonly PublicDistrict[];
+  readonly metrics: CityMetrics;
 };
 
 export const PROJECTION_SCHEMA = "whop-city.public.v2";
+
+/** No count the game needs is larger than this; anything bigger is a bug. */
+const METRIC_MAX = 10_000_000;
 
 /**
  * Compile-time proof that the projection is plain data.
@@ -151,6 +191,26 @@ export function sealProjection(input: PublicCityProjection): PublicCityProjectio
     freshness: oneOf(FRESHNESS, input.freshness, "freshness"),
     seed: opaqueSeed(input.seed),
     districts,
+    metrics: sealMetrics(input.metrics),
+  };
+}
+
+/**
+ * Counts only, and only sane ones.
+ *
+ * The whitelist still holds: whatever the caller hands over, exactly these six
+ * fields go out and every one of them is a bounded integer. A title, an id or
+ * a price cannot travel through here whatever anyone does upstream.
+ */
+function sealMetrics(input: CityMetrics | undefined): CityMetrics {
+  if (!input || input.source !== "owner") return ZERO_METRICS;
+  return {
+    customers: boundedInt(input.customers, 0, METRIC_MAX, "metrics.customers"),
+    products: boundedInt(input.products, 0, METRIC_MAX, "metrics.products"),
+    waysToBuy: boundedInt(input.waysToBuy, 0, METRIC_MAX, "metrics.waysToBuy"),
+    affiliates: boundedInt(input.affiliates, 0, METRIC_MAX, "metrics.affiliates"),
+    bestRate: boundedInt(input.bestRate, 0, 100, "metrics.bestRate"),
+    source: "owner",
   };
 }
 
@@ -175,6 +235,7 @@ export function parseProjection(input: unknown): PublicCityProjection {
 /** What the city renders when the server could not read anything. */
 export function unavailableProjection(seed: string): PublicCityProjection {
   return {
+    metrics: ZERO_METRICS,
     schema: PROJECTION_SCHEMA,
     freshness: "unavailable",
     seed,

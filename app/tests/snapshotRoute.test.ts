@@ -116,7 +116,16 @@ describe("the snapshot endpoint", () => {
     expect(response.headers.get("content-type")).toContain("application/json");
 
     const body = await response.json();
-    expect(Object.keys(body).sort()).toEqual(["districts", "freshness", "schema", "seed"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "districts",
+      "freshness",
+      "metrics",
+      "schema",
+      "seed",
+    ]);
+    // The public route is not the owner, so the counts come back zeroed.
+    expect(body.metrics.source).toBe("withheld");
+    expect(body.metrics.customers).toBe(0);
   });
 
   it("marks the response private and unstored, never shared", async () => {

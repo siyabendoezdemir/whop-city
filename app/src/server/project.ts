@@ -1,3 +1,5 @@
+import type { CityMetrics } from "../city/projection";
+
 /**
  * The privacy boundary.
  *
@@ -5,11 +7,17 @@
  * `PublicCityProjection` comes out. Nothing else in the app is allowed to move
  * data across.
  *
- * Everything here answers "what does this place look like", never "how much".
- * The inputs — member counts, prices, titles, ids, timestamps — are read to
- * decide a bucket and then dropped on the floor. No count, no rate and no date
- * survives into the return value, which is why the return type has no numeric
- * field other than two small bounded renderer integers.
+ * What crosses, and what does not. Titles, ids, prices, timestamps and any
+ * trace of an individual are read to decide a bucket and then dropped on the
+ * floor; none of them survives into the return value.
+ *
+ * Counts do survive, and only counts: how many customers, products, ways to
+ * buy, affiliate programmes, and the best rate. They are the game's resources
+ * — a building's next level costs five customers, not five invented credits —
+ * and they are bounded integers, whitelisted one field at a time in
+ * `sealMetrics`. Because they are the business's real figures they are the
+ * owner's: the public route serves them zeroed, and only a viewer Whop has
+ * verified as an admin of this business gets them for real.
  *
  * On honesty: there is no history store, so this never claims a trend it cannot
  * see. A district with nothing in it is `dormant`, not `struggling`; a district
@@ -20,6 +28,11 @@
 
 import {
   DISTRICT_IDS,
+  PARCELS_MAX,
+  PARCELS_MIN,
+  PROJECTION_SCHEMA,
+  VARIANT_MAX,
+  ZERO_METRICS,
   type Direction,
   type DistrictId,
   type DistrictState,
@@ -27,10 +40,6 @@ import {
   type PublicCityProjection,
   type PublicDistrict,
   type Signal,
-  PARCELS_MAX,
-  PARCELS_MIN,
-  PROJECTION_SCHEMA,
-  VARIANT_MAX,
 } from "../city/projection";
 import { seedStream } from "./seed";
 import type { BusinessSnapshot } from "./snapshot";
@@ -186,10 +195,45 @@ function freshnessFor(snapshot: BusinessSnapshot, now: number): Freshness {
  *   the account id it came from, which is why it takes the seed rather than
  *   the snapshot's `accountId`.
  */
+/**
+ * The business, counted.
+ *
+ * Six numbers, straight off the snapshot: the resources the game spends. A
+ * business City could not read has nothing to count, and says so by handing
+ * back the withheld zeros rather than a plausible-looking nothing.
+ */
+function metricsFor(snapshot: BusinessSnapshot): CityMetrics {
+  if (!snapshot.reachable) return ZERO_METRICS;
+  const { products, plans } = snapshot;
+  const affiliate = products.filter((product) => product.affiliateEnabled);
+  return {
+    // Floored, not refused. Upstream has been seen to send a quantity as a
+    // string or with a decimal on it, and a fractional member is a rounding
+    // artefact, not a reason to take the whole city offline.
+    customers: Math.floor(products.reduce((sum, p) => sum + Math.max(0, p.memberCount || 0), 0)),
+    products: products.filter((product) => product.visible).length,
+    waysToBuy: plans.filter((plan) => plan.visible).length,
+    affiliates: affiliate.length,
+    bestRate: Math.min(100, Math.round(affiliate.reduce((max, p) => Math.max(max, p.affiliatePercentage || 0), 0))),
+    source: "owner",
+  };
+}
+
+/**
+ * Who is going to read this.
+ *
+ * The default is `public`, and it is the default on purpose: the counts are
+ * the business's own figures, so a caller has to *ask* for the owner's view,
+ * having already proved the viewer is an admin of this business. Forgetting to
+ * pass anything withholds them.
+ */
+export type Audience = "public" | "owner";
+
 export function toPublicProjection(
   snapshot: BusinessSnapshot,
   seed: string,
   now: number = Date.now(),
+  audience: Audience = "public",
 ): PublicCityProjection {
   const next = seedStream(seed);
 
@@ -208,6 +252,7 @@ export function toPublicProjection(
   });
 
   return {
+    metrics: audience === "owner" ? metricsFor(snapshot) : ZERO_METRICS,
     schema: PROJECTION_SCHEMA,
     freshness: freshnessFor(snapshot, now),
     seed,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { activityFor, allActivities, promptById } from "../src/city/activities";
-import { DISTRICT_IDS, DISTRICT_STATES, type DistrictState, type PublicCityProjection, type PublicDistrict } from "../src/city/projection";
+import { DISTRICT_IDS, DISTRICT_STATES, ZERO_METRICS, type DistrictState, type PublicCityProjection, type PublicDistrict } from "../src/city/projection";
 import {
   buildSession,
   planAsText,
@@ -28,6 +28,7 @@ const projection = (
   states: Partial<Record<(typeof DISTRICT_IDS)[number], DistrictState>>,
   over: Partial<PublicCityProjection> = {},
 ): PublicCityProjection => ({
+  metrics: ZERO_METRICS,
   schema: "whop-city.public.v2",
   freshness: "live",
   seed: "a7f3c1e90b6d84fa",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DISTRICT_IDS, type DistrictState, type PublicCityProjection } from "../src/city/projection";
+import { DISTRICT_IDS, ZERO_METRICS, type DistrictState, type PublicCityProjection } from "../src/city/projection";
 import type { Trade } from "../src/game/catalog";
 import {
   BASE_CAPACITY,
@@ -40,6 +40,7 @@ const PLOTS = {
 
 function projection(states: Partial<Record<(typeof DISTRICT_IDS)[number], DistrictState>> = {}, parcels = 0): PublicCityProjection {
   return {
+    metrics: ZERO_METRICS,
     schema: "whop-city.public.v2",
     freshness: "live",
     seed: "a7f3c1e90b6d84fa",

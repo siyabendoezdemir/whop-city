@@ -4,10 +4,12 @@ import {
   DISTRICT_IDS,
   DISTRICT_STATES,
   ProjectionViolation,
+  ZERO_METRICS,
   parseProjection,
   sealProjection,
   serializeProjection,
   unavailableProjection,
+  type CityMetrics,
   type PublicCityProjection,
 } from "../src/city/projection";
 import { fixtureSnapshot } from "../src/server/fixtures";
@@ -71,21 +73,43 @@ function plantedSnapshot(): BusinessSnapshot {
 
 describe("the privacy boundary", () => {
   it("carries no planted sensitive value into the serialised projection", () => {
-    const wire = serializeProjection(toPublicProjection(plantedSnapshot(), SEED, NOW));
+    const owner = toPublicProjection(plantedSnapshot(), SEED, NOW, "owner");
 
+    // Withheld — the public route — is still absolute: nothing planted in the
+    // snapshot appears anywhere, counts included.
+    const publicWire = serializeProjection(toPublicProjection(plantedSnapshot(), SEED, NOW));
     for (const [label, sentinel] of Object.entries(SENTINELS)) {
-      expect(wire, `${label} leaked`).not.toContain(sentinel);
+      expect(publicWire, `${label} leaked publicly`).not.toContain(sentinel);
     }
-    // The raw numbers behind the buckets, in every plausible rendering.
+    for (const raw of ["8675309", "424242", "37"]) {
+      expect(publicWire, `count ${raw} leaked publicly`).not.toContain(raw);
+    }
+
+    // For the owner the counts are the point. They cross, and they cross only
+    // inside `metrics`: strip that block out and the wire is exactly as bare
+    // as the public one.
+    const wire = serializeProjection(owner);
+    const parsed = JSON.parse(wire);
+    expect(parsed.metrics.customers).toBe(8675309);
+    expect(parsed.metrics.bestRate).toBe(37);
+
+    const outsideMetrics = wire.replace(JSON.stringify(parsed.metrics), "");
+    for (const [label, sentinel] of Object.entries(SENTINELS)) {
+      expect(outsideMetrics, `${label} leaked`).not.toContain(sentinel);
+    }
     for (const raw of ["8675309", "424242", "37", String(NOW), String(NOW - 90 * 24 * 60 * 60 * 1000)]) {
-      expect(wire, `raw value ${raw} leaked`).not.toContain(raw);
+      expect(outsideMetrics, `raw value ${raw} leaked outside metrics`).not.toContain(raw);
     }
+
+    // Money and identity never cross, for anyone, metrics or not.
+    expect(wire).not.toContain("424242");
+    for (const sentinel of Object.values(SENTINELS)) expect(wire).not.toContain(sentinel);
   });
 
   it("emits exactly the whitelisted keys and nothing else", () => {
     const wire = JSON.parse(serializeProjection(toPublicProjection(plantedSnapshot(), SEED, NOW)));
 
-    expect(Object.keys(wire).sort()).toEqual(["districts", "freshness", "schema", "seed"]);
+    expect(Object.keys(wire).sort()).toEqual(["districts", "freshness", "metrics", "schema", "seed"]);
     for (const district of wire.districts) {
       expect(Object.keys(district).sort()).toEqual([
         "direction",
@@ -112,7 +136,13 @@ describe("the privacy boundary", () => {
     expect(wire).not.toContain(SENTINELS.accountId);
     expect(wire).not.toContain("5550317");
     expect(wire).not.toContain("capturedAt");
-    expect(Object.keys(JSON.parse(wire)).sort()).toEqual(["districts", "freshness", "schema", "seed"]);
+    expect(Object.keys(JSON.parse(wire)).sort()).toEqual([
+      "districts",
+      "freshness",
+      "metrics",
+      "schema",
+      "seed",
+    ]);
   });
 
   it("drops fields smuggled onto a district", () => {
@@ -126,7 +156,9 @@ describe("the privacy boundary", () => {
       })),
     } as unknown as PublicCityProjection;
 
-    const wire = serializeProjection(contaminated);
+    // Zeroed metrics, so the only route the planted count could take is the
+    // smuggled district field this test is about.
+    const wire = serializeProjection({ ...contaminated, metrics: ZERO_METRICS });
 
     expect(wire).not.toContain(SENTINELS.title);
     expect(wire).not.toContain("8675309");
@@ -280,5 +312,57 @@ describe("state derivation", () => {
     const once = serializeProjection(project("thriving"));
     const twice = serializeProjection(project("thriving"));
     expect(once).toBe(twice);
+  });
+});
+
+describe("the metrics block carries counts and nothing else", () => {
+  const baseProjection = (): PublicCityProjection =>
+    toPublicProjection(fixtureSnapshot("balanced", NOW), SEED, NOW);
+
+  const owned = (over: Partial<CityMetrics> = {}): CityMetrics => ({
+    customers: 12,
+    products: 3,
+    waysToBuy: 4,
+    affiliates: 1,
+    bestRate: 25,
+    source: "owner",
+    ...over,
+  });
+
+  it("emits exactly six fields, whatever is handed in", () => {
+    const wire = sealProjection({
+      ...baseProjection(),
+      metrics: { ...owned(), title: "Founder tier", email: "a@b.c", revenue: 4200 } as CityMetrics,
+    });
+    expect(Object.keys(wire.metrics).sort()).toEqual([
+      "affiliates",
+      "bestRate",
+      "customers",
+      "products",
+      "source",
+      "waysToBuy",
+    ]);
+    expect(JSON.stringify(wire.metrics)).not.toMatch(/Founder|a@b\.c|4200/);
+  });
+
+  it("withholds the business's real figures unless the viewer owns them", () => {
+    // The public route never marks the source as the owner, so the same
+    // serializer that carries the numbers for an admin zeroes them for anyone
+    // else. There is no second code path to get wrong.
+    const wire = sealProjection({ ...baseProjection(), metrics: { ...owned(), source: "withheld" } });
+    expect(wire.metrics).toEqual(ZERO_METRICS);
+    expect(sealProjection({ ...baseProjection(), metrics: undefined as never }).metrics).toEqual(
+      ZERO_METRICS,
+    );
+  });
+
+  it("refuses a count that is not a count", () => {
+    for (const bad of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, "12" as never]) {
+      expect(() =>
+        sealProjection({ ...baseProjection(), metrics: owned({ customers: bad as number }) }),
+      ).toThrow();
+    }
+    // A rate is a percentage and nothing else.
+    expect(() => sealProjection({ ...baseProjection(), metrics: owned({ bestRate: 101 }) })).toThrow();
   });
 });
