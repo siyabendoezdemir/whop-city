@@ -64,12 +64,26 @@ test("no number in the interface comes from the business", async ({ page }) => {
   await expect(page.locator("main.city > footer")).toHaveCount(0);
 });
 
-test("nothing here submits, collects, or changes anything", async ({ page }) => {
+test("nothing here submits, and the one field that exists never leaves the browser", async ({ page }) => {
   await open(page, "struggling");
   await enter(page, "offer-forge");
 
   await expect(page.locator("form")).toHaveCount(0);
-  await expect(page.locator("input, textarea, select")).toHaveCount(0);
+  // Exactly one field in the whole product: the operator's own line.
+  await expect(page.locator("input, textarea, select")).toHaveCount(1);
+  await expect(page.locator('[data-testid="note"]')).toBeVisible();
+
+  // Typing in it must not reach the network by any route.
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(`${request.method()} ${request.url()}`));
+  await page.locator('[data-testid="note"]').fill("a private reminder to myself");
+  await page.locator('[data-testid="note"]').blur();
+  await page.waitForTimeout(600);
+  expect(requests.filter((entry) => !entry.includes(".js") && !entry.includes(".css"))).toEqual([]);
+
+  // It is in this browser, and nowhere else.
+  const stored = await page.evaluate(() => Object.values(localStorage).join(""));
+  expect(stored).toContain("a private reminder to myself");
 
   // The read-only nature is discoverable without being repeated everywhere.
   await page.locator('[data-action="about"]').click({ force: true });

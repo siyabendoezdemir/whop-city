@@ -286,17 +286,42 @@ describe("the session", () => {
 });
 
 describe("the plan as text", () => {
-  it("says who observed what, and where it is kept", () => {
-    const city = projection({ "commerce-core": "struggling" });
-    const activity = activityFor(district("commerce-core", "struggling"))!;
-    const session = buildSession(city, [
-      answer({ activityId: activity.id, promptId: "visible", value: "problem" }),
-    ]);
-    const text = planAsText(session, (id) => id);
+  const city = projection({ "commerce-core": "struggling" });
+  const activity = activityFor(district("commerce-core", "struggling"))!;
+  const built = () =>
+    buildSession(
+      city,
+      [
+        answer({ activityId: activity.id, promptId: "visible", value: "problem" }),
+        answer({ activityId: activity.id, promptId: "archived", value: "confirmed" }),
+      ],
+      { "commerce-core": { text: "ask about the hidden plan", observedState: "struggling" } },
+    );
 
-    expect(text).toContain("(observed)");
-    expect(text).toContain("(you reported)");
+  it("says who observed what, and where it is kept", () => {
+    const text = planAsText(built(), (id) => id, () => "Not adding up");
+
+    expect(text).toContain("Whop reported: Not adding up");
+    expect(text).toContain("what you told Whop City");
     expect(text).toContain("Not sent to Whop");
     expect(text).not.toMatch(/grew|increased|improved your/i);
+  });
+
+  it("is a checklist someone can act on, actions first", () => {
+    const text = planAsText(built(), (id) => id, () => "Not adding up");
+    const lines = text.split("\n");
+
+    // The thing to do leads; the note follows; what was already fine sinks.
+    expect(lines.findIndex((line) => line.startsWith("- [ ]"))).toBeLessThan(
+      lines.findIndex((line) => line.startsWith("- [x]")),
+    );
+    expect(text).toContain("> ask about the hidden plan");
+  });
+
+  it("carries the operator's own line into the plan", () => {
+    const session = built();
+    const note = session.plan.find((item) => item.kind === "note");
+    expect(note?.text).toBe("ask about the hidden plan");
+    expect(note?.provenance).toBe("reported");
   });
 });

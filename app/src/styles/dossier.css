@@ -270,14 +270,31 @@
 }
 
 .ledger__row {
+  border-bottom: 1px solid var(--edge);
+}
+
+/* An answered step is where you go to change your mind, so it is a control. */
+.ledger__reopen {
   display: grid;
   grid-template-columns: 14px 1fr auto;
   align-items: baseline;
   gap: 9px;
-  padding: 7px 0;
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 6px 7px 0;
+  font: inherit;
   font-size: 13px;
+  text-align: left;
   color: var(--ink-3);
-  border-bottom: 1px solid var(--edge);
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.ledger__reopen:hover {
+  background: rgba(146, 178, 214, 0.09);
+  color: var(--ink-2);
 }
 
 .ledger__tick {
@@ -400,6 +417,52 @@
 
 /* ------------------------------------------------------------- your notes */
 
+/* The operator's own line. One field, bounded, and the only place in the
+   product that takes typing at all. */
+.jot {
+  display: grid;
+  gap: 6px;
+  padding-top: 20px;
+  border-top: 1px solid var(--edge);
+}
+
+.jot__label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.jot__field {
+  width: 100%;
+  min-height: 62px;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--panel-sunken);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+.jot__field::placeholder {
+  color: var(--ink-4);
+}
+
+.jot__field:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: transparent;
+}
+
+.jot__where {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
 .notes {
   display: grid;
   gap: 10px;
@@ -445,6 +508,14 @@
 
 .note[data-kind="finding"] .note__rule {
   background: var(--tone-open);
+}
+
+.note[data-kind="note"] .note__rule {
+  background: var(--ink-2);
+}
+
+.note[data-kind="note"] .note__text {
+  font-style: italic;
 }
 
 .note__stale {

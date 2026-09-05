@@ -159,6 +159,124 @@
 .legend .is-finding {
   color: var(--tone-open);
 }
+.legend .is-note {
+  color: var(--ink-2);
+}
+
+/* Starting again and throwing away are different acts, and the destructive
+   one asks first. */
+.sheet__next {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--edge);
+}
+
+.confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.confirm__ask {
+  font-size: 13.5px;
+  color: var(--tone-active);
+}
+
+/* Shown only when both copy routes were refused, so the text can be taken by
+   hand instead of the button claiming success it did not have. */
+.fallbackCopy {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.fallbackCopy textarea {
+  width: 100%;
+  padding: 10px 12px;
+  font-family: var(--face);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--panel-sunken);
+  border: 1px solid var(--edge-strong);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+/* Rounds already filed. Compact, and each one still exportable. */
+.filed {
+  padding-top: 14px;
+  border-top: 1px solid var(--edge);
+}
+
+.filed__summary {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  cursor: pointer;
+  list-style: none;
+}
+
+.filed__summary::-webkit-details-marker {
+  display: none;
+}
+
+.filed__summary::before {
+  content: "\203A";
+  font-size: 15px;
+  transition: transform 140ms ease;
+}
+
+.filed[open] .filed__summary::before {
+  transform: rotate(90deg);
+}
+
+.filed__list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 1px;
+}
+
+.filed__round {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  border-bottom: 1px solid var(--edge);
+}
+
+.filed__when {
+  font-family: var(--face-narrow);
+  color: var(--ink-3);
+}
+
+.filed__title {
+  flex: 1 1 8rem;
+  color: var(--ink);
+}
+
+.filed__count {
+  color: var(--ink-3);
+}
+
+.filed__where {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
 
 /* ==========================================================================
    About — what this is, on demand rather than on arrival
@@ -483,7 +601,9 @@
   }
 
   .dossier__inner {
-    padding: 20px 18px 124px;
+    /* Clears the pinned bar with room to spare: the bar grows a row when a
+       round is in progress, and the last line has to stay readable. */
+    padding: 20px 18px 172px;
     gap: 18px;
   }
 

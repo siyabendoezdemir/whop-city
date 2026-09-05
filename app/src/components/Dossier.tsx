@@ -1,8 +1,11 @@
+import { useEffect, useRef, useState } from "react";
+
 import type { Prompt } from "../city/activities";
 import { EVIDENCE_LIMIT, PROVENANCE_NOTE, evidenceKind, readingFor } from "../city/evidence";
 import { DISTRICT_NAMES, DISTRICT_SUBTITLES } from "../city/explain";
 import type { DistrictWork } from "../city/session";
 import { CONDITION } from "../city/vocabulary";
+import { NOTE_LIMIT } from "../state/operatorLog";
 import { Activity } from "./Activity";
 import { Glyph } from "./Glyphs";
 
@@ -23,12 +26,23 @@ import { Glyph } from "./Glyphs";
 type Props = {
   work: DistrictWork;
   onAnswer: (prompt: Prompt, value: string) => void;
+  /** Re-open an answered step so it can be answered again. */
+  onReopen: (promptId: string) => void;
+  onNote: (text: string) => void;
   onUndoLast: () => void;
   onRestart: () => void;
 };
 
-export function Dossier({ work, onAnswer, onUndoLast, onRestart }: Props) {
+export function Dossier({ work, onAnswer, onReopen, onNote, onUndoLast, onRestart }: Props) {
   const { district, activity, run, plan, changed, declined } = work;
+  const [draft, setDraft] = useState(work.note);
+  const field = useRef<HTMLTextAreaElement>(null);
+
+  // Switching district swaps the panel's contents underneath the same
+  // component, so the draft has to follow it rather than leak across.
+  useEffect(() => {
+    setDraft(work.note);
+  }, [district.id, work.note]);
   const kind = evidenceKind(district);
   const condition = CONDITION[kind];
   const reading = readingFor(district);
@@ -76,6 +90,7 @@ export function Dossier({ work, onAnswer, onUndoLast, onRestart }: Props) {
             work.answers.find((answer) => answer.promptId === promptId)?.value ?? null
           }
           onAnswer={onAnswer}
+          onReopen={onReopen}
         />
       ) : (
         <p className="act act--blocked">
@@ -85,6 +100,37 @@ export function Dossier({ work, onAnswer, onUndoLast, onRestart }: Props) {
       )}
 
       {declined ? <p className="dossier__aside">Set aside deliberately. Nothing further here.</p> : null}
+
+      {/* -------------------------------------------------------- your own line */}
+      {activity ? (
+        <section className="jot" aria-label="Your note">
+          <label className="jot__label" htmlFor={`note-${district.id}`}>
+            Anything you want to remember here
+          </label>
+          <textarea
+            id={`note-${district.id}`}
+            ref={field}
+            className="jot__field"
+            data-local="true"
+            data-testid="note"
+            rows={2}
+            maxLength={NOTE_LIMIT}
+            placeholder="Optional. A decision, a link, what you found."
+            value={draft}
+            onChange={(event) => setDraft(event.target.value.slice(0, NOTE_LIMIT))}
+            onBlur={() => onNote(draft)}
+            // On a phone the keyboard covers the lower half; bring the field
+            // above it rather than leaving the operator typing blind.
+            onFocus={() =>
+              window.setTimeout(() => field.current?.scrollIntoView({ block: "center" }), 250)
+            }
+          />
+          <p className="jot__where">
+            Kept in this browser and added to your plan. Not sent to Whop — so keep customer details
+            out of it.
+          </p>
+        </section>
+      ) : null}
 
       {/* --------------------------------------------------------- your notes */}
       {plan.length > 0 ? (

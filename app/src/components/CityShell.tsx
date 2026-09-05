@@ -2,19 +2,22 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import type { Prompt } from "../city/activities";
 import { PROVENANCE_NOTE } from "../city/evidence";
+import { evidenceKind } from "../city/evidence";
 import { DISTRICT_NAMES, FRESHNESS_NOTE } from "../city/explain";
 import { parseProjection, type DistrictId, type PublicCityProjection } from "../city/projection";
 import { buildSession, runActivity, type DistrictWork } from "../city/session";
+import { CONDITION } from "../city/vocabulary";
 import {
   EMPTY_LOG,
   answersForDistrict,
-  clearAll,
   clearAnswer,
   clearDistrict,
-  completeSession,
+  clearWorking,
+  fileRound,
   loadLog,
   recordAnswer,
   saveLog,
+  writeNote,
   type OperatorLog,
 } from "../state/operatorLog";
 import { CityFallback } from "./CityFallback";
@@ -120,10 +123,12 @@ export function CityShell() {
     };
   }, []);
 
-  const session = useMemo(
-    () => (projection ? buildSession(projection, log.answers) : null),
-    [projection, log],
-  );
+  const session = useMemo(() => {
+    if (!projection) return null;
+    const notes: Record<string, { text: string; observedState: string }> = {};
+    for (const note of log.notes) notes[note.districtId] = { text: note.text, observedState: note.observedState };
+    return buildSession(projection, log.answers, notes as never);
+  }, [projection, log]);
 
   const selected = useMemo(() => {
     if (!session || framing === "city") return null;
@@ -193,6 +198,47 @@ export function CityShell() {
     [log, persist],
   );
 
+  const note = useCallback(
+    (work: DistrictWork, text: string) => {
+      if (text === work.note) return;
+      persist(
+        writeNote(log, {
+          districtId: work.district.id,
+          text,
+          observedState: work.district.state,
+          at: Date.now(),
+        }),
+      );
+      setAnnouncement(text.trim() === "" ? "Note removed." : "Note saved in this browser.");
+    },
+    [log, persist],
+  );
+
+  /**
+   * Re-open an answered step.
+   *
+   * Everything after it on the path is dropped, because those answers were
+   * given on the strength of the one being changed.
+   */
+  const reopen = useCallback(
+    (work: DistrictWork, promptId: string) => {
+      if (!work.activity) return;
+      const activity = work.activity;
+      const answered = runActivity(
+        activity,
+        log.answers.filter((entry) => entry.activityId === activity.id),
+      ).answered.map((prompt) => prompt.id);
+      const from = answered.indexOf(promptId);
+      if (from < 0) return;
+
+      let next = log;
+      for (const id of answered.slice(from)) next = clearAnswer(next, id);
+      persist(next);
+      setAnnouncement("Step re-opened.");
+    },
+    [log, persist],
+  );
+
   const undoLast = useCallback(
     (work: DistrictWork) => {
       const answers = answersForDistrict(log, work.district.id);
@@ -248,14 +294,40 @@ export function CityShell() {
   const complete = session?.complete ?? false;
   const wasComplete = useRef(false);
   useEffect(() => {
-    if (complete && !wasComplete.current && projection) {
+    if (complete && !wasComplete.current) {
       setShowPlan(true);
       setAnnouncement("Round finished. Your plan is ready.");
-      persist(completeSession(log));
     }
     wasComplete.current = complete;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [complete]);
+
+  /**
+   * File the finished round and clear the desk.
+   *
+   * Filing keeps the plan; it is the difference between starting again and
+   * throwing away what you just did, and only the second used to be on offer.
+   */
+  const startNewRound = useCallback(() => {
+    if (!session) return;
+    persist(
+      fileRound(log, {
+        at: Date.now(),
+        title: session.title,
+        items: session.work.flatMap((entry) =>
+          entry.plan.map((item) => ({
+            districtId: entry.district.id,
+            districtName: DISTRICT_NAMES[entry.district.id],
+            condition: CONDITION[evidenceKind(entry.district)].label,
+            kind: item.kind,
+            text: item.text,
+          })),
+        ),
+      }),
+    );
+    setShowPlan(false);
+    setFraming("city");
+    setAnnouncement("Round filed. A new round is open.");
+  }, [session, log, persist]);
 
   // ------------------------------------------------------------- render
   if (load.status === "loading" || load.status === "failed" || !projection || !session) {
@@ -369,6 +441,8 @@ export function CityShell() {
           <Dossier
             work={selected}
             onAnswer={(prompt, value) => answer(selected, prompt, value)}
+            onReopen={(promptId) => reopen(selected, promptId)}
+            onNote={(text) => note(selected, text)}
             onUndoLast={() => undoLast(selected)}
             onRestart={() => persist(clearDistrict(log, selected.district.id))}
           />
@@ -379,14 +453,16 @@ export function CityShell() {
       {showPlan ? (
         <PlanSheet
           session={session}
-          rounds={log.sessionsCompleted}
+          rounds={log.rounds}
           onClose={() => setShowPlan(false)}
-          onClear={() => {
-            persist(clearAll(log));
+          onFileRound={startNewRound}
+          onDiscard={() => {
+            persist(clearWorking(log));
             setShowPlan(false);
-            setAnnouncement("All answers cleared.");
+            setFraming("city");
+            setAnnouncement("Round discarded. Earlier rounds are kept.");
           }}
-          onCopied={() => setAnnouncement("Plan copied.")}
+          onSay={setAnnouncement}
         />
       ) : null}
 

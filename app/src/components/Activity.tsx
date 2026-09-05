@@ -30,6 +30,8 @@ type Props = {
   /** Answers already given, so the ledger can show what was said. */
   answerOf: (promptId: string) => string | null;
   onAnswer: (prompt: Prompt, value: string) => void;
+  /** Re-open an answered step. Anything that followed it is dropped. */
+  onReopen: (promptId: string) => void;
 };
 
 const KIND_NAME: Record<Prompt["kind"], string> = {
@@ -44,7 +46,7 @@ const CHECK_TONE: Record<string, string> = {
   "not-applicable": "aside",
 };
 
-export function Activity({ activity, run, answerOf, onAnswer }: Props) {
+export function Activity({ activity, run, answerOf, onAnswer, onReopen }: Props) {
   const current = run.current;
 
   if (!current) {
@@ -77,9 +79,19 @@ export function Activity({ activity, run, answerOf, onAnswer }: Props) {
                 const value = answerOf(prompt.id) ?? "";
                 return (
                   <li key={prompt.id} className="ledger__row" data-outcome={CHECK_TONE[value] ?? "aside"}>
-                    <span className="ledger__tick" aria-hidden="true" />
-                    <span className="ledger__what">{prompt.title}</span>
-                    <span className="ledger__said">{CHECK_LABEL[value as keyof typeof CHECK_LABEL] ?? value}</span>
+                    <button
+                      type="button"
+                      className="ledger__reopen"
+                      data-reopen={prompt.id}
+                      title="Answer this step again"
+                      onClick={() => onReopen(prompt.id)}
+                    >
+                      <span className="ledger__tick" aria-hidden="true" />
+                      <span className="ledger__what">{prompt.title}</span>
+                      <span className="ledger__said">
+                        {CHECK_LABEL[value as keyof typeof CHECK_LABEL] ?? value}
+                      </span>
+                    </button>
                   </li>
                 );
               })}

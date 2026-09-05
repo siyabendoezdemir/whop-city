@@ -320,9 +320,9 @@ test("finishing every district opens a plan you can take away", async ({ page })
   await expect(plan.locator(".entry")).toHaveCount(3);
   // Each entry keeps the two authorities apart: Whop's condition, your items.
   await expect(plan.locator(".entry").first().locator(".cond")).toBeVisible();
-  await expect(plan.locator('[data-testid="rounds"]')).toHaveText("1");
   await expect(plan).toContainText("not sent to Whop");
   await expect(plan.locator('[data-action="copy-plan"]')).toBeVisible();
+  await expect(plan.locator('[data-action="download-plan"]')).toBeVisible();
 });
 
 test("progress survives a reload and starting over clears it", async ({ page }) => {
@@ -466,4 +466,166 @@ test("a phone keeps the city visible instead of being all panel", async ({ page 
 
   await tap(page, '[data-answer="problem"]');
   await expect(page.locator(".note").first()).toBeVisible();
+});
+
+// ------------------------------------------------------- notes and recovery
+
+test("the operator's own line reaches the plan", async ({ page }) => {
+  await open(page, "struggling");
+  await clickDistrict(page, "commerce-core");
+
+  const note = page.locator('[data-testid="note"]');
+  await note.fill("Two products went hidden after the migration. Check both before Friday.");
+  await note.blur();
+
+  await expect(page.locator('.note[data-kind="note"]')).toContainText("after the migration");
+
+  // And it is still there after a reload, on the district it was written on.
+  await open(page, "struggling");
+  await clickDistrict(page, "commerce-core");
+  await expect(page.locator('[data-testid="note"]')).toHaveValue(/after the migration/);
+  await clickDistrict(page, "offer-forge");
+  await expect(page.locator('[data-testid="note"]')).toHaveValue("");
+});
+
+test("an answered step can be answered again", async ({ page }) => {
+  await open(page, "struggling");
+  await clickDistrict(page, "commerce-core");
+
+  await tap(page, '[data-answer="confirmed"]');
+  await tap(page, '[data-answer="confirmed"]');
+  await expect(page.locator(".ledger__row")).toHaveCount(2);
+  await expect(page.locator(".act")).toHaveAttribute("data-prompt", "members");
+
+  // Re-open the first step: it comes back, and the step that followed it goes,
+  // because that answer was given on the strength of this one.
+  await tap(page, '[data-reopen="visible"]');
+  await expect(page.locator(".act")).toHaveAttribute("data-prompt", "visible");
+  await expect(page.locator(".ledger__row")).toHaveCount(0);
+
+  await tap(page, '[data-answer="problem"]');
+  await expect(page.locator('.note[data-kind="action"]')).toHaveCount(1);
+});
+
+// ------------------------------------------------------- the round lifecycle
+
+test("finishing files the round instead of erasing it", async ({ page }) => {
+  await open(page, "thriving");
+  for (const id of ["commerce-core", "offer-forge", "creator-quarter"]) {
+    await clickDistrict(page, id);
+    await completeDistrict(page, ["confirmed", "keep", "fine", "will-do"]);
+  }
+
+  const plan = page.locator('[data-testid="plan"]');
+  await expect(plan).toBeVisible();
+  await expect(plan.locator(".entry")).toHaveCount(3);
+
+  await tap(page, '[data-action="new-round"]');
+
+  // A new round is open, and the one just finished is kept rather than gone.
+  await expect(page.locator('[data-testid="plan"]')).toHaveCount(0);
+  await expect(page.locator(".bar__go")).toHaveText(/begin round/i);
+  await expect(page.locator(".stud[data-done='true']")).toHaveCount(0);
+
+  await page.keyboard.press("p");
+  const filed = page.locator(".filed");
+  await expect(filed).toBeVisible();
+  await filed.locator(".filed__summary").click({ force: true });
+  await expect(filed.locator(".filed__round")).toHaveCount(1);
+  await expect(filed.locator('[data-action="copy-filed"]')).toBeVisible();
+
+  // And it survives a reload, which is the point of filing it.
+  await open(page, "thriving");
+  await page.keyboard.press("p");
+  await expect(page.locator(".filed__round")).toHaveCount(1);
+});
+
+test("discarding a round asks first, and spares what was filed", async ({ page }) => {
+  await open(page, "thriving");
+  for (const id of ["commerce-core", "offer-forge", "creator-quarter"]) {
+    await clickDistrict(page, id);
+    await completeDistrict(page, ["confirmed", "keep", "fine", "will-do"]);
+  }
+  await tap(page, '[data-action="new-round"]');
+
+  await clickDistrict(page, "commerce-core");
+  await tap(page, '[data-answer="confirmed"]');
+  await page.keyboard.press("p");
+
+  // Nothing is destroyed on the first click.
+  await tap(page, '[data-action="discard"]');
+  await expect(page.locator(".confirm__ask")).toBeVisible();
+  await tap(page, '[data-action="discard-no"]');
+  await expect(page.locator(".entry")).toHaveCount(1);
+
+  await tap(page, '[data-action="discard"]');
+  await tap(page, '[data-action="discard-yes"]');
+  await page.keyboard.press("p");
+  await expect(page.locator(".entry")).toHaveCount(0);
+  // The filed round is untouched by discarding the one in progress.
+  await expect(page.locator(".filed__round")).toHaveCount(1);
+});
+
+test("the plan can be copied and downloaded", async ({ page }) => {
+  await open(page, "struggling");
+  await clickDistrict(page, "commerce-core");
+  await tap(page, '[data-answer="problem"]');
+  await page.keyboard.press("p");
+
+  // Copy reports what actually happened rather than always claiming success.
+  await tap(page, '[data-action="copy-plan"]');
+  await expect(page.locator('[data-action="copy-plan"]')).toHaveText(/copied|copy failed/i);
+
+  const download = page.waitForEvent("download");
+  await tap(page, '[data-action="download-plan"]');
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^whop-city-\d{4}-\d{2}-\d{2}-.*\.md$/);
+
+  const path = await file.path();
+  const text = await (await import("node:fs/promises")).readFile(path!, "utf8");
+  // The export is a checklist someone can act on, and says where it came from.
+  expect(text).toContain("# Whop City");
+  expect(text).toContain("Whop reported: Not adding up");
+  expect(text).toMatch(/^- \[ ] /m);
+  expect(text).toContain("Not sent to Whop");
+});
+
+test("copy that cannot work says so instead of claiming success", async ({ page }) => {
+  await page.addInitScript(() => {
+    // Both routes refused, which is what an insecure origin or a restrictive
+    // permissions policy looks like from the page's side.
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    document.execCommand = () => false;
+  });
+  await open(page, "struggling");
+  await clickDistrict(page, "commerce-core");
+  await tap(page, '[data-answer="problem"]');
+  await page.keyboard.press("p");
+
+  await tap(page, '[data-action="copy-plan"]');
+  await expect(page.locator('[data-action="copy-plan"]')).toHaveText(/copy failed/i);
+  // And the text is put on screen to be taken by hand.
+  await expect(page.locator('[data-testid="plan-text"]')).toBeVisible();
+  await expect(page.locator('[data-testid="plan-text"]')).toHaveValue(/Whop City/);
+});
+
+test("a phone can reach the bottom of a district and type in it", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
+  await open(page, "struggling");
+  await tap(page, '.stud[data-district="commerce-core"]');
+  await tap(page, '[data-answer="problem"]');
+
+  const note = page.locator('[data-testid="note"]');
+  await note.fill("a reminder");
+  await note.blur();
+
+  // The last line of the sheet must clear the pinned bar rather than sit under it.
+  const clear = await page.evaluate(() => {
+    const sheet = document.querySelector(".dossier")!;
+    sheet.scrollTop = sheet.scrollHeight;
+    const last = document.querySelector(".notes__where")!.getBoundingClientRect();
+    const bar = document.querySelector(".bar")!.getBoundingClientRect();
+    return { lastBottom: last.bottom, barTop: bar.top };
+  });
+  expect(clear.lastBottom, "the last line is under the command bar").toBeLessThan(clear.barTop);
 });

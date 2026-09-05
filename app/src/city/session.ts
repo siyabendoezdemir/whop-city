@@ -92,7 +92,7 @@ export function runActivity(activity: Activity, answers: AnswerSet): ActivityRun
 // The plan
 // ---------------------------------------------------------------------------
 
-export type PlanItemKind = "action" | "decision" | "finding" | "clear";
+export type PlanItemKind = "action" | "decision" | "finding" | "clear" | "note";
 
 export type PlanItem = {
   readonly districtId: DistrictId;
@@ -167,6 +167,8 @@ export function planForActivity(
 
 export type DistrictWork = {
   readonly district: PublicDistrict;
+  /** The operator's own line about this district, if they wrote one. */
+  readonly note: string;
   readonly level: AttentionLevel;
   readonly activity: Activity | null;
   readonly run: ActivityRun | null;
@@ -257,7 +259,14 @@ function nameSession(work: readonly DistrictWork[], unreadable: boolean): { titl
   };
 }
 
-export function buildSession(projection: PublicCityProjection, answers: AnswerSet): Session {
+/** An operator's own line, keyed by district. Never sent anywhere. */
+export type Notes = Readonly<Partial<Record<DistrictId, { text: string; observedState: DistrictState }>>>;
+
+export function buildSession(
+  projection: PublicCityProjection,
+  answers: AnswerSet,
+  notes: Notes = {},
+): Session {
   const unreadable = projection.freshness === "unavailable";
 
   const work: DistrictWork[] = projection.districts.map((district) => {
@@ -269,18 +278,36 @@ export function buildSession(projection: PublicCityProjection, answers: AnswerSe
       : [];
     const run = activity ? runActivity(activity, relevant) : null;
     const declined = isDeclined(activity, relevant);
+    const note = notes[district.id];
+
+    // A written note is a plan item like any other: reported, not observed,
+    // and marked stale the same way if the reading has moved under it.
+    const plan = activity ? planForActivity(activity, relevant, district.state) : [];
+    if (note && note.text.trim() !== "") {
+      plan.push({
+        districtId: district.id,
+        promptId: "__note",
+        kind: "note",
+        text: note.text.trim(),
+        provenance: "reported",
+        staleAgainstObservation: note.observedState !== district.state,
+      });
+    }
 
     return {
       district,
+      note: note?.text ?? "",
       level,
       activity,
       run,
       answers: relevant,
-      plan: activity ? planForActivity(activity, relevant, district.state) : [],
+      plan,
       declined,
       // Answered under one reading, and City now reads it differently. The
       // work is not wrong; it is just no longer known to be current.
-      changed: districtAnswers.some((answer) => answer.observedState !== district.state),
+      changed:
+        districtAnswers.some((answer) => answer.observedState !== district.state) ||
+        (note !== undefined && note.observedState !== district.state),
       complete: run?.complete ?? false,
     };
   });
@@ -314,6 +341,7 @@ export function planByKind(plan: readonly PlanItem[]): Record<PlanItemKind, Plan
     decision: [],
     finding: [],
     clear: [],
+    note: [],
   };
   for (const item of plan) grouped[item.kind].push(item);
   return grouped;
@@ -326,23 +354,45 @@ export function planByKind(plan: readonly PlanItem[]): Record<PlanItemKind, Plan
  * is marked with where it came from, so a plan pasted into a document still
  * says which parts City observed and which parts they reported.
  */
-export function planAsText(session: Session, districtName: (id: DistrictId) => string): string {
-  const lines: string[] = ["Whop City — session plan", ""];
+export function planAsText(
+  session: Session,
+  districtName: (id: DistrictId) => string,
+  conditionLabel: (district: PublicDistrict) => string = (district) => district.state,
+  now: Date = new Date(),
+): string {
+  const lines: string[] = [
+    `# Whop City — ${session.title}`,
+    "",
+    now.toISOString().slice(0, 16).replace("T", " ") + " UTC",
+    "",
+  ];
 
   for (const entry of session.work) {
     if (entry.plan.length === 0) continue;
     lines.push(`## ${districtName(entry.district.id)}`);
-    lines.push(`Whop reported this district as: ${entry.district.state} (observed)`);
-    if (entry.changed) lines.push("This reading has changed since you worked here.");
+    lines.push(`Whop reported: ${conditionLabel(entry.district)}`);
+    if (entry.changed) lines.push("This reading changed after the work below was recorded.");
     lines.push("");
-    for (const item of entry.plan) {
-      const mark = item.kind === "action" ? "[ ]" : item.kind === "clear" ? "[x]" : "—";
-      lines.push(`${mark} ${item.text}  (you reported)`);
+
+    // Actions first: the reason anyone keeps one of these.
+    const order: PlanItemKind[] = ["action", "note", "finding", "decision", "clear"];
+    for (const kind of order) {
+      for (const item of entry.plan.filter((candidate) => candidate.kind === kind)) {
+        const mark =
+          item.kind === "action" ? "- [ ]" : item.kind === "clear" ? "- [x]" : item.kind === "note" ? ">" : "-";
+        lines.push(`${mark} ${item.text}`);
+      }
     }
     lines.push("");
   }
 
   if (session.plan.length === 0) lines.push("Nothing recorded yet.");
-  lines.push("Recorded in your browser only. Not sent to Whop, and not a record that the work was done.");
+  lines.push("---");
+  lines.push(
+    "Each district's condition is what Whop reported. Everything under it is what you told Whop City.",
+  );
+  lines.push(
+    "Kept in your browser only. Not sent to Whop, and not a record that the work was done.",
+  );
   return lines.join("\n");
 }
