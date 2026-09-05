@@ -313,6 +313,9 @@ test("the city is still there after a reload, and keeps its own time", async ({ 
 
   await reload(page);
   await dismiss(page);
+  // Nothing is selected after a reload, so the district has to be opened
+  // before its plots are on screen at all.
+  await tap(page, '.stud[data-district="creator-quarter"]');
   await expect(page.locator(".plotchip[data-level='1']").first()).toBeVisible();
 
   // Away long enough and the city reports what it did while the tab was shut.
@@ -374,9 +377,18 @@ test("a phone can build", async ({ page }) => {
 
   await expect(page.locator(".vitals")).toBeVisible();
   await selectPlot(page, "creator-quarter", '.plotchip[data-level="0"]');
-  const offer = page.locator('.offer[data-trade="signal"]');
+  // Scoped to this district's panel: an unscoped match can resolve against
+  // whatever panel a stray tap left open on a narrow screen.
+  const offer = page.locator('.dossier[data-district="creator-quarter"] .offer[data-trade="signal"]');
+  await expect(offer).toBeVisible();
   const box = (await offer.boundingBox())!;
   expect(box.height, "the build target is too small for a thumb").toBeGreaterThanOrEqual(44);
+  // A forced click is dispatched at the element's centre whether or not that
+  // point is on screen, and on a phone the offer starts below the fold — the
+  // event landed on the canvas behind the sheet and selected a different plot.
+  await offer.scrollIntoViewIfNeeded();
   await offer.click({ force: true });
-  await expect(page.locator(".moves__title")).toHaveText(/signal tower/i);
+  await expect(page.locator('.dossier[data-district="creator-quarter"] .moves')).toContainText(
+    /signal tower/i,
+  );
 });
