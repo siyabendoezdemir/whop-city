@@ -19,6 +19,11 @@ async function open(page: Page, scenario?: string) {
 async function enter(page: Page, districtId: string) {
   await page.locator(`.stud[data-district="${districtId}"]`).click({ force: true });
   await expect(page.locator(`.dossier[data-district="${districtId}"]`)).toBeVisible();
+  // The advisory round is a disclosure inside the district panel now.
+  const summary = page.locator(".fieldnotes__summary");
+  if ((await summary.count()) > 0 && (await page.locator(".fieldnotes").getAttribute("open")) === null) {
+    await summary.click({ force: true });
+  }
 }
 
 test("every district reads as itself, in words attributed to Whop", async ({ page }) => {

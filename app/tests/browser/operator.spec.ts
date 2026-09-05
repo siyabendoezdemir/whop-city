@@ -59,6 +59,23 @@ async function clickDistrict(page: Page, districtId: string) {
 
   await page.mouse.click(point!.x, point!.y);
   await expect(page.locator(`.dossier[data-district="${districtId}"]`)).toBeVisible();
+  await openFieldNotes(page);
+}
+
+
+/**
+ * Open the advisory round.
+ *
+ * It used to be the whole district panel and is now a disclosure inside it:
+ * the city is the product, and the notes are a tool beside it. The suite still
+ * covers it, from its new position.
+ */
+async function openFieldNotes(page: Page) {
+  const summary = page.locator(".fieldnotes__summary");
+  if ((await summary.count()) === 0) return;
+  const notes = page.locator(".fieldnotes");
+  if ((await notes.getAttribute("open")) === null) await summary.click({ force: true });
+  await expect(page.locator(".fieldnotes__body")).toBeVisible();
 }
 
 /** Answer the step in front of you, preferring one of the given intents. */
