@@ -66,7 +66,9 @@ export function CommandBar({ session, selected, onSelect, onBack, onPrimary, pla
         </button>
       ) : null}
 
-      {total > 0 ? (
+      {/* The studs stand whether or not there is work. A city City could not
+          read still has districts, and each one can still say so. */}
+      {session.work.length > 0 ? (
         <div className="studs">
           {session.work.map((entry) => {
             const condition = CONDITION[evidenceKind(entry.district)];

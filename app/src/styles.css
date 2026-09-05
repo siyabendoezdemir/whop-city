@@ -378,6 +378,21 @@
   font-size: 12.5px !important;
 }
 
+.flat__prompt {
+  display: grid;
+  gap: 8px;
+  padding: 15px 16px;
+  background: var(--panel-raised);
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--accent);
+}
+
+.flat__prompt p:first-child {
+  font-size: 15px !important;
+  font-weight: 600;
+  color: var(--ink) !important;
+}
+
 .flat__body p {
   margin: 0;
   font-size: 13.5px;

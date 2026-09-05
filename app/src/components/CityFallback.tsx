@@ -83,7 +83,7 @@ export function CityFallback({ session, selected, onSelect, onAnswer }: Props) {
                   <p className="flat__limit">{EVIDENCE_LIMIT}</p>
 
                   {activity && current ? (
-                    <div className="city-flat__prompt" data-prompt={current.id}>
+                    <div className="flat__prompt" data-prompt={current.id}>
                       <p>
                         <strong>{current.title}</strong>
                       </p>

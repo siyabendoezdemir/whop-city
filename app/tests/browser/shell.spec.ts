@@ -1,11 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * The shape of the product, as distinct from the loop inside it.
+ * The promises the interface makes whatever the player is doing.
  *
- * `operator.spec.ts` covers the game. This covers the promises the interface
- * makes whatever the player is doing: that it is not a dashboard, that no
- * number in it came from the business, and that it cannot change anything.
+ * `operator.spec.ts` covers the round. This covers the shape: that it is not a
+ * dashboard, that no number in it came from the business, and that it cannot
+ * change anything.
  */
 
 async function open(page: Page, scenario?: string) {
@@ -14,11 +14,14 @@ async function open(page: Page, scenario?: string) {
   await page.goto(`/?${params}`, { waitUntil: "load" });
   await page.waitForFunction(() => window.__city?.ready === true, null, { timeout: 120_000 });
   await page.waitForFunction(() => (window.__city?.info().parcels ?? 0) > 0, null, { timeout: 120_000 });
-  const go = page.locator('[data-action="orient-done"]');
-  if (await go.count()) await go.click();
 }
 
-test("selecting a district opens a reading attributed to Whop", async ({ page }) => {
+async function enter(page: Page, districtId: string) {
+  await page.locator(`.stud[data-district="${districtId}"]`).click({ force: true });
+  await expect(page.locator(`.dossier[data-district="${districtId}"]`)).toBeVisible();
+}
+
+test("every district reads as itself, in words attributed to Whop", async ({ page }) => {
   await open(page, "struggling");
 
   for (const [id, name] of [
@@ -26,21 +29,20 @@ test("selecting a district opens a reading attributed to Whop", async ({ page })
     ["offer-forge", "Offer Forge"],
     ["creator-quarter", "Creator Quarter"],
   ] as const) {
-    await page.click(`.city-jump button[data-district="${id}"]`);
-    const panel = page.locator(`.city-brief[data-district="${id}"]`);
-    await expect(panel).toBeVisible();
-    await expect(panel.locator(".panel__name")).toHaveText(name);
+    await enter(page, id);
+    await expect(page.locator(".dossier__name")).toHaveText(name);
 
-    const observed = (await panel.locator(".panel__observed").textContent()) ?? "";
+    await page.locator(".why__summary").click({ force: true });
+    const observed = (await page.locator(".why__observed").textContent()) ?? "";
     expect(observed).toMatch(/^Whop reports/);
     expect(observed).not.toMatch(/\d/);
     expect(observed.toLowerCase()).not.toMatch(/revenue|customer|\$|%|price/);
   }
 });
 
-test("no number in the shell comes from the business", async ({ page }) => {
+test("no number in the interface comes from the business", async ({ page }) => {
   await open(page, "struggling");
-  await page.click('.city-jump button[data-district="offer-forge"]');
+  await enter(page, "offer-forge");
 
   // Digits are allowed in exactly one place: counts of the operator's own
   // progress, which are marked local. Everything else is derived from the
@@ -50,48 +52,60 @@ test("no number in the shell comes from the business", async ({ page }) => {
     for (const local of root.querySelectorAll("[data-local='true']")) local.remove();
     return root.innerText;
   });
-  expect(businessText.replace(/[+−⌂]/g, "")).not.toMatch(/\d/);
+  expect(businessText.replace(/[+−⌂i]/g, "")).not.toMatch(/\d/);
 
   const localText = await page.locator("[data-local='true']").allInnerTexts();
   expect(localText.join(" ")).toMatch(/\d/);
 
-  for (const selector of ["table", "svg.chart", ".metric", ".card", ".kpi", "nav.tabs"]) {
+  for (const selector of ["table", "svg.chart", ".metric", ".card", ".kpi", "nav"]) {
     await expect(page.locator(selector)).toHaveCount(0);
   }
   await expect(page.locator("main.city > header")).toHaveCount(0);
   await expect(page.locator("main.city > footer")).toHaveCount(0);
 });
 
-test("the interface says what it is and cannot change anything", async ({ page }) => {
+test("nothing here submits, collects, or changes anything", async ({ page }) => {
   await open(page, "struggling");
-  await page.click('.city-jump button[data-district="offer-forge"]');
+  await enter(page, "offer-forge");
 
-  // Nothing submits, and nothing collects.
   await expect(page.locator("form")).toHaveCount(0);
   await expect(page.locator("input, textarea, select")).toHaveCount(0);
 
-  await expect(page.locator("main.city")).toContainText("read-only");
-  await expect(page.locator(".city-crest__mode")).toContainText("business that deployed it");
-  // Every answer says whose it is, at the point of the click.
-  await expect(page.locator(".prompt__note")).toContainText("does not send it anywhere");
+  // The read-only nature is discoverable without being repeated everywhere.
+  await page.locator('[data-action="about"]').click({ force: true });
+  await expect(page.locator(".about")).toContainText("public and read-only");
 });
 
-test("what City cannot see is stated next to what it can", async ({ page }) => {
+test("the storage boundary is stated where the notes are, once", async ({ page }) => {
   await open(page, "struggling");
-  await page.click('.city-jump button[data-district="commerce-core"]');
+  await enter(page, "commerce-core");
+  await page.locator('[data-answer="problem"]').first().click({ force: true });
 
-  const reading = page.locator(".panel__reading");
-  await expect(reading.locator(".prov")).toHaveText("From Whop");
-  await expect(reading.locator(".panel__limit")).toContainText("does not open your storefront");
-  await expect(reading.locator(".panel__limit")).toContainText("try a purchase");
+  await expect(page.locator(".notes__where")).toContainText("this browser");
+  await expect(page.locator(".notes__where")).toContainText("Not sent to Whop");
+  // Said once in the panel, not under every question.
+  await expect(page.locator(".notes__where")).toHaveCount(1);
 });
 
 test("the city stands unbuilt when the business cannot be read", async ({ page }) => {
   await open(page, "unavailable");
 
-  await expect(page.locator(".city-crest__state")).toHaveAttribute("data-freshness", "unavailable");
-  await page.click('.city-jump button[data-district="commerce-core"]');
-  await expect(page.locator(".city-brief")).toHaveAttribute("data-condition", "unread");
-  await expect(page.locator(".panel__observed")).toContainText("could not read this district");
-  await expect(page.locator(".prompt")).toHaveCount(0);
+  await expect(page.locator(".seal__state")).toHaveAttribute("data-freshness", "unavailable");
+  await expect(page.locator(".seal__state")).toHaveText(/could not be read/i);
+  await enter(page, "commerce-core");
+  await expect(page.locator(".state .cond")).toHaveText(/No reading/);
+  await expect(page.locator(".act[data-prompt]")).toHaveCount(0);
+});
+
+test("reduced motion removes the entrances rather than the interface", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await open(page, "struggling");
+  await enter(page, "commerce-core");
+
+  const duration = await page.evaluate(
+    () => getComputedStyle(document.querySelector(".dossier")!).animationDuration,
+  );
+  expect(parseFloat(duration)).toBeLessThan(0.01);
+  await expect(page.locator(".dossier")).toBeVisible();
+  await expect(page.locator(".act")).toBeVisible();
 });

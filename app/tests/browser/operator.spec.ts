@@ -1,56 +1,21 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * The operator loop, end to end in a real browser against the built app.
+ * The round, played end to end in a real browser against the built app.
  *
- *   signal → focus → work → plan → return
+ *   arrive → see where to act → enter a district → work → plan → return
  *
  * Run against a fixtures build (`pnpm build:fixtures`), because the loop needs
  * districts in known states to be worth testing. Everything exercised is the
  * same code a live deployment runs; only the source of the states differs.
  */
 
-async function open(page: Page, scenario?: string, { orient = true } = {}) {
+async function open(page: Page, scenario?: string) {
   const params = new URLSearchParams();
   if (scenario) params.set("scenario", scenario);
   await page.goto(`/?${params}`, { waitUntil: "load" });
   await page.waitForFunction(() => window.__city?.ready === true, null, { timeout: 120_000 });
   await page.waitForFunction(() => (window.__city?.info().parcels ?? 0) > 0, null, { timeout: 120_000 });
-  if (orient) {
-    const go = page.locator('[data-action="orient-done"]');
-    if (await go.count()) await go.click({ force: true });
-  }
-}
-
-/**
- * Select a district by clicking it in the world.
- *
- * Returns to the wide view first, because selecting a district glides the
- * camera into it and every other marker moves — sometimes off screen.
- *
- * The camera is then snapped with the render hook rather than waited on. Under
- * software WebGL this page renders at a fraction of a frame per second, so
- * "wait for the glide to finish" can mean waiting half a minute for one frame,
- * and a click aimed at where a marker will be misses where it still is. The
- * click itself is a real click on the real canvas, and picking is exercised
- * exactly as a person would exercise it.
- */
-async function clickDistrict(page: Page, districtId: string) {
-  await page.click('.city-jump button[data-district="city"]');
-  await page.evaluate(() => window.__city!.frame("city", 6));
-
-  const point = await page.evaluate((id) => window.__city!.markerPoint(id), districtId);
-  expect(point, `no marker on screen for ${districtId}`).not.toBeNull();
-
-  const view = page.viewportSize()!;
-  const where = `${districtId} at ${JSON.stringify(point)} in ${JSON.stringify(view)}`;
-  expect(point!.x, where).toBeGreaterThan(0);
-  expect(point!.x, where).toBeLessThan(view.width);
-  expect(point!.y, where).toBeGreaterThan(0);
-  expect(point!.y, where).toBeLessThan(view.height);
-
-  await page.mouse.click(point!.x, point!.y);
-  await expect(page.locator(`.city-brief[data-district="${districtId}"]`)).toBeVisible();
 }
 
 /**
@@ -68,12 +33,40 @@ async function tap(page: Page, selector: string) {
   await control.click({ force: true });
 }
 
-/** Answer the current prompt with the first option of the given intent. */
+/**
+ * Select a district by clicking it in the world.
+ *
+ * Returns to the wide view first, because entering a district moves the camera
+ * and every other marker moves with it. The camera is then snapped with the
+ * render hook rather than waited on: under software WebGL this page renders at
+ * a fraction of a frame per second, so a click aimed at where a marker will be
+ * misses where it still is. The click itself is a real click on the canvas.
+ */
+async function clickDistrict(page: Page, districtId: string) {
+  const back = page.locator(".bar__back");
+  if (await back.count()) await back.click({ force: true });
+  await page.evaluate(() => window.__city!.frame("city", 6));
+
+  const point = await page.evaluate((id) => window.__city!.markerPoint(id), districtId);
+  expect(point, `no marker on screen for ${districtId}`).not.toBeNull();
+
+  const view = page.viewportSize()!;
+  const where = `${districtId} at ${JSON.stringify(point)} in ${JSON.stringify(view)}`;
+  expect(point!.x, where).toBeGreaterThan(0);
+  expect(point!.x, where).toBeLessThan(view.width);
+  expect(point!.y, where).toBeGreaterThan(0);
+  expect(point!.y, where).toBeLessThan(view.height);
+
+  await page.mouse.click(point!.x, point!.y);
+  await expect(page.locator(`.dossier[data-district="${districtId}"]`)).toBeVisible();
+}
+
+/** Answer the step in front of you, preferring one of the given intents. */
 async function answerCurrent(page: Page, prefer: string[]) {
-  const answers = page.locator(".prompt__answers .answer");
+  const answers = page.locator(".answers .answer, .fork__options .plate");
   await expect(answers.first()).toBeVisible();
   for (const wanted of prefer) {
-    const button = page.locator(`.prompt__answers .answer[data-answer="${wanted}"]`);
+    const button = page.locator(`[data-answer="${wanted}"]`);
     if (await button.count()) {
       await button.first().click({ force: true });
       return wanted;
@@ -83,78 +76,96 @@ async function answerCurrent(page: Page, prefer: string[]) {
   return (await answers.first().getAttribute("data-answer")) ?? "";
 }
 
-/** Walk a district's activity to the end. */
 async function completeDistrict(page: Page, prefer = ["confirmed", "will-do"]) {
-  // Fail loudly rather than passing quietly: a panel with no prompt in it means
-  // the district was never selected, which is exactly the bug this helper hid.
-  await expect(page.locator(".prompt")).toBeVisible();
+  // Fail loudly rather than passing quietly: no step on screen means the
+  // district was never entered.
+  await expect(page.locator(".act[data-prompt]")).toBeVisible();
   for (let guard = 0; guard < 12; guard++) {
-    if ((await page.locator(".prompt").count()) === 0) return;
+    if ((await page.locator(".act[data-prompt]").count()) === 0) return;
     await answerCurrent(page, prefer);
     await page.waitForTimeout(150);
   }
   throw new Error("activity did not finish");
 }
 
-// ------------------------------------------------------------- orientation
+// ------------------------------------------------------------------- arrive
 
-test("a first visit explains what the city is and whose it is", async ({ page }) => {
-  await open(page, "struggling", { orient: false });
+test("the resting city carries three things and no more", async ({ page }) => {
+  await open(page, "struggling");
 
-  const orient = page.locator(".orient");
-  await expect(orient).toBeVisible();
-  await expect(orient).toContainText("business that deployed this site");
-  await expect(orient).toContainText("nothing you do here operates their business");
-  // The three authorities are named up front.
-  await expect(orient.locator('.prov[data-provenance="observed"]')).toBeVisible();
-  await expect(orient.locator('.prov[data-provenance="reported"]')).toBeVisible();
-  await expect(orient.locator('.prov[data-provenance="local"]')).toBeVisible();
+  // Identity, one control, camera. That is the whole HUD at rest.
+  await expect(page.locator(".seal")).toBeVisible();
+  await expect(page.locator(".bar")).toBeVisible();
+  await expect(page.locator(".camera")).toBeVisible();
+  await expect(page.locator(".dossier")).toHaveCount(0);
+  await expect(page.locator(".sheet")).toHaveCount(0);
 
-  await tap(page, '[data-action="orient-done"]');
-  await expect(orient).toHaveCount(0);
-  // It takes you to the work rather than dumping you back at the wide view.
-  await expect(page.locator(".city-brief")).toBeVisible();
+  // One primary control, named for what it does.
+  const primary = page.locator(".btn--primary");
+  await expect(primary).toHaveCount(1);
+  await expect(primary).toHaveText(/begin round/i);
+
+  // The district list exists once, as the studs, and is not duplicated.
+  await expect(page.locator(".stud")).toHaveCount(3);
+  await expect(page.locator("nav")).toHaveCount(0);
 });
 
-test("orientation is not shown again, and can be reopened", async ({ page }) => {
+test("what this is lives behind About rather than in front of the city", async ({ page }) => {
   await open(page, "struggling");
-  await open(page, "struggling", { orient: false });
-  await expect(page.locator(".orient")).toHaveCount(0);
+  await expect(page.locator(".about")).toHaveCount(0);
 
-  await tap(page, '[data-action="orient"]');
-  await expect(page.locator(".orient")).toBeVisible();
+  await tap(page, '[data-action="about"]');
+  const about = page.locator(".about");
+  await expect(about).toBeVisible();
+  await expect(about).toContainText("business that deployed this site");
+  await expect(about).toContainText("nothing here operates it");
+  await expect(about).toContainText("public and read-only");
+  // All three authorities named once, in one place.
+  await expect(about.locator(".source")).toHaveCount(3);
+
+  await tap(page, '[data-action="about-done"]');
+  await expect(page.locator(".about")).toHaveCount(0);
 });
 
-// ------------------------------------------------------------------ signal
-
-test("the session is named after what the city is showing", async ({ page }) => {
+test("the round is named after what the city is showing", async ({ page }) => {
   await open(page, "struggling");
-  await expect(page.locator(".session__title")).toHaveText(/not adding up|quiet/i);
+  await expect(page.locator(".bar__title")).toHaveText(/not adding up|quiet/i);
 
   await open(page, "thriving");
-  await expect(page.locator(".session__title")).toHaveText(/maintenance/i);
+  await expect(page.locator(".bar__title")).toHaveText(/maintenance/i);
 });
 
-test("business condition and player progress are separate in the queue", async ({ page }) => {
+test("the primary control takes you to the work", async ({ page }) => {
+  await open(page, "struggling");
+  await tap(page, '[data-action="primary"]');
+  await expect(page.locator(".dossier")).toBeVisible();
+  // And the bar becomes the way back out.
+  await expect(page.locator(".bar__back")).toBeVisible();
+  await tap(page, ".bar__back");
+  await expect(page.locator(".dossier")).toHaveCount(0);
+});
+
+// ------------------------------------------------------------------- signal
+
+test("condition and player progress are separate, and only one is loud", async ({ page }) => {
   await open(page, "struggling");
 
-  const item = page.locator('.city-queue__item[data-district="creator-quarter"]');
-  await expect(item).toHaveAttribute("data-condition", "nothing");
-  await expect(item).toHaveAttribute("data-progress", "none");
-  await expect(item.locator(".chip--observed")).toHaveText("Unbuilt");
-  await expect(item.locator(".chip--local")).toHaveCount(0);
+  const stud = page.locator('.stud[data-district="creator-quarter"]');
+  await expect(stud).toHaveAttribute("data-condition", "nothing");
+  await expect(stud).toHaveAttribute("data-progress", "none");
+  await expect(stud).toHaveAttribute("data-tone", "open");
+  await expect(stud).toHaveAccessibleName(/Creator Quarter: Unbuilt/);
 });
 
 test("each condition draws a different thing in the world", async ({ page }) => {
   await open(page, "struggling");
-  // struggling -> hazard sign; dormant -> survey stakes; no overlap.
   const marks = await page.evaluate(() => {
     const markers = window.__city!.scene.getObjectByName("markers")!;
     const out: Record<string, string[]> = {};
     for (const marker of markers.children) {
       const condition = marker.children.find((child) => child.name === "condition");
       const visible: string[] = [];
-      condition?.traverse((child: { visible: boolean; type: string; geometry?: { type: string } }) => {
+      condition?.traverse((child: { visible: boolean; geometry?: { type: string } }) => {
         if (child.visible && child.geometry) visible.push(child.geometry.type);
       });
       out[marker.name] = visible;
@@ -162,90 +173,109 @@ test("each condition draws a different thing in the world", async ({ page }) => 
     return out;
   });
 
-  // Commerce Core reads wrong: a cone (the hazard chevron) is up.
   expect(marks["marker:commerce-core"]).toContain("ConeGeometry");
-  // Creator Quarter was never built on: stakes, and no hazard chevron.
   expect(marks["marker:creator-quarter"]).not.toContain("ConeGeometry");
 });
 
-// ------------------------------------------------------------------- focus
+// ------------------------------------------------------------------- enter
 
-test("clicking the world selects a district and opens its work", async ({ page }) => {
+test("clicking the world enters that district", async ({ page }) => {
   await open(page, "struggling");
-  await page.keyboard.press("Escape");
-  await expect(page.locator(".city-brief")).toHaveCount(0);
-
   await clickDistrict(page, "offer-forge");
-  const panel = page.locator(".city-brief");
-  await expect(panel).toHaveAttribute("data-district", "offer-forge");
-  await expect(panel.locator(".panel__activityTitle")).not.toBeEmpty();
+
+  const dossier = page.locator(".dossier");
+  await expect(dossier.locator(".dossier__name")).toHaveText("Offer Forge");
+  await expect(dossier.locator(".cond")).toBeVisible();
+  await expect(dossier.locator(".act__title")).not.toBeEmpty();
+  // The stud shows where you are, without a second navigation appearing.
+  await expect(page.locator('.stud[data-district="offer-forge"]')).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
-test("the reading says what Whop reported and where City's knowledge stops", async ({ page }) => {
+test("the evidence is one click away, not four lines in front of the work", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
 
-  const reading = page.locator(".panel__reading");
-  await expect(reading.locator(".prov")).toHaveText("From Whop");
-  await expect(reading.locator(".panel__observed")).toContainText("Whop reports");
-  // The state is ambiguous, and the reading says so rather than picking one.
-  await expect(reading.locator(".panel__ambiguity")).toContainText(/either|cannot tell/i);
-  await expect(reading.locator(".panel__limit")).toContainText("does not open your storefront");
+  // The surface carries the condition, in words that do not diagnose.
+  await expect(page.locator(".state .cond")).toHaveText(/Not adding up/);
+  await expect(page.locator(".why__observed")).toBeHidden();
+
+  await tap(page, ".why__summary");
+  await expect(page.locator(".why__observed")).toContainText("Whop reports");
+  // The ambiguity survives the redesign: City still cannot say which it is.
+  await expect(page.locator(".why__ambiguity")).toContainText(/either|cannot tell/i);
+  await expect(page.locator(".why__limit")).toContainText("does not open your storefront");
 });
 
 // -------------------------------------------------------------------- work
 
-test("districts have different mechanics, not the same checklist", async ({ page }) => {
+test("the three activities are composed differently", async ({ page }) => {
   await open(page, "blank");
 
   await clickDistrict(page, "commerce-core");
-  const commerce = await page.locator(".prompt").getAttribute("data-kind");
+  await expect(page.locator(".act")).toHaveAttribute("data-kind", "commit");
+  await expect(page.locator(".resolve")).toBeVisible();
 
-  await clickDistrict(page, "creator-quarter");
-  const quarter = await page.locator(".prompt").getAttribute("data-kind");
+  await clickDistrict(page, "offer-forge");
+  await expect(page.locator(".act")).toHaveAttribute("data-kind", "choice");
+  await expect(page.locator(".fork__options .plate")).toHaveCount(3);
 
-  // A guided commitment in one, a branching question in the other.
-  expect(new Set([commerce, quarter]).size).toBeGreaterThan(1);
+  await open(page, "struggling");
+  await clickDistrict(page, "commerce-core");
+  await expect(page.locator(".act")).toHaveAttribute("data-kind", "check");
+  await expect(page.locator(".ledger")).toBeVisible();
+});
+
+test("a survey collapses what you answered behind you", async ({ page }) => {
+  await open(page, "struggling");
+  await clickDistrict(page, "commerce-core");
+
+  await expect(page.locator(".ledger__row")).toHaveCount(0);
+  await tap(page, '[data-answer="problem"]');
+  // The answered step becomes one line carrying what you said.
+  const row = page.locator(".ledger__row");
+  await expect(row).toHaveCount(1);
+  await expect(row).toHaveAttribute("data-outcome", "flagged");
+  await expect(row).toContainText("Found a problem");
 });
 
 test("a branching answer changes what comes next", async ({ page }) => {
   await open(page, "blank");
   await clickDistrict(page, "offer-forge");
 
-  await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "shape");
-  await tap(page, '.answer[data-answer="ongoing"]');
-  await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "ongoing-term");
+  await expect(page.locator(".act")).toHaveAttribute("data-prompt", "shape");
+  await tap(page, '.plate[data-answer="ongoing"]');
+  await expect(page.locator(".act")).toHaveAttribute("data-prompt", "ongoing-term");
 
-  // Change the branch: the old continuation is gone, not stranded.
   await tap(page, '[data-action="undo"]');
-  await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "shape");
-  await tap(page, '.answer[data-answer="once"]');
-  await expect(page.locator(".prompt")).toHaveAttribute("data-prompt", "once-price");
+  await expect(page.locator(".act")).toHaveAttribute("data-prompt", "shape");
+  await tap(page, '.plate[data-answer="once"]');
+  await expect(page.locator(".act")).toHaveAttribute("data-prompt", "once-price");
 });
 
-test("finding a problem leaves an action behind, and a pass leaves a record", async ({ page }) => {
+test("finding a problem leaves an action, and a pass leaves a record", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
 
-  await tap(page, '.answer[data-answer="problem"]');
-  await expect(page.locator('.planlist__item[data-kind="action"]').first()).toBeVisible();
+  await tap(page, '[data-answer="problem"]');
+  await expect(page.locator('.note[data-kind="action"]').first()).toBeVisible();
 
-  await tap(page, '.answer[data-answer="confirmed"]');
-  await expect(page.locator('.planlist__item[data-kind="clear"]').first()).toBeVisible();
+  await tap(page, '[data-answer="confirmed"]');
+  await expect(page.locator('.note[data-kind="clear"]').first()).toBeVisible();
 });
 
-test("deciding against something is a valid outcome, not a skipped task", async ({ page }) => {
+test("deciding against something is an outcome, not a skipped task", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "creator-quarter");
 
-  await tap(page, '.answer[data-answer="no"]');
+  await tap(page, '.plate[data-answer="no"]');
 
-  await expect(page.locator('[data-testid="district-done"]')).toContainText("deliberately not");
-  const item = page.locator('.city-queue__item[data-district="creator-quarter"]');
-  await expect(item).toHaveAttribute("data-progress", "declined");
-  await expect(item.locator(".chip--local")).toHaveText("You decided against");
-  // And the observed condition is untouched by that decision.
-  await expect(item).toHaveAttribute("data-condition", "nothing");
+  await expect(page.locator(".dossier__aside")).toContainText("Set aside deliberately");
+  const stud = page.locator('.stud[data-district="creator-quarter"]');
+  await expect(stud).toHaveAttribute("data-done", "true");
+  await expect(stud).toHaveAttribute("data-condition", "nothing");
 });
 
 // -------------------------------------------------- progress never overwrites
@@ -255,13 +285,12 @@ test("working a struggling district does not make it look healthy", async ({ pag
   await clickDistrict(page, "commerce-core");
   await completeDistrict(page);
 
-  const item = page.locator('.city-queue__item[data-district="commerce-core"]');
-  // Progress recorded...
-  await expect(item).toHaveAttribute("data-progress", "worked");
-  await expect(item.locator(".chip--local")).toHaveText("You worked here");
-  // ...and the business condition unchanged, in the chip and in the world.
-  await expect(item).toHaveAttribute("data-condition", "mixed");
-  await expect(item.locator(".chip--observed")).toHaveText("Needs attention");
+  const stud = page.locator('.stud[data-district="commerce-core"]');
+  await expect(stud).toHaveAttribute("data-done", "true");
+  // The condition is untouched, in the stud and in its accessible name.
+  await expect(stud).toHaveAttribute("data-condition", "mixed");
+  await expect(stud).toHaveAttribute("data-tone", "alert");
+  await expect(stud).toHaveAccessibleName(/Not adding up/);
 
   const stillHazard = await page.evaluate(() => {
     const marker = window.__city!.scene.getObjectByName("marker:commerce-core")!;
@@ -288,59 +317,77 @@ test("finishing every district opens a plan you can take away", async ({ page })
   const plan = page.locator('[data-testid="plan"]');
   await expect(plan).toBeVisible();
   await expect(plan).toContainText("Nothing about the business changed because of it");
-  await expect(plan.locator(".planblock")).not.toHaveCount(0);
+  await expect(plan.locator(".entry")).toHaveCount(3);
+  // Each entry keeps the two authorities apart: Whop's condition, your items.
+  await expect(plan.locator(".entry").first().locator(".cond")).toBeVisible();
   await expect(plan.locator('[data-testid="rounds"]')).toHaveText("1");
-  await expect(plan).toContainText("Not sent to Whop");
+  await expect(plan).toContainText("not sent to Whop");
+  await expect(plan.locator('[data-action="copy-plan"]')).toBeVisible();
 });
 
-test("progress survives a reload and undo puts it back", async ({ page }) => {
+test("progress survives a reload and starting over clears it", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
-  await tap(page, '.answer[data-answer="problem"]');
-  const before = await page.locator(".planlist__item").count();
-  expect(before).toBe(1);
+  await tap(page, '[data-answer="problem"]');
+  await expect(page.locator(".note")).toHaveCount(1);
 
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
-  await expect(page.locator(".planlist__item")).toHaveCount(1);
+  await expect(page.locator(".note")).toHaveCount(1);
 
   await tap(page, '[data-action="restart"]');
-  await expect(page.locator(".planlist__item")).toHaveCount(0);
+  await expect(page.locator(".note")).toHaveCount(0);
 });
 
 test("a changed reading is surfaced without claiming the work caused it", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
-  await tap(page, '.answer[data-answer="confirmed"]');
+  await tap(page, '[data-answer="confirmed"]');
 
   await open(page, "thriving");
   await clickDistrict(page, "commerce-core");
 
-  const changed = page.locator(".panel__changed");
+  const changed = page.locator(".state__changed");
   await expect(changed).toBeVisible();
-  await expect(changed).toContainText("cannot tell you what changed or why");
-  await expect(page.locator('.city-queue__item[data-district="commerce-core"]')).toHaveAttribute(
+  await expect(changed).toContainText("cannot say what changed, or why");
+  await expect(page.locator('.stud[data-district="commerce-core"]')).toHaveAttribute(
     "data-progress",
     "changed",
   );
 });
 
+test("a brand new business gets a different journey from an established one", async ({ page }) => {
+  await open(page, "blank");
+  await expect(page.locator(".bar__title")).toHaveText(/build/i);
+  await clickDistrict(page, "commerce-core");
+  await expect(page.locator(".state .cond")).toHaveText(/Unbuilt/);
+  await expect(page.locator(".act")).toHaveAttribute("data-kind", "commit");
+
+  await open(page, "thriving");
+  await expect(page.locator(".bar__title")).toHaveText(/maintenance/i);
+  await clickDistrict(page, "commerce-core");
+  await expect(page.locator(".state .cond")).toHaveText(/Steady/);
+  await expect(page.locator(".act")).toHaveAttribute("data-kind", "check");
+});
+
 // ---------------------------------------------------------------- keyboard
 
-test("the loop is operable from the keyboard", async ({ page }) => {
+test("the round is operable from the keyboard", async ({ page }) => {
   await open(page, "struggling");
 
   await page.keyboard.press("2");
-  await expect(page.locator(".city-brief")).toHaveAttribute("data-district", "offer-forge");
+  await expect(page.locator(".dossier")).toHaveAttribute("data-district", "offer-forge");
   await page.keyboard.press("Escape");
-  await expect(page.locator(".city-brief")).toHaveCount(0);
+  await expect(page.locator(".dossier")).toHaveCount(0);
   await page.keyboard.press("f");
-  await expect(page.locator(".city-brief")).toBeVisible();
+  await expect(page.locator(".dossier")).toBeVisible();
   await page.keyboard.press("p");
   await expect(page.locator('[data-testid="plan"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator('[data-testid="plan"]')).toHaveCount(0);
 });
 
-test("every control has an accessible name", async ({ page }) => {
+test("every control has an accessible name and a comfortable target", async ({ page }) => {
   await open(page, "struggling");
   await clickDistrict(page, "commerce-core");
 
@@ -351,6 +398,9 @@ test("every control has an accessible name", async ({ page }) => {
     const control = controls.nth(i);
     const label = ((await control.getAttribute("aria-label")) ?? (await control.innerText())).trim();
     expect(label, `button ${i} has no accessible name`).not.toBe("");
+    const box = await control.boundingBox();
+    // Subtle must not mean tiny. The camera cluster is the smallest thing here.
+    if (box) expect(box.height, `button "${label}" is ${box.height}px tall`).toBeGreaterThanOrEqual(24);
   }
 });
 
@@ -359,16 +409,16 @@ test("every control has an accessible name", async ({ page }) => {
 test("an unreadable city proposes no work at all", async ({ page }) => {
   await open(page, "unavailable");
 
-  await expect(page.locator(".session__title")).toHaveText(/nothing to work on/i);
+  await expect(page.locator(".bar__title")).toHaveText(/nothing to work on/i);
   await clickDistrict(page, "commerce-core");
-  await expect(page.locator(".panel__blocked")).toContainText("invented from nothing");
-  await expect(page.locator(".prompt")).toHaveCount(0);
-  await expect(page.locator(".city-progress")).toHaveCount(0);
+  await expect(page.locator(".state .cond")).toHaveText(/No reading/);
+  await expect(page.locator(".act--blocked")).toContainText("invented from nothing");
+  await expect(page.locator(".act[data-prompt]")).toHaveCount(0);
 });
 
 // -------------------------------------------------------------- no WebGL
 
-test("the whole session runs without WebGL", async ({ page }) => {
+test("the whole round runs without WebGL", async ({ page }) => {
   await page.addInitScript(() => {
     const original = HTMLCanvasElement.prototype.getContext;
     HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, type: string, ...rest: unknown[]) {
@@ -378,46 +428,42 @@ test("the whole session runs without WebGL", async ({ page }) => {
   });
 
   await page.goto("/?scenario=struggling", { waitUntil: "load" });
-  const go = page.locator('[data-action="orient-done"]');
-  await expect(go).toBeVisible({ timeout: 60_000 });
-  await go.click({ force: true });
-
   const fallback = page.locator("[data-testid=city-fallback]");
-  await expect(fallback).toBeVisible();
+  await expect(fallback).toBeVisible({ timeout: 60_000 });
   await expect(fallback).toContainText("could not start WebGL");
+  // The same vocabulary, without the world to draw it.
+  await expect(fallback.locator(".cond").first()).toBeVisible();
 
-  const head = page.locator('.city-flat__head[data-district-open="commerce-core"]');
-  // Orientation lands on the most pressing district, which may be this one.
+  const head = page.locator('.flat__head[data-district-open="commerce-core"]');
   if ((await head.getAttribute("aria-expanded")) !== "true") await head.click({ force: true });
-  await expect(page.locator(".city-flat__prompt")).toBeVisible();
-  await tap(page, '.city-flat__prompt .answer[data-answer="problem"]');
-  await expect(page.locator(".planlist__item")).not.toHaveCount(0);
+  await expect(page.locator(".flat__prompt")).toBeVisible();
+  await tap(page, '.flat__prompt [data-answer="problem"]');
+  await expect(page.locator(".note")).not.toHaveCount(0);
 });
 
 // ------------------------------------------------------------ small screens
 
-test("the session works on a narrow viewport", async ({ page }) => {
-  await page.setViewportSize({ width: 420, height: 780 });
+test("a phone keeps the city visible instead of being all panel", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 780 });
   await open(page, "struggling");
 
-  await expect(page.locator(".city-queue")).toBeVisible();
-  await tap(page, '.city-queue__item[data-district="commerce-core"]');
-  await expect(page.locator(".city-brief")).toBeVisible();
-  await tap(page, '.answer[data-answer="problem"]');
-  await expect(page.locator(".planlist__item").first()).toBeVisible();
-});
+  // The canvas fills the window rather than letterboxing into black bars.
+  const canvas = await page.locator("canvas").boundingBox();
+  expect(canvas!.height).toBeGreaterThan(700);
 
-test("a brand new business gets a different journey from an established one", async ({ page }) => {
-  await open(page, "blank");
-  // Nothing exists yet, so the session is about deciding what goes here rather
-  // than about finding a fault.
-  await expect(page.locator(".session__title")).toHaveText(/build/i);
-  await clickDistrict(page, "commerce-core");
-  await expect(page.locator(".panel__observed")).toContainText("no products");
-  await expect(page.locator(".prompt")).toHaveAttribute("data-kind", "commit");
+  await expect(page.locator(".bar")).toBeVisible();
+  await tap(page, '.stud[data-district="commerce-core"]');
+  const dossier = page.locator(".dossier");
+  await expect(dossier).toBeVisible();
 
-  await open(page, "thriving");
-  await expect(page.locator(".session__title")).toHaveText(/maintenance/i);
-  await clickDistrict(page, "commerce-core");
-  await expect(page.locator(".prompt")).toHaveAttribute("data-kind", "check");
+  // The sheet takes the lower part; the city keeps the top.
+  const box = (await dossier.boundingBox())!;
+  expect(box.y, "the sheet covers the whole phone").toBeGreaterThan(200);
+
+  // And the bar stays reachable above it.
+  const bar = (await page.locator(".bar").boundingBox())!;
+  expect(bar.y + bar.height).toBeLessThanOrEqual(780);
+
+  await tap(page, '[data-answer="problem"]');
+  await expect(page.locator(".note").first()).toBeVisible();
 });

@@ -22,8 +22,8 @@
     "aliasing-check": "node capture/aliasing-check.mjs",
     "test:browser": "playwright test",
     "build:fixtures": "vite build --mode fixtures",
-    "test:browser:production": "playwright test tests/browser/data-safety.spec.ts tests/browser/production-build.spec.ts",
-    "test:browser:fixtures": "playwright test tests/browser/world.spec.ts tests/browser/shell.spec.ts",
+    "test:browser:production": "pnpm build && playwright test tests/browser/data-safety.spec.ts tests/browser/production-build.spec.ts",
+    "test:browser:fixtures": "pnpm build:fixtures && playwright test tests/browser/world.spec.ts tests/browser/shell.spec.ts tests/browser/operator.spec.ts",
     "capture:loop": "node capture/operator-loop.mjs",
     "capture:play": "node capture/playthrough.mjs"
   },

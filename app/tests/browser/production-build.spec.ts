@@ -103,15 +103,13 @@ test("the rendered city is the unavailable one, and still safe", async ({ page }
   expect(info.parcels).toBeGreaterThan(0);
   expect(info.drawCalls).toBeGreaterThan(0);
 
-  await expect(page.locator(".city-crest__state")).toHaveAttribute("data-freshness", "unavailable");
+  await expect(page.locator(".seal__state")).toHaveAttribute("data-freshness", "unavailable");
 
-  const orient = page.locator('[data-action="orient-done"]');
-  if (await orient.count()) await orient.click();
-
-  await page.click('.city-jump button[data-district="commerce-core"]');
-  await expect(page.locator(".city-brief")).toHaveAttribute("data-condition", "unread");
+  await page.locator('.stud[data-district="commerce-core"]').click({ force: true });
+  await expect(page.locator(".dossier")).toBeVisible();
+  await expect(page.locator(".state .cond")).toHaveText(/No reading/);
   // An unreadable city offers no work: work proposed from a failed reading
   // would be work invented from nothing.
-  await expect(page.locator(".prompt")).toHaveCount(0);
-  await expect(page.locator(".panel__blocked")).toContainText("invented from nothing");
+  await expect(page.locator(".act[data-prompt]")).toHaveCount(0);
+  await expect(page.locator(".act--blocked")).toContainText("invented from nothing");
 });
