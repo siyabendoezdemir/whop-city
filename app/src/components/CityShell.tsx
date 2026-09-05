@@ -541,7 +541,18 @@ export function CityShell() {
           onClick={() => setZoom((z) => Math.max(ZOOM_MIN, z - ZOOM_STEP))}>+</button>
         <button type="button" data-cam="out" aria-label="Zoom out"
           onClick={() => setZoom((z) => Math.min(ZOOM_MAX, z + ZOOM_STEP))}>−</button>
-        <button type="button" data-cam="reset" aria-label="Reset view" onClick={() => setZoom(1)}>⌂</button>
+        <button
+          type="button"
+          data-cam="reset"
+          aria-label="Back to the whole city"
+          onClick={() => {
+            // Also leaves free-look: the home button is how you get un-lost.
+            setZoom(1);
+            select("city");
+          }}
+        >
+          ⌂
+        </button>
       </div>
 
       {game && cityReading ? <Resources credits={game.credits} reading={cityReading} /> : null}

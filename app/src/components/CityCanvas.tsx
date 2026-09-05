@@ -51,6 +51,17 @@ function ease(t: number): number {
 }
 
 /** How fast the camera settles on a new framing, in inverse seconds. */
+/**
+ * How far the camera may roam.
+ *
+ * The world is an island. These are its shoulders, so a player who flings the
+ * camera never ends up staring at empty water wondering where the city went.
+ */
+const PAN_BOUNDS = { minX: -90, maxX: 90, minZ: -100, maxZ: 60 };
+/** Zoom stops. Close enough to read a shopfront, wide enough to see the island. */
+const MIN_FRUSTUM = 34;
+const MAX_FRUSTUM = 150;
+
 const GLIDE_RATE = 3.2;
 
 /**
@@ -153,15 +164,91 @@ export function CityCanvas({
       held.height = initial.height * viewRef.current.zoom;
     }
 
+    /**
+     * Where the camera is going.
+     *
+     * Two ways to set it. Picking a district sets a framing and the camera
+     * flies there; dragging or scrolling sets this directly and takes over,
+     * because a city you cannot move around is a diorama, not a game. Whoever
+     * moved it last wins, and the glide eases toward it either way so both
+     * feel like the same camera.
+     */
+    const want = { focus: held.focus.clone(), height: held.height, free: false };
+
+    let lastZoom = viewRef.current.zoom;
+    let lastFraming: string = viewRef.current.framing;
+
     const glide = (dt: number) => {
       const { framing: key, zoom: bias } = viewRef.current;
-      const target = framingFor(key);
+
+      // Choosing a district takes the camera back: you asked to go somewhere,
+      // so it flies there even if you had dragged away.
+      if (key !== lastFraming) {
+        lastFraming = key;
+        want.free = false;
+      }
+      // The zoom buttons drive the same camera the wheel does, so they keep
+      // working after a drag instead of quietly doing nothing.
+      if (bias !== lastZoom) {
+        if (want.free) {
+          want.height = THREE.MathUtils.clamp((want.height * bias) / lastZoom, MIN_FRUSTUM, MAX_FRUSTUM);
+        }
+        lastZoom = bias;
+      }
+
+      if (!want.free) {
+        const target = framingFor(key);
+        want.focus.set(...target.focus);
+        want.height = target.height * bias;
+      }
       // Exponential approach, framerate-independent. Roughly nine tenths of the
       // way there in three quarters of a second.
       const k = 1 - Math.exp(-dt * GLIDE_RATE);
-      held.focus.lerp(new THREE.Vector3(...target.focus), k);
-      held.height += (target.height * bias - held.height) * k;
+      held.focus.lerp(want.focus, k);
+      held.height += (want.height - held.height) * k;
       stage.frame(held.focus, held.height);
+    };
+
+    // ------------------------------------------------------- flying around
+    // The camera looks down the 45 degrees the art was composed at and never
+    // rotates, so dragging is two fixed directions on the ground: screen right
+    // is one, screen up is the other. Clash of Clans does the same — the angle
+    // is the art, the position is the player's.
+    const groundRight = new THREE.Vector3(
+      Math.cos(THREE.MathUtils.degToRad(45)),
+      0,
+      -Math.sin(THREE.MathUtils.degToRad(45)),
+    ).normalize();
+    const groundUp = new THREE.Vector3(-groundRight.z, 0, groundRight.x).normalize();
+
+    /** Keep the city on screen: you may roam the promontory, not the void. */
+    const clampFocus = (focus: THREE.Vector3) => {
+      focus.x = THREE.MathUtils.clamp(focus.x, PAN_BOUNDS.minX, PAN_BOUNDS.maxX);
+      focus.z = THREE.MathUtils.clamp(focus.z, PAN_BOUNDS.minZ, PAN_BOUNDS.maxZ);
+      return focus;
+    };
+
+    const takeOver = () => {
+      if (want.free) return;
+      // Start from where the camera actually is, so grabbing it mid-flight
+      // does not snap.
+      want.focus.copy(held.focus);
+      want.height = held.height;
+      want.free = true;
+    };
+
+    const panBy = (dxPixels: number, dyPixels: number) => {
+      takeOver();
+      // One screen pixel is this many world units at the current zoom.
+      const perPixel = held.height / Math.max(1, stage.renderer.domElement.clientHeight);
+      want.focus.addScaledVector(groundRight, -dxPixels * perPixel);
+      want.focus.addScaledVector(groundUp, dyPixels * perPixel);
+      clampFocus(want.focus);
+    };
+
+    const zoomBy = (factor: number) => {
+      takeOver();
+      want.height = THREE.MathUtils.clamp(want.height * factor, MIN_FRUSTUM, MAX_FRUSTUM);
     };
 
     /**
@@ -236,28 +323,86 @@ export function CityCanvas({
       return typeof districtId === "string" ? (districtId as DistrictId) : null;
     };
 
+    // Pointers currently down, so one finger can drag and two can pinch.
+    const down = new Map<number, { x: number; y: number }>();
+    let pinchGap = 0;
+    let dragged = 0;
+
+    const canvas = stage.renderer.domElement;
+
     const onPointerDown = (event: PointerEvent) => {
-      pressedAt = { x: event.clientX, y: event.clientY };
+      down.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (down.size === 1) {
+        pressedAt = { x: event.clientX, y: event.clientY };
+        dragged = 0;
+        canvas.setPointerCapture(event.pointerId);
+        canvas.style.cursor = "grabbing";
+      } else if (down.size === 2) {
+        const [a, b] = [...down.values()];
+        pinchGap = Math.hypot(a.x - b.x, a.y - b.y);
+      }
     };
 
     const onPointerUp = (event: PointerEvent) => {
-      // Ignore drags: a click that travelled is someone moving the page, not
-      // someone choosing a district.
+      const wasDragging = dragged;
+      down.delete(event.pointerId);
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      canvas.style.cursor = "grab";
+
+      // A click that travelled was someone moving the city, not choosing
+      // something in it.
       const start = pressedAt;
       pressedAt = null;
-      if (!start) return;
+      if (!start || down.size > 0) return;
+      if (wasDragging > 6) return;
       if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
       const districtId = pick(event);
       if (districtId) selectRef.current(districtId);
     };
 
     const onPointerMove = (event: PointerEvent) => {
-      stage.renderer.domElement.style.cursor = pick(event) ? "pointer" : "default";
+      const previous = down.get(event.pointerId);
+
+      if (previous && down.size === 2) {
+        // Pinch: the gap between the two fingers is the zoom.
+        down.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const [a, b] = [...down.values()];
+        const gap = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinchGap > 0 && gap > 0) zoomBy(pinchGap / gap);
+        pinchGap = gap;
+        dragged += 10;
+        return;
+      }
+
+      if (previous) {
+        const dx = event.clientX - previous.x;
+        const dy = event.clientY - previous.y;
+        down.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        dragged += Math.hypot(dx, dy);
+        // A small wobble on the way to a click should not move the city.
+        if (dragged > 4) panBy(dx, dy);
+        return;
+      }
+
+      canvas.style.cursor = pick(event) ? "pointer" : "grab";
     };
 
-    stage.renderer.domElement.addEventListener("pointerdown", onPointerDown);
-    stage.renderer.domElement.addEventListener("pointerup", onPointerUp);
-    stage.renderer.domElement.addEventListener("pointermove", onPointerMove);
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      // Trackpads report small pixel deltas and mice report large ones, so the
+      // step is capped rather than proportional — otherwise one mouse notch
+      // crosses the whole zoom range.
+      const step = Math.sign(event.deltaY) * Math.min(0.16, Math.abs(event.deltaY) / 600);
+      zoomBy(1 + step);
+    };
+
+    canvas.style.cursor = "grab";
+    canvas.style.touchAction = "none";
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
 
     window.addEventListener("resize", fit);
     fit();
@@ -422,9 +567,11 @@ export function CityCanvas({
 
     return () => {
       cancelAnimationFrame(raf);
-      stage.renderer.domElement.removeEventListener("pointerdown", onPointerDown);
-      stage.renderer.domElement.removeEventListener("pointerup", onPointerUp);
-      stage.renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", fit);
       delete (window as { __city?: unknown }).__city;
       if (markersRef.current) {
