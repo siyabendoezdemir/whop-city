@@ -72,6 +72,7 @@ body,
      scrollIntoView, or an on-screen keyboard — slides the entire interface off
      the world. Panels scroll their own contents instead. */
   overflow: hidden;
+  overflow: clip;
   overscroll-behavior: none;
 }
 
@@ -102,7 +103,13 @@ kbd {
   position: relative;
   width: 100%;
   height: 100%;
+  /* `clip` rather than `hidden`, deliberately. `hidden` still creates a scroll
+     container, and the browser will quietly scroll one to reveal a focused
+     field — which slid the seal off the top of a phone when the note was
+     tapped. `clip` creates no scroll container at all, so there is nothing to
+     scroll. `hidden` stays as the fallback for browsers without it. */
   overflow: hidden;
+  overflow: clip;
 }
 
 .city canvas {
