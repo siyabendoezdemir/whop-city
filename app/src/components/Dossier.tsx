@@ -119,10 +119,17 @@ export function Dossier({ work, onAnswer, onReopen, onNote, onUndoLast, onRestar
             value={draft}
             onChange={(event) => setDraft(event.target.value.slice(0, NOTE_LIMIT))}
             onBlur={() => onNote(draft)}
-            // On a phone the keyboard covers the lower half; bring the field
-            // above it rather than leaving the operator typing blind.
+            // On a phone the keyboard covers the lower half, so the field is
+            // brought up the sheet. Scrolling the sheet itself, not the field
+            // into view: scrollIntoView walks up to the document and slides the
+            // whole fixed interface off the world.
             onFocus={() =>
-              window.setTimeout(() => field.current?.scrollIntoView({ block: "center" }), 250)
+              window.setTimeout(() => {
+                const input = field.current;
+                const sheet = input?.closest<HTMLElement>(".dossier");
+                if (!input || !sheet) return;
+                sheet.scrollTo({ top: input.offsetTop - 72, behavior: "smooth" });
+              }, 250)
             }
           />
           <p className="jot__where">

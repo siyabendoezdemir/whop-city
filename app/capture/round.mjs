@@ -96,6 +96,16 @@ async function answer(page, prefer) {
   await answer(page, ["problem"]);
   await beat(page, "ui-5-survey", "a survey: the answered step collapses, carrying what you said");
 
+  await page.fill(
+    '[data-testid="note"]',
+    "Support said two products went hidden after the migration. Check both before Friday's sale.",
+  );
+  await page.locator('[data-testid="note"]').blur();
+  await page.waitForTimeout(250);
+  await page.evaluate(() => (document.querySelector(".dossier").scrollTop = 420));
+  await beat(page, "ui-5b-note", "the operator's own line, kept in this browser and added to the plan");
+  await page.evaluate(() => (document.querySelector(".dossier").scrollTop = 0));
+
   await answer(page, ["confirmed"]);
   await answer(page, ["confirmed"]);
   await answer(page, ["problem"]);
@@ -135,6 +145,19 @@ async function answer(page, prefer) {
   await page.waitForTimeout(300);
   await beat(page, "ui-11-plan", "FIXTURE thriving: the round's deliverable, observed and reported apart");
 
+  // Filing keeps the round; it is not the same act as throwing it away.
+  await tap(page, '[data-action="new-round"]');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.__city.frame("city", 6));
+  await beat(page, "ui-11b-newround", "filed, and a fresh round open — the finished one is kept");
+
+  await page.keyboard.press("p");
+  await page.waitForTimeout(200);
+  await tap(page, ".filed__summary");
+  await page.waitForTimeout(200);
+  await beat(page, "ui-11c-filed", "earlier rounds, still copyable and downloadable");
+  await tap(page, '[data-action="close-plan"]');
+
   await page.goto(`${APP_URL}/?capture=1&ss=${SS}&scenario=struggling`, { waitUntil: "load" });
   await page.waitForFunction(() => (window.__city?.info().parcels ?? 0) > 0, null, { timeout: 60_000 });
   await enter(page, "commerce-core");
@@ -163,6 +186,17 @@ async function answer(page, prefer) {
   await page.waitForSelector(".dossier");
   await page.evaluate(() => window.__city.frame("commerce-core", 6));
   await beat(page, "ui-15-phone-district", "the sheet takes the lower part; the city keeps the top", {
+    inFilm: false,
+  });
+
+  await tap(page, '[data-answer="problem"]');
+  await page.fill('[data-testid="note"]', "Two hidden after the migration — check both before Friday.");
+  await page.locator('[data-testid="note"]').blur();
+  await page.evaluate(() => {
+    const sheet = document.querySelector(".dossier");
+    sheet.scrollTop = sheet.scrollHeight;
+  });
+  await beat(page, "ui-16-phone-note", "typing on a phone, with the last line clear of the bar", {
     inFilm: false,
   });
   await page.close();

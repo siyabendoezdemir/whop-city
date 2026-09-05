@@ -60,7 +60,9 @@ export function CommandBar({ session, selected, onSelect, onBack, onPrimary, pla
         </div>
       )}
 
-      {!selected && total > 0 ? (
+      {/* One action at a time. With the plan open the way out is the way back,
+          and a second primary beside it just asks the same question twice. */}
+      {!selected && !planOpen && total > 0 ? (
         <button type="button" className="btn btn--primary bar__go" data-action="primary" onClick={onPrimary}>
           {primaryVerb(started, session.complete)}
         </button>

@@ -616,7 +616,20 @@ test("a phone can reach the bottom of a district and type in it", async ({ page 
   await tap(page, '[data-answer="problem"]');
 
   const note = page.locator('[data-testid="note"]');
+  await note.focus();
   await note.fill("a reminder");
+  await page.waitForTimeout(600);
+
+  // Focusing the field must never scroll the document: everything is
+  // positioned against the viewport, so a stray scroll slides the whole
+  // interface off the world.
+  const scrolled = await page.evaluate(() => ({
+    doc: document.documentElement.scrollTop + document.body.scrollTop,
+    sealVisible: document.querySelector(".seal")!.getBoundingClientRect().top >= 0,
+  }));
+  expect(scrolled.doc, "focusing the note scrolled the document").toBe(0);
+  expect(scrolled.sealVisible).toBe(true);
+
   await note.blur();
 
   // The last line of the sheet must clear the pinned bar rather than sit under it.

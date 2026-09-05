@@ -67,6 +67,12 @@ body,
   height: 100%;
   margin: 0;
   background: #05080e;
+  /* The whole product is one fixed viewport. Nothing may scroll the document:
+     everything here is positioned against it, so a stray scroll — from
+     scrollIntoView, or an on-screen keyboard — slides the entire interface off
+     the world. Panels scroll their own contents instead. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
