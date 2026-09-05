@@ -126,7 +126,18 @@ test("only the safe projection reaches the client", async ({ page }) => {
   expect(snapshot, "no snapshot response observed").toBeTruthy();
 
   const body = JSON.parse(snapshot!.body);
-  expect(Object.keys(body).sort()).toEqual(["districts", "freshness", "schema", "seed"]);
+  expect(Object.keys(body).sort()).toEqual([
+    "districts",
+    "freshness",
+    "metrics",
+    "schema",
+    "seed",
+  ]);
+  // An unauthenticated caller is not the owner, so every figure is zeroed and
+  // says so. The real ones need a token Whop signed for this app and an admin
+  // check against this very business — see `server/viewer.ts`.
+  expect(body.metrics.source).toBe("withheld");
+  expect(Object.values(body.metrics).filter((v) => typeof v === "number")).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
   expect(body.schema).toBe("whop-city.public.v2");
 
   for (const district of body.districts) {
@@ -193,12 +204,15 @@ test("a caller cannot steer the endpoint anywhere", async ({ request, baseURL })
 
   const traversed = await request.get(`${baseURL}/api/city/../city/snapshot`);
   expect(traversed.status()).toBe(200);
-  expect(Object.keys(await traversed.json()).sort()).toEqual([
+  const normalised = await traversed.json();
+  expect(Object.keys(normalised).sort()).toEqual([
     "districts",
     "freshness",
+    "metrics",
     "schema",
     "seed",
   ]);
+  expect(normalised.metrics.source).toBe("withheld");
 });
 
 // ---------------------------------------------------------------------------

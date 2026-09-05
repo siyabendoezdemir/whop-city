@@ -29,6 +29,7 @@ import { fixtureSnapshot, fixtureStats } from "./fixtures";
 import { DEFAULT_SCENARIO, resolveScenario } from "./scenarios";
 import { toPublicProjection, type Audience } from "./project";
 import { readStats } from "./stats";
+import { audienceFor } from "./viewer";
 import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
 import { captureSnapshot } from "./snapshot";
 import { withSingleFlight } from "./snapshotCache";
@@ -186,9 +187,15 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
     const scenario =
       source === "fixture" ? resolveScenario(new URL(request.url).searchParams.get("scenario")) : null;
 
+    // Who is asking decides whether the figures cross. Public unless Whop
+    // vouches for an admin of this very business.
+    const audience = await audienceFor(request, env);
+
     const projection = await withSingleFlight(
-      `${deploymentKey(env, source)}|${scenario ?? ""}`,
-      () => buildProjection(env, scenario),
+      // The audience is part of the key: an owner's city and a visitor's city
+      // are different documents and must never share a cache entry.
+      `${deploymentKey(env, source)}|${scenario ?? ""}|${audience}`,
+      () => buildProjection(env, scenario, audience),
       // An unavailable city is a failure with a face on it. Keeping it for the
       // window would pin a transient upstream problem in place; the next
       // request retries, while callers already waiting share this attempt.

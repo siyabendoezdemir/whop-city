@@ -103,13 +103,14 @@ test("the rendered city is the unavailable one, and still safe", async ({ page }
   expect(info.parcels).toBeGreaterThan(0);
   expect(info.drawCalls).toBeGreaterThan(0);
 
-  await expect(page.locator(".seal__state")).toHaveAttribute("data-freshness", "unavailable");
+  // Nobody has proved they run this business, so every figure reads zero and
+  // the interface says why rather than pretending the business is empty.
+  await expect(page.locator(".public-note")).toContainText("public view");
+  for (const resource of ["gold", "citizens", "traffic", "recurring"]) {
+    await expect(page.locator(`[data-testid="res-${resource}"]`)).toHaveText(/^\$?0$/);
+  }
 
-  await page.locator('.stud[data-district="commerce-core"]').click({ force: true });
-  await expect(page.locator(".dossier")).toBeVisible();
-  await expect(page.locator(".state .cond")).toHaveText(/No reading/);
-  // An unreadable city offers no work: work proposed from a failed reading
-  // would be work invented from nothing.
-  await expect(page.locator(".act[data-prompt]")).toHaveCount(0);
-  await expect(page.locator(".act--blocked")).toContainText("invented from nothing");
+  // With nothing earned there is nothing to claim: no upgrade is on offer.
+  await expect(page.locator(".ready")).toHaveCount(0);
+  await expect(page.locator(".nudge")).toBeVisible();
 });
