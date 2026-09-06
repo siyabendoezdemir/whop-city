@@ -392,7 +392,11 @@ that one attempt.
 
 ## Deploying
 
-Not done yet, and not to be done without explicit approval.
+**This build is not deployed, and is not to be deployed without explicit
+approval.** An earlier build of City has been promoted to
+`https://city-spike.whop.site` and run against a live business, which is where
+the hosted-runtime facts in `docs/website-auth-spike.md` come from; nothing on
+this branch has been.
 
 ```bash
 pnpm build            # produces dist/whop-build.zip
@@ -582,9 +586,17 @@ flag denies the browser its fast swap path.
 No write path of any kind, no generic API proxy, no leaderboard, no manual claim
 of anything the figures do not support, and no deployment.
 
-Two things are implemented but unverified against anything live. The
-multi-business profile menu has only been exercised against fixtures, so the
-claim that a second Whop is listed and correctly marked unreadable has not been
-checked against a real account that runs two. And nothing here has run on a
-hosted Website, so what the runtime actually injects — and therefore whether the
-API origin can be pinned to one literal — is still unobserved.
+Three things are implemented but unverified against anything live, and should
+be read as such:
+
+- **The multi-business profile menu.** Exercised against fixtures only. That a
+  second Whop is listed, and correctly marked unreadable, has not been checked
+  against a real account that runs two.
+- **`GET /api/v1/accounts` with a visitor's own OAuth token.** The call that
+  produces that list is documented as returning "the user's business accounts"
+  for a user token, and is made with the proxy's key injection turned off, but
+  it has not been observed answering. A deployment whose app was never granted
+  a scope that reaches it gets an empty list, and the menu then shows the one
+  business the city is bound to — a smaller answer rather than a wrong one.
+- **`account_id`-scoped stats reads.** Correct by the API reference; only
+  exercised here against fixtures.
