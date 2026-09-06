@@ -501,15 +501,30 @@ every framing and zoom on the fly path.
 
 ### Budgets
 
-Measured across the fixture scenarios, worst case:
+Measured by `pnpm bench` on the largest fixture, against the budget
+`tests/browser/world.spec.ts` enforces:
 
 | | measured | budget |
 | --- | --- | --- |
-| draw calls | 142 | 220 |
-| triangles | ~205,000 | 250,000 |
+| draw calls | 153 | 220 |
+| triangles | 202,822 | 250,000 |
 
 The same spec asserts the budget on every scenario, and that cycling through all
 of them and back leaks no textures or geometries.
+
+A level change costs the lot rebuild rather than a world rebuild, which is what
+splitting the two halves bought:
+
+| | |
+| --- | --- |
+| terrain, built once per page | 38 ms |
+| lots, every plot at level five | 218 ms |
+| lots, every plot vacant | 7 ms |
+
+Those are software-rendering numbers on a shared machine with no GPU, and the
+first version of the lot rebuild was 414 ms. Cached geometry prototypes, the two
+per-vertex bake passes rewritten over raw arrays, and banded glazing above six
+storeys instead of a thousand punched openings account for the difference.
 
 ## The interface
 
@@ -545,7 +560,7 @@ city and a card side by side, not what the device calls itself.
 
 ```bash
 pnpm typecheck
-pnpm test                     # 202 unit tests: the boundary, the routes, the game
+pnpm test                     # 193 unit tests: the boundary, the routes, the game
 pnpm test:browser:fixtures    # 16 tests: the world and the game, on a fixtures build
 pnpm test:browser:production  # 17 tests: data safety and the bundle, on a deployable build
 pnpm build
@@ -558,36 +573,58 @@ positions and canvas pixels across scenarios, because a static city would pass a
 suite that only read panel text; the production suite watches the wire and greps
 the deployable bundle. `CITY_URL` points them elsewhere.
 
-Three capture scripts drive the running dev server:
+Five capture scripts drive a running server:
 
 ```bash
 node capture/shot.mjs <name> [scenario]   # one still
 node capture/play.mjs [scenario]          # walks the loop, a still per step
-node capture/bench.mjs                    # terrain and lot rebuild timings, as JSON
+node capture/walkthrough.mjs [outDir]     # the evidence set, one still per state
+pnpm bench                                # rebuild, submit and present timings, as JSON
+pnpm bench:drag [outDir]                  # how far the ground moves for how far the hand does
 ```
 
-All three drive Playwright's bundled Chromium under SwiftShader and pin
+All of them drive Playwright's bundled Chromium under SwiftShader and pin
 supersampling to 1 through the page's own `ss=` query. `CITY_BASE` points them
 at another server; `CITY_OUT` moves the stills, which otherwise land in
-`artifacts/`.
+`artifacts/`. `CITY_STILL=1` asks for reduced motion, which is how a still
+capture skips the founding sweep rather than waiting it out.
+
+`pnpm capture:demo` is the odd one: it drives a *headed* browser on the machine's
+own display so a screen recorder captures the real application, and injects a
+visible dot to stand in for the cursor, because X11 capture does not record the
+pointer. It stages the city, writes `/tmp/demo-ready`, and waits for
+`/tmp/demo-go` before playing, so the recorder can be started after the setup.
 
 ### Why capture is slow without a GPU
 
-Rendering a frame of this city costs about six milliseconds under software
-WebGL. *Presenting* one costs seven to fourteen seconds, whether the frame is
-reached through Playwright's screenshot, through `canvas.toDataURL`, or by
-letting the page's own animation loop run, which manages about 0.1 frames per
-second on a machine with no GPU. It is not the resolution, the blurred panels or
-`preserveDrawingBuffer`; all three were measured and none account for it.
+*Submitting* a frame of this city costs about a millisecond: the draw calls
+return as soon as the driver has them. *Presenting* one — actually getting the
+pixels out, through Playwright's screenshot, `canvas.toDataURL`, or the page's
+own animation loop — costs seconds. `pnpm bench` re-measured it on this machine
+and reports both, which is the only honest way to quote either:
+
+| | |
+| --- | --- |
+| submit one frame | 1 ms |
+| present one, at 1440x900 | 14.3 s |
+| present one, at 960x600 | 8.1 s |
+
+It is not the resolution alone, nor the panels, nor `preserveDrawingBuffer`;
+all three were measured and none account for the gap.
 
 So timeouts are generous; `capture/flythrough.mjs` photographs frame by frame at
-960x600 rather than screencasting live, the same 16:10 aspect so the composition
-is unchanged, because presenting a frame there is 7.7s against 13.2s at full
-size; and the browser tests ask for reduced motion by default, which is the
-product's own way of skipping the founding sweep, so only the one test that is
-about it pays the better part of a minute for it. `preserveDrawingBuffer` is
-enabled only in capture mode, since only the harness reads pixels back and the
-flag denies the browser its fast swap path.
+960x600 rather than screencasting live — the same 16:10 aspect, so the
+composition is unchanged, at roughly half the cost per frame; and the browser
+tests ask for reduced motion by default, which is the product's own way of
+skipping the founding sweep, so only the one test that is about it pays the
+better part of a minute for it. `preserveDrawingBuffer` is enabled only in
+capture mode, since only the harness reads pixels back and the flag denies the
+browser its fast swap path.
+
+This is also why the recorded walkthrough is played back sped up. A real screen
+capture at these frame rates is a real screen capture; it is just not a fair
+picture of what the game does on a machine with a graphics card, and it should
+not be read as one.
 
 ## Not built
 

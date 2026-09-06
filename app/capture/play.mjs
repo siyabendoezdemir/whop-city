@@ -71,28 +71,21 @@ await ready();
 await shot("play-2-waiting");
 
 // ------------------------------------------------------------- pick a building
-const target = await page.evaluate(() => {
-  const hooks = window.__city;
-  const ids = Object.keys(hooks?.scene ? {} : {});
-  return ids.length;
-});
-void target;
-
-// Click the plot in the middle of the frame that has a bubble over it. The
-// pick boxes are world geometry, so this is a click on the canvas at the
-// projected position of the plot rather than on a DOM element.
+// Click the plot's ground in the world. The pick boxes are world geometry, so
+// this is a click on the canvas at the projected position of the plot rather
+// than on a DOM element.
 const clicked = await page.evaluate(() => {
   const hooks = window.__city;
   if (!hooks) return null;
   for (const id of ["core-landmark", "core-east", "creator-venue", "forge-hero"]) {
-    const at = hooks.plotPoint(id);
+    const at = hooks.plotGround(id);
     if (at && at.x > 60 && at.x < 1380 && at.y > 60 && at.y < 840) return { id, ...at };
   }
   return null;
 });
 console.log("clicking:", JSON.stringify(clicked));
 if (clicked) {
-  await page.mouse.click(clicked.x, clicked.y + 90);
+  await page.mouse.click(clicked.x, clicked.y);
   await page.waitForTimeout(1400);
   await shot("play-3-card");
 }
