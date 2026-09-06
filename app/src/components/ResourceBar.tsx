@@ -25,7 +25,17 @@ function delta(now: number, before: number): "up" | "down" | "flat" {
   return "flat";
 }
 
-export function ResourceBar({ metrics }: { metrics: CityMetrics }) {
+/**
+ * A figure that has just moved.
+ *
+ * `bumps` carries how much each resource went up by on the last live read, so
+ * a sale landing while you are looking at the city shows on the number as well
+ * as on the feed. The animation is one beat: this is a HUD, and a permanently
+ * throbbing figure is a figure nobody reads.
+ */
+export type Bumps = Partial<Record<Resource, number>>;
+
+export function ResourceBar({ metrics, bumps = {} }: { metrics: CityMetrics; bumps?: Bumps }) {
   const known = metrics.source === "owner";
   const move: Partial<Record<Resource, "up" | "down" | "flat">> = known
     ? { gold: delta(metrics.gold, metrics.goldBefore), traffic: delta(metrics.traffic, metrics.trafficBefore) }
@@ -35,12 +45,14 @@ export function ResourceBar({ metrics }: { metrics: CityMetrics }) {
     <div className="res" data-source={metrics.source} aria-label="Your Whop, in four numbers">
       {RESOURCES.map((resource) => {
         const words = RESOURCE[resource];
+        const gained = bumps[resource];
         return (
           <div
             key={resource}
             className="res__pill"
             data-resource={resource}
             data-tone={words.tone}
+            data-bump={gained ? "1" : undefined}
             title={`${words.full} — ${words.blurb}`}
           >
             <span className="res__badge" aria-hidden="true">
@@ -55,6 +67,15 @@ export function ResourceBar({ metrics }: { metrics: CityMetrics }) {
             {move[resource] && move[resource] !== "flat" ? (
               <span className="res__move" data-move={move[resource]} aria-hidden="true">
                 {move[resource] === "up" ? "▲" : "▼"}
+              </span>
+            ) : null}
+            {gained ? (
+              <span
+                className="res__gain"
+                key={`${resource}-${gained}-${metrics[resource]}`}
+                data-testid={`res-gain-${resource}`}
+              >
+                +{money(resource, gained)}
               </span>
             ) : null}
           </div>

@@ -21,6 +21,7 @@
  */
 
 import type { FixtureScenario } from "./scenarios";
+import type { Sale } from "./sales";
 import { NO_STATS, type BusinessStats } from "./stats";
 import type { BusinessSnapshot, SnapshotPlan, SnapshotProduct } from "./snapshot";
 
@@ -214,4 +215,44 @@ export function fixtureStats(scenario: FixtureScenario): BusinessStats {
     default:
       return NO_STATS;
   }
+}
+
+/**
+ * Invented sales for the live feed.
+ *
+ * Generated from the scenario's own revenue so the feed is consistent with the
+ * figures beside it — a thriving business gets a busy hour, a launch gets
+ * nothing. Deterministic apart from the times, which are relative to `now` so
+ * the feed always reads as having happened in the last few hours.
+ *
+ * These are fixtures and are labelled as such everywhere they appear. The one
+ * scenario deliberately withholds them, so the interface's "could not read the
+ * sales" state is reachable in a browser without breaking anything upstream.
+ */
+export function fixtureSales(scenario: FixtureScenario, now: number): Sale[] | undefined {
+  if (scenario === "unavailable") return undefined;
+
+  const shape: Record<string, { count: number; low: number; high: number; renewals: number }> = {
+    blank: { count: 0, low: 0, high: 0, renewals: 0 },
+    launch: { count: 0, low: 0, high: 0, renewals: 0 },
+    struggling: { count: 3, low: 1_900, high: 4_900, renewals: 0.7 },
+    balanced: { count: 8, low: 2_900, high: 9_900, renewals: 0.5 },
+    thriving: { count: 14, low: 3_900, high: 29_900, renewals: 0.45 },
+  };
+  const plan = shape[scenario] ?? shape.balanced;
+
+  const names = ["Starter", "Pro monthly", "Annual pass", "Coaching call", "Templates bundle"];
+  const sales: Sale[] = [];
+  for (let i = 0; i < plan.count; i++) {
+    // A repeatable spread of amounts and gaps: no clock reads, no randomness.
+    const mix = ((i * 37) % 100) / 100;
+    sales.push({
+      key: `fixture-sale-${scenario}-${i}`,
+      cents: Math.round(plan.low + (plan.high - plan.low) * mix),
+      at: now - (i * 41 + 3) * 60 * 1000,
+      kind: mix < plan.renewals ? "renewal" : "first",
+      product: names[i % names.length],
+    });
+  }
+  return sales;
 }

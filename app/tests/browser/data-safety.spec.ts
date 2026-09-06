@@ -11,7 +11,8 @@ import { expect, test } from "@playwright/test";
 const ALLOWED_ENDPOINT = "/api/city/snapshot";
 const PROFILE_ENDPOINT = "/api/city/profile";
 /** Everything the browser may call. Two documents, two audiences, no third. */
-const ALLOWED_ENDPOINTS = [ALLOWED_ENDPOINT, PROFILE_ENDPOINT];
+const LIVE_ENDPOINT = "/api/city/live";
+const ALLOWED_ENDPOINTS = [ALLOWED_ENDPOINT, PROFILE_ENDPOINT, LIVE_ENDPOINT];
 
 /** Everything the projection is forbidden to carry, as it would appear in JSON. */
 const FORBIDDEN_JSON_KEYS = [
@@ -95,7 +96,7 @@ async function loadCity(page: import("@playwright/test").Page, query = "") {
   return { requests, responses };
 }
 
-test("the browser calls only its two API endpoints, with GET", async ({ page }) => {
+test("the browser calls only its own API endpoints, with GET", async ({ page }) => {
   const { requests } = await loadCity(page);
 
   const api = requests.filter((request) => new URL(request.url).pathname.startsWith("/api/"));
@@ -105,8 +106,21 @@ test("the browser calls only its two API endpoints, with GET", async ({ page }) 
     expect(ALLOWED_ENDPOINTS).toContain(new URL(request.url).pathname);
     expect(request.method).toBe("GET");
   }
-  // One reading of each per load; nothing polls.
-  expect(api).toHaveLength(2);
+  // One snapshot and one profile. The live endpoint polls, but only for a
+  // signed-in owner: a visitor whose figures are all withheld has nothing to
+  // keep up with, and polling for them would be load on the business's API
+  // credential bought with nothing.
+  expect(api.map((request) => new URL(request.url).pathname).sort()).toEqual(
+    [ALLOWED_ENDPOINT, PROFILE_ENDPOINT].sort(),
+  );
+});
+
+test("a visitor is never polled for, however long the page is open", async ({ page }) => {
+  const { requests } = await loadCity(page);
+  // Two poll intervals and change. Nothing on the live endpoint should appear.
+  await page.waitForTimeout(34_000);
+  const live = requests.filter((request) => new URL(request.url).pathname === LIVE_ENDPOINT);
+  expect(live).toEqual([]);
 });
 
 test("a visitor learns nothing at all from the profile endpoint", async ({ page }) => {

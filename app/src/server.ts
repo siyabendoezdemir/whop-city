@@ -21,6 +21,7 @@ import {
   handleAuthStart,
   handleAuthView,
 } from "./server/oauth";
+import { LIVE_PATH, handleLiveRequest } from "./server/liveRoute";
 import { PROFILE_PATH, handleProfileRequest } from "./server/profileRoute";
 import { SNAPSHOT_PATH, handleSnapshotRequest } from "./server/snapshotRoute";
 import { resolveEnv } from "./server/env";
@@ -47,6 +48,10 @@ export default createServerEntry({
     if (pathname === SNAPSHOT_PATH) {
       return handleSnapshotRequest(request, await resolveEnv());
     }
+
+    // The small, frequent read: current figures and the sales behind them.
+    // Owner-only, and a visitor gets a flat refusal rather than zeroes.
+    if (pathname === LIVE_PATH) return handleLiveRequest(request, await resolveEnv());
 
     // Who is signed in. Owner-only, and a visitor cannot tell the difference
     // between "nobody is signed in" and "you are not them".

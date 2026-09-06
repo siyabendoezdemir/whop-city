@@ -1234,3 +1234,316 @@ a.menu__item:hover {
     font-size: 20px;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Live
+
+   The business does not stop while the city is open, and until now the city
+   behaved as though it did. Two surfaces: cards that throw themselves at you
+   when a sale lands, and a roll of the last day behind a tab.
+
+   The cards fall directly under the resource bar, because the figure they
+   just moved is the one immediately above them and that is the whole point of
+   showing them. The tab stays in the top-right corner under the profile and
+   never moves — a control that shifts because something arrived is a control
+   you cannot aim at.
+   -------------------------------------------------------------------------- */
+
+.pops {
+  position: absolute;
+  top: calc(var(--pad) + 58px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.pop {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 208px;
+  padding: 9px 14px 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+  color: var(--gold-ink);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 58%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  box-shadow: 0 4px 0 #6d4405, 0 12px 26px rgba(0, 0, 0, 0.45);
+  animation: pop-in 260ms cubic-bezier(0.18, 1.3, 0.4, 1);
+}
+
+.pop[data-kind="renewal"] {
+  color: #062615;
+  background: linear-gradient(180deg, #a9f0bd, var(--grow) 58%, var(--grow-deep));
+  border-color: #125c2e;
+  box-shadow: 0 4px 0 #125c2e, 0 12px 26px rgba(0, 0, 0, 0.45);
+}
+
+.pop__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.pop__mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+.pop__body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.pop__figure {
+  font-family: var(--face-narrow);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.pop__what {
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0.72;
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------- the roll */
+
+.feed {
+  position: absolute;
+  top: calc(var(--pad) + 62px);
+  right: var(--pad);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.feed__tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 13px;
+  cursor: pointer;
+  border-radius: var(--pill);
+  font-family: var(--face-narrow);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.feed__tab:hover {
+  color: var(--ink);
+}
+
+.feed__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-4);
+}
+
+/* Breathing, not blinking: it says "reading", not "alarm". */
+.feed__dot[data-live] {
+  background: var(--grow);
+  box-shadow: 0 0 0 0 rgba(116, 221, 143, 0.6);
+  animation: feed-pulse 2.6s ease-out infinite;
+}
+
+@keyframes feed-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(116, 221, 143, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(116, 221, 143, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(116, 221, 143, 0);
+  }
+}
+
+.feed__count {
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: var(--pill);
+  font-size: 11px;
+  color: var(--gold-ink);
+  background: var(--gold);
+}
+
+.feed__roll {
+  width: 292px;
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  /* The list runs past the bottom edge when there is more to see. Fading it
+     says so; a flat cut through a row reads as a rendering fault. */
+  mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  padding: 6px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--shadow);
+}
+
+.feed__quiet {
+  margin: 0;
+  padding: 14px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.feed__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed__row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 8px;
+  border-radius: 9px;
+}
+
+.feed__row + .feed__row {
+  border-top: 1px solid rgba(255, 214, 150, 0.07);
+}
+
+.feed__mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--gold);
+  background: rgba(255, 194, 71, 0.12);
+}
+
+.feed__row[data-kind="member"] .feed__mark {
+  color: var(--grow);
+  background: rgba(116, 221, 143, 0.12);
+}
+
+.feed__row[data-kind="visitors"] .feed__mark {
+  color: var(--calm);
+  background: rgba(127, 182, 232, 0.12);
+}
+
+.feed__mark svg {
+  width: 15px;
+  height: 15px;
+}
+
+.feed__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.feed__head {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.feed__sub {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed__when {
+  font-size: 11px;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+
+/* A figure that just moved. One beat, then it is simply the number again. */
+.res__pill[data-bump] {
+  animation: res-bump 620ms cubic-bezier(0.2, 1.2, 0.3, 1);
+}
+
+@keyframes res-bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.res__gain {
+  position: absolute;
+  top: -6px;
+  right: 10px;
+  font-family: var(--face-narrow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--grow);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  animation: res-gain 1500ms ease-out forwards;
+}
+
+@keyframes res-gain {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  22% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}

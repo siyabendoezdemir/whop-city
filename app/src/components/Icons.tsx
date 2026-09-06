@@ -90,6 +90,41 @@ export function Chevron({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Feed marks.
+ *
+ * The activity roll needs a mark per kind of event, and reusing the resource
+ * badges would be wrong: those are the running total, these are the thing that
+ * moved it. Same drawing language, one size smaller.
+ */
+export function CoinMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" className={className} aria-hidden="true">
+      <circle cx="8" cy="8" r="6.4" />
+      <circle cx="8" cy="8" r="4.2" fill="#fff6d8" opacity="0.42" />
+      <path d="M8 4.4v7.2M6.1 6.1h3.2a1.5 1.5 0 0 1 0 3H6.7a1.5 1.5 0 0 0 0 3h3.2" fill="none" stroke="#3a2a06" strokeWidth="1.2" strokeLinecap="round" opacity="0.55" />
+    </svg>
+  );
+}
+
+export function MemberMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" className={className} aria-hidden="true">
+      <circle cx="8" cy="5.4" r="3" />
+      <path d="M1.8 14.6c0-3 2.8-5 6.2-5s6.2 2 6.2 5z" />
+    </svg>
+  );
+}
+
+export function TrafficMark({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M1.6 13.6 6.4 8l3 3.1 4.4-6.5 1.4 1-5.6 8.2-3-3.1-3.4 4z" />
+      <path d="M10.6 3.4h4.6v4.4l-1.6-1.2V5h-1.7z" />
+    </svg>
+  );
+}
+
 /** The upgrade mark: the same chevron pair the world's bubbles carry. */
 export function UpMark({ className }: { className?: string }) {
   return (

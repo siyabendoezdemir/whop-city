@@ -213,7 +213,7 @@ export type Audience = "public" | "owner";
  * as zero here and the interface says so separately — the seal is what reports
  * whether the read worked, not the numbers.
  */
-function metricsFor(stats: BusinessStats): CityMetrics {
+export function metricsFrom(stats: BusinessStats): CityMetrics {
   // A read that answered nothing is not a business with nothing in it. Saying
   // so is what stops an owner staring at four noughts and concluding the game
   // is broken when the truth is that Whop refused the question.
@@ -257,7 +257,7 @@ export function toPublicProjection(
   });
 
   return {
-    metrics: audience === "owner" ? metricsFor(stats) : ZERO_METRICS,
+    metrics: audience === "owner" ? metricsFrom(stats) : ZERO_METRICS,
     schema: PROJECTION_SCHEMA,
     freshness: freshnessFor(snapshot, now),
     seed,

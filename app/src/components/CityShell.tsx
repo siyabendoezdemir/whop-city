@@ -1,7 +1,13 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { DISTRICT_IDS, parseProjection, type DistrictId, type PublicCityProjection } from "../city/projection";
-import { BUILDINGS, MAX_LEVEL, buildingById, buildingsIn, nextTier } from "../game/buildings";
+import {
+  DISTRICT_IDS,
+  parseProjection,
+  type CityMetrics,
+  type DistrictId,
+  type PublicCityProjection,
+} from "../city/projection";
+import { BUILDINGS, MAX_LEVEL, RESOURCES, buildingById, buildingsIn, nextTier } from "../game/buildings";
 import {
   changesSince,
   claim,
@@ -20,12 +26,14 @@ import {
 } from "../game/city";
 import { cityQuest, questFor, readingFor } from "../game/quests";
 import { loadCity, saveCity } from "../state/cityStore";
+import { useLive } from "../state/useLive";
 import { BuildingCard } from "./BuildingCard";
 import { DesktopOnly } from "./DesktopOnly";
 import { DistrictRail, type RailEntry } from "./DistrictRail";
+import { Feed, SaleToasts } from "./Feed";
 import { ProfileChip, type Profile } from "./Profile";
 import { QuestCard } from "./QuestCard";
-import { ResourceBar } from "./ResourceBar";
+import { ResourceBar, type Bumps } from "./ResourceBar";
 import { WhileAway } from "./WhileAway";
 import { Seal } from "./Glyphs";
 
@@ -77,6 +85,39 @@ function prefersStill(): boolean {
 
 /** How long each storey of the founding sweep holds before the next one. */
 const RISE_MS = 820;
+
+/**
+ * How much each figure went up by on the last reading.
+ *
+ * Only rises. A month's revenue falling is a real thing that happens — a
+ * refund, a chargeback — and it belongs on the figure itself, not floating up
+ * out of it in green. Cleared after a beat so the bar goes back to being a
+ * bar.
+ */
+function useBumps(metrics: CityMetrics | null): Bumps {
+  const [bumps, setBumps] = useState<Bumps>({});
+  const previous = useRef<CityMetrics | null>(null);
+
+  useEffect(() => {
+    if (!metrics || metrics.source !== "owner") return;
+    const before = previous.current;
+    previous.current = metrics;
+    if (!before || before.source !== "owner") return;
+
+    const next: Bumps = {};
+    for (const resource of RESOURCES) {
+      const rise = metrics[resource] - before[resource];
+      if (rise > 0) next[resource] = rise;
+    }
+    if (Object.keys(next).length === 0) return;
+
+    setBumps(next);
+    const timer = window.setTimeout(() => setBumps({}), 1_600);
+    return () => window.clearTimeout(timer);
+  }, [metrics]);
+
+  return bumps;
+}
 
 export function CityShell() {
   const [load, setLoad] = useState<Load>({ status: "loading" });
@@ -146,7 +187,19 @@ export function CityShell() {
   }, []);
 
   const projection = load.status === "ready" ? load.projection : null;
-  const metrics = projection?.metrics ?? null;
+  /**
+   * The figures, as fresh as they can be got.
+   *
+   * The snapshot brings a set at load and refreshes them slowly. The live
+   * endpoint brings the same four every fifteen seconds, and when it has
+   * spoken its answer is the newer one and wins. Everything downstream — the
+   * levels a plot has earned, whether a building is ready, which quest is on
+   * the card — reads from here, which is what makes a sale that lands right
+   * now change the city right now rather than at the next minute boundary.
+   */
+  const live = useLive(projection?.metrics.source === "owner");
+  const metrics = live.metrics ?? projection?.metrics ?? null;
+  const bumps = useBumps(metrics);
 
   // ------------------------------------------------------------- the data
   const fetchProjection = useCallback(async () => {
@@ -257,8 +310,19 @@ export function CityShell() {
       if (after === before) return;
       persist(next);
       setFlash(`${buildingById(id)!.name} — level ${after}`);
+      // On the roll beside the sales that paid for it. The feed is a record of
+      // the business and the city together, and a building going up is the one
+      // line on it the player wrote themselves.
+      live.announce({
+        id: `level-${id}-${after}`,
+        at: Date.now(),
+        kind: "level",
+        plot: id,
+        name: buildingById(id)!.name,
+        level: after,
+      });
     },
-    [city, metrics, persist],
+    [city, metrics, persist, live],
   );
 
   // Remember what the business looked like, so a return can say what moved.
@@ -380,11 +444,22 @@ export function CityShell() {
         </span>
       </div>
 
-      <ResourceBar metrics={metrics} />
+      <ResourceBar metrics={metrics} bumps={bumps} />
 
       <div className="corner">
         <ProfileChip profile={profile} />
       </div>
+
+      {/* ------------------------------------------- live, down the right side
+          A sale that lands while the city is open throws a card; the roll
+          behind the tab is the last day of it. Both are owner-only, because
+          both are the business's takings. */}
+      {metrics.source === "owner" ? (
+        <>
+          <SaleToasts sales={live.arrivals} onDone={live.dismiss} />
+          <Feed entries={live.feed} connected={live.connected} now={live.at ?? Date.now()} />
+        </>
+      ) : null}
 
       {away && rising === null ? <WhileAway changes={away} onDismiss={() => setAway(null)} /> : null}
 
