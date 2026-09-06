@@ -260,8 +260,13 @@ export function CityShell() {
   );
 
   // Remember what the business looked like, so a return can say what moved.
+  //
+  // Only ever for the owner. A visitor's figures are all zeroes, and writing
+  // those to storage would leave an empty saved city behind that the owner
+  // then inherits when they sign in — no founding sweep, and a baseline of
+  // nought for the panel that is supposed to say what changed.
   useEffect(() => {
-    if (!city || !metrics) return;
+    if (!city || !metrics || metrics.source !== "owner") return;
     const timer = window.setTimeout(() => persist(markSeen(city, metrics, Date.now())), 4_000);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
