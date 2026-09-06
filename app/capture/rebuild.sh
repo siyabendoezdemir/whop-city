@@ -4,7 +4,7 @@
 set -euo pipefail
 cd /workspace/app
 
-pnpm build > /tmp/build.log 2>&1 || { tail -30 /tmp/build.log; exit 1; }
+${CITY_BUILD:-pnpm build} > /tmp/build.log 2>&1 || { tail -30 /tmp/build.log; exit 1; }
 
 TMUX="tmux -f /exec-daemon/tmux.portal.conf"
 $TMUX kill-session -t city-preview 2>/dev/null || true

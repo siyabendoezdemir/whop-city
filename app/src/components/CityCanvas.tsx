@@ -616,14 +616,21 @@ export function CityCanvas({
          * off inside the bridge gap, and "does the car vanish" is not a
          * question a screenshot can answer.
          */
-        actors: () =>
-          (terrainRef.current?.group.getObjectByName("actors")?.children ?? []).map((child) => ({
-            name: child.name,
-            visible: child.visible,
-            x: child.position.x,
-            y: child.position.y,
-            z: child.position.z,
-          })),
+        actors: (t?: number) => {
+          // Steps the world without drawing it. Continuity is a property of the
+          // motion, not of the pixels, and software-rendering a supersampled
+          // city a thousand times to find that out takes minutes.
+          if (t !== undefined) terrainRef.current?.update(t);
+          return (terrainRef.current?.group.getObjectByName("actors")?.children ?? []).map(
+            (child) => ({
+              name: child.name,
+              visible: child.visible,
+              x: child.position.x,
+              y: child.position.y,
+              z: child.position.z,
+            }),
+          );
+        },
 
         info: () => {
           const info = stage.renderer.info;

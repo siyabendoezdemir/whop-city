@@ -290,19 +290,32 @@ function buildRoad(b: PartsBuilder, kit: InstanceKit, rng: Rng, road: Road): voi
   if (road.grade !== "lane") {
     const verge = subtract(road.from + 4, road.to - 4, edgeHoles);
     for (const [from, to] of verge) {
-      for (let t = from + 5; t < to - 3; t += 13) {
+      // Street furniture is a town thing. Out on the highway the verge is
+      // planted with an avenue rather than a pavement's worth of pits and
+      // lanterns — which reads better and stops a road that runs to the fog
+      // from costing as much as the city it leaves.
+      const town = inTown(alongX ? (from + to) / 2 : road.at, alongX ? road.at : (from + to) / 2);
+      const spacing = town ? 13 : 30;
+      for (let t = from + 5; t < to - 3; t += spacing) {
         for (const side of [-1, 1]) {
           const p = place(t, side * (half + 1.6));
-          b.add(M.dirt, box(1.5, 0.06, 1.5), [p[0], kerbY - 0.02, p[2]]);
-          Prop.tree(kit, [p[0], kerbY, p[2]], rng.range(0, 6.2), rng.range(0.86, 1.12));
+          if (town) b.add(M.dirt, box(1.5, 0.06, 1.5), [p[0], kerbY - 0.02, p[2]]);
+          if (town) Prop.tree(kit, [p[0], kerbY, p[2]], rng.range(0, 6.2), rng.range(0.86, 1.12));
+          else kit.place("tree.far", [p[0], kerbY - 0.1, p[2]], rng.range(0, 6.2), rng.range(0.8, 1.1));
         }
       }
+      if (!town) continue;
       for (let t = from + 12; t < to - 6; t += 23) {
         const p = place(t, half + 1.0);
         Prop.lamp(kit, [p[0], kerbY, p[2]], alongX ? Math.PI : Math.PI / 2);
       }
     }
   }
+}
+
+/** The rectangle the built city occupies. Everything outside it is country. */
+export function inTown(x: number, z: number): boolean {
+  return x > -84 && x < 148 && z > -100 && z < 96;
 }
 
 /** Box dimensions for something that runs along X or along Z. */
@@ -635,11 +648,11 @@ export function layPath(circuit: Circuit, offset: number, height: (x: number, z:
     corners.push({ x: point.x, z: point.z, inX: dIn.x, inZ: dIn.z, outX: dOut.x, outZ: dOut.z });
   }
 
-  const points: THREE.Vector3[] = [];
+  const shape: Array<{ x: number; z: number }> = [];
   const push = (x: number, z: number) => {
-    const last = points[points.length - 1];
+    const last = shape[shape.length - 1];
     if (last && Math.abs(last.x - x) < 0.01 && Math.abs(last.z - z) < 0.01) return;
-    points.push(new THREE.Vector3(x, height(x, z), z));
+    shape.push({ x, z });
   };
 
   for (let i = 0; i < n; i++) {
@@ -664,11 +677,31 @@ export function layPath(circuit: Circuit, offset: number, height: (x: number, z:
     }
   }
 
+  // Sample the running surface along the whole closed loop, not just at its
+  // corners. The height is only known where the path is measured, and a run
+  // between two junctions is one straight line: sampled at its ends alone, the
+  // bridge in the middle of the quay road does not exist as far as a vehicle is
+  // concerned, and it drives through the canal at ground level.
+  const STRIDE = 6;
+  const points: THREE.Vector3[] = [];
+  for (let i = 0; i < shape.length; i++) {
+    const a = shape[i];
+    const bee = shape[(i + 1) % shape.length];
+    points.push(new THREE.Vector3(a.x, height(a.x, a.z), a.z));
+    const steps = Math.floor(Math.hypot(bee.x - a.x, bee.z - a.z) / STRIDE);
+    for (let s = 1; s <= steps; s++) {
+      const k = s / (steps + 1);
+      const ix = a.x + (bee.x - a.x) * k;
+      const iz = a.z + (bee.z - a.z) * k;
+      points.push(new THREE.Vector3(ix, height(ix, iz), iz));
+    }
+  }
+
   const marks = [0];
   for (let i = 1; i <= points.length; i++) {
     const a = points[i - 1];
-    const b = points[i % points.length];
-    marks.push(marks[i - 1] + a.distanceTo(b));
+    const bee = points[i % points.length];
+    marks.push(marks[i - 1] + a.distanceTo(bee));
   }
   return { points, marks, length: marks[marks.length - 1] };
 }

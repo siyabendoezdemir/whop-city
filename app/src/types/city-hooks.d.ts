@@ -35,6 +35,14 @@ export type CityHooks = {
   plotGround: (plotId: string) => { x: number; y: number } | null;
   shadowRig: () => number[];
   silhouette: (on: boolean) => void;
+  /** Steps the terrain to `t` if given, then reports what moved. No render. */
+  actors: (t?: number) => Array<{
+    name: string;
+    visible: boolean;
+    x: number;
+    y: number;
+    z: number;
+  }>;
   info: () => CityInfo;
   scene: THREE.Scene;
 };

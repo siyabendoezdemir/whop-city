@@ -44,9 +44,19 @@ function prototype(key: string, make: () => THREE.BufferGeometry): THREE.BufferG
 }
 
 /** Rounded box, centred on its own origin. Segments stay low; this is chunky by design. */
+/**
+ * Box with a caught edge.
+ *
+ * One segment, not two. The bevel exists so a long straight edge picks up a
+ * highlight instead of going to a hard vector line, and one segment does that
+ * exactly as well as two — the radius is five centimetres, which is under a
+ * pixel at every framing the game allows. Two segments cost three hundred
+ * triangles a box against a hundred and eight, and bevelled boxes are most of
+ * the city.
+ */
 export function bevelBox(w: number, h: number, d: number, radius = 0.05): THREE.BufferGeometry {
   const r = Math.min(radius, w / 2.05, h / 2.05, d / 2.05);
-  return prototype(`v:${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 2, r));
+  return prototype(`v:${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 1, r));
 }
 
 /** Plain box for parts that are hidden or never catch a silhouette edge. */

@@ -4,7 +4,7 @@ import { PartsBuilder, box } from "../lib/geom";
 import { Rng } from "../lib/rng";
 import { M } from "../scene/materials";
 import { type InstanceKit } from "./props";
-import { ROADS, WORLD } from "./cityPlan";
+import { ROADS, WORLD, inTown } from "./cityPlan";
 import { walkwayWidth } from "./roads";
 
 /**
@@ -59,14 +59,13 @@ function roadClearance(): Array<{ axis: "x" | "z"; at: number; from: number; to:
  * Ploughing a field through the middle of a waterfront terrace is the sort of
  * thing you only notice once, and then cannot stop noticing.
  */
-const BUILT: ReadonlyArray<{ x0: number; x1: number; z0: number; z1: number }> = [
-  { x0: -84, x1: 148, z0: -100, z1: 96 },
+const SHORE: ReadonlyArray<{ x0: number; x1: number; z0: number; z1: number }> = [
   { x0: -280, x1: 340, z0: -178, z1: -118 },
   { x0: -166, x1: -106, z0: -178, z1: 280 },
 ];
 
 function isBuilt(x: number, z: number): boolean {
-  return BUILT.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
+  return inTown(x, z) || SHORE.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
 }
 
 /** True where there is no land: the channel, and everything across it. */
@@ -86,18 +85,18 @@ function onRoad(x: number, z: number, pad = 0): boolean {
 }
 
 /**
- * A tree with no contact shadow.
+ * A tree in open country.
  *
- * The soft disc under a prop is there to seat a bollard on a pavement you are
- * standing over. Out here it buys nothing and costs a transparent quad per
- * tree, so the country plants without one.
+ * Uses the cheap prototype and no contact shadow. The soft disc under a prop is
+ * there to seat a bollard on a pavement you are standing over; out here it buys
+ * nothing and costs a transparent quad per tree.
  */
 function plant(kit: InstanceKit, x: number, z: number, rng: Rng, dry = false): void {
-  kit.placeCompound(
-    ["tree.trunk", dry ? "tree.canopyDry" : "tree.canopy"],
+  kit.place(
+    dry ? "tree.farDry" : "tree.far",
     [x, FIELD_TOP - 0.03, z],
     rng.range(0, 6.2),
-    rng.range(1.0, 1.8),
+    rng.range(1.0, 1.7),
   );
 }
 
@@ -135,8 +134,10 @@ export function buildCountryside(kit: InstanceKit, seed: number): THREE.Group {
       if (rng.chance(0.78)) hedge(b, kit, rng, x0, z0, x0, z1);
 
       if (rng.chance(0.16)) pond(b, rng, midX, midZ, Math.min(x1 - x0, z1 - z0));
-      if (rng.chance(0.2)) copse(kit, rng, x0 + 3, z0 + 3, x1 - 3, z1 - 3);
-      if (rng.chance(0.12)) barn(b, rng, midX, midZ);
+      // Woods thin out with distance too: the far ones are a smudge in the fog
+      // and there is no sense paying for them.
+      if (rng.chance(0.22 * (1 - far * 0.7))) copse(kit, rng, x0 + 3, z0 + 3, x1 - 3, z1 - 3);
+      if (rng.chance(0.1)) barn(b, rng, midX, midZ);
     }
   }
 
@@ -165,7 +166,7 @@ function hedge(
   );
   const trees = Math.floor(length / 26);
   for (let i = 0; i < trees; i++) {
-    if (!rng.chance(0.6)) continue;
+    if (!rng.chance(0.45)) continue;
     const t = rng.range(0.15, 0.85);
     plant(kit, alongX ? x0 + t * length : x0, alongX ? z0 : z0 + t * length, rng);
   }

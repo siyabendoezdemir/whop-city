@@ -41,6 +41,36 @@ async function founded(page: Page) {
 
 const triangles = (page: Page) => page.evaluate(() => window.__city!.info().triangles);
 
+/**
+ * Triangles of building standing on the plots.
+ *
+ * The whole-frame count is mostly terrain — roads, both bays, the far banks,
+ * the countryside — which is identical whatever the business has done and
+ * drowns the thing under test. Worse, it moves whenever the world does: this
+ * assertion once had to be recalibrated because a cheaper bevel made every
+ * building smaller. The structures group is neither: it is exactly what the
+ * business earned, and nothing else.
+ */
+const builtTriangles = (page: Page) =>
+  page.evaluate(() => {
+    let total = 0;
+    window.__city!.scene.traverse((child: unknown) => {
+      const node = child as {
+        name?: string;
+        parent?: { name?: string };
+        count?: number;
+        geometry?: { index?: { count: number }; attributes?: { position?: { count: number } } };
+      };
+      if (node.parent?.name !== "structures") return;
+      const geometry = node.geometry;
+      const position = geometry?.attributes?.position;
+      if (!position) return;
+      const per = geometry?.index ? geometry.index.count / 3 : position.count / 3;
+      total += per * (node.count ?? 1);
+    });
+    return total;
+  });
+
 /** Knocks every claimed level back by one: a business that grew overnight. */
 async function fallBehind(page: Page): Promise<number> {
   return page.evaluate(() => {
@@ -67,20 +97,20 @@ test("a business with nothing sold gets empty ground, and one with a lot gets a 
   page,
 }) => {
   await open(page, "blank");
-  const nothing = await triangles(page);
+  const nothing = await builtTriangles(page);
   const nothingBuilt = await page.locator('[data-testid="rail-built-commerce-core"]').textContent();
 
   await open(page, "thriving");
-  const everything = await triangles(page);
+  const everything = await builtTriangles(page);
   const lotsBuilt = await page.locator('[data-testid="rail-built-commerce-core"]').textContent();
 
   expect(nothingBuilt).toBe("0/4");
   expect(lotsBuilt).toBe("4/4");
-  // Not "the same city relabelled": a grown business is measurably more world.
-  // An absolute difference rather than a ratio, because most of the triangles
-  // in either frame are the terrain — roads, both bays, the far banks — which
-  // is identical in both and would flatten any proportion.
-  expect(everything - nothing, "the built city is barely more geometry").toBeGreaterThan(40_000);
+  // Not "the same city relabelled": a grown business is several times the
+  // building a bare one is, measured on the plots themselves.
+  expect(everything / Math.max(1, nothing), "the built city is barely more geometry").toBeGreaterThan(
+    3,
+  );
 });
 
 test("the first visit plays the city being built, and only the first", async ({ page }) => {
