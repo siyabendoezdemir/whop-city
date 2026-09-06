@@ -56,6 +56,30 @@ describe("geometry kit", () => {
     }
   });
 
+  it("stands a wedge's ridge at +z and its eaves at -z", () => {
+    // Which way a wedge slopes is not a detail: it decides where the ridge cap,
+    // the gutter, the chimney and the rooflights go on every pitched roof in
+    // the city. Three roofs were built against the opposite assumption — the
+    // Creator Venue's hall, the terrace bays, and the whole low surrounding
+    // row — and each one hung its ridge capping in the air over the eaves and
+    // buried its gutter in the wall at the ridge.
+    //
+    // The orientation is a consequence of an extrusion and a rotateY, which is
+    // to say it is not readable from the call site. Asserted here so it stays
+    // true, and so changing it fails loudly rather than quietly rebuilding
+    // fifty roofs back to front.
+    const geometry = wedge(4, 2, 10);
+    const position = geometry.getAttribute("position");
+    let tallEnd = -Infinity;
+    let thinEnd = -Infinity;
+    for (let i = 0; i < position.count; i++) {
+      if (position.getZ(i) > 4.9) tallEnd = Math.max(tallEnd, position.getY(i));
+      if (position.getZ(i) < -4.9) thinEnd = Math.max(thinEnd, position.getY(i));
+    }
+    expect(tallEnd).toBeCloseTo(1, 5);
+    expect(thinEnd).toBeCloseTo(-1, 5);
+  });
+
   it("keeps the placement when a composed part is baked into another builder", () => {
     // The regression this exists for: the flattened-geometry cache used to hang
     // off `userData`, which `BufferGeometry.copy` shares by reference. Every

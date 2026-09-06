@@ -174,12 +174,24 @@ export const M = {
    * to the tiles.
    *
    * Rooflights are patent glazing, wired or diffusing, over a dark interior.
-   * Rough, barely reflective, and darker than the deck it sits in.
+   * Rough and barely reflective — but not dark.
+   *
+   * Third time. Cutting `envMapIntensity` to three tenths did stop the haze
+   * reflection, and took the diffuse sky with it: this scene is lit at
+   * `environmentIntensity` 1.15, so a tenth of the environment is a tenth of
+   * the light. The mews glazing measured 26,43,64 against a roof at 74,98,127 —
+   * two fifths the brightness of the slate it was set into, which from above
+   * is a hole in the roof, and eight of them per range.
+   *
+   * What a diffusing rooflight actually does is scatter: it is the brightest
+   * thing on a workshop roof, and it is bright because it is rough, not because
+   * it is mirroring anything. Pale and matte, lit by the sky like everything
+   * else, with just enough environment left off to keep the horizon out of it.
    */
-  glassRoof: standard("#7d93a4", 0.62, 0.04, {
+  glassRoof: standard("#b5c6d2", 0.68, 0.02, {
     transparent: true,
-    opacity: 0.92,
-    envMapIntensity: 0.3,
+    opacity: 0.95,
+    envMapIntensity: 0.8,
   }),
   glassDim: standard("#6f8391", 0.35, 0.1, { transparent: true, opacity: 0.85 }),
   glassLit: standard("#ffe9b8", 0.25, 0, {

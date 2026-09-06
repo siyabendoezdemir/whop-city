@@ -1163,23 +1163,27 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       // above as a white sticker floating off the tiles.
       const fall = -0.17;
       local.add(M.roofZinc, box(unitW - 0.1, 0.16, mewsD + 0.7), [cx, y + h + 0.42, mewsZ], [fall, 0, 0]);
-      // Two rooflights in a dark kerb, rather than one warm panel.
+      // Two rooflights, in a pale kerb.
       //
-      // These have now been wrong twice. First they were emissive, which lit
-      // them up in broad daylight. Then they were wall glass laid flat, which
-      // at this camera reflects the warm haze band along the horizon at a
-      // grazing angle and comes out an opaque cream — the same luminous yellow
-      // sticker by a different route, and the brightest thing in a district
-      // whose subject is the terrace in front of them. `glassRoof` is the
-      // material for glazing that lies down.
+      // These have now been wrong three times. First emissive, which lit them
+      // up in broad daylight. Then wall glass laid flat, which at this camera
+      // reflects the warm haze band along the horizon at a grazing angle and
+      // comes out an opaque cream. Then `glassRoof` set in `ironDark`, which
+      // is a near-black frame around a panel that had had its sky light turned
+      // down: eight dark rectangles per range, and the roof of the mews is
+      // half of what this district shows the player.
+      //
+      // A kerb is a lead or zinc upstand and it is the palest line on a
+      // workshop roof, not the darkest. Pale frame, smaller glass inside it,
+      // and the light is a light.
       const lightZ = mewsD * 0.16;
       const lightY = y + h + 0.5 - Math.tan(fall) * lightZ;
       for (const ox of [-unitW * 0.19, unitW * 0.19]) {
-        local.add(M.ironDark, box(unitW * 0.28, 0.14, mewsD * 0.28), [cx + ox, lightY, mewsZ + lightZ], [fall, 0, 0]);
+        local.add(M.kerb, box(unitW * 0.29, 0.16, mewsD * 0.29), [cx + ox, lightY, mewsZ + lightZ], [fall, 0, 0]);
         local.add(
           state === "struggling" ? M.glassDim : M.glassRoof,
-          box(unitW * 0.21, 0.08, mewsD * 0.21),
-          [cx + ox, lightY + 0.07, mewsZ + lightZ],
+          box(unitW * 0.19, 0.1, mewsD * 0.19),
+          [cx + ox, lightY + 0.09, mewsZ + lightZ],
           [fall, 0, 0],
         );
       }
@@ -1265,7 +1269,17 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     // A hall roof carries daylight and a ridge vent, and both of them read.
     const rise = 2.4;
     const roofD = vd + 0.6;
-    local.add(M.roofZinc, wedge(vw + 0.6, rise, roofD), [vx, y + vh + rise / 2, vz]);
+    // Turned, so it falls toward the entrance and not away from it.
+    //
+    // `wedge()` stands its full-height face at +z, and the entrance to this
+    // hall is at +z — so an unturned wedge ridges over the door and falls to
+    // the back, which is the opposite of everything placed on it. The ridge
+    // ventilator ended up down at the eaves floating two metres clear of the
+    // sheeting, the extract cowls were buried inside the slope, the gutter ran
+    // along the top edge, the seams crossed the pitch instead of following it,
+    // and the stage house stood on the downhill half with daylight under its
+    // back wall. Pinned by a test in `geom.test.ts`.
+    local.add(M.roofZinc, wedge(vw + 0.6, rise, roofD), [vx, y + vh + rise / 2, vz], [0, Math.PI, 0]);
     const pitch = Math.atan2(rise, roofD);
     /** The slope's surface, at a distance `dz` in front of the ridge. */
     const onSlope = (dz: number) => y + vh + rise - (dz / roofD) * rise;
@@ -1289,7 +1303,7 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     for (let i = -3; i <= 3; i++) {
       local.add(M.roofZincWorn, box(0.12, 0.08, roofD - 0.4), [vx + i * 1.9, y + vh + rise / 2 + 0.07, vz], [pitch, 0, 0]);
     }
-    // Extract cowls, on the open strip below the stage house.
+    // Extract cowls, on the open strip down by the eaves.
     for (const ox of [-4.4, -1.2, 3.6]) {
       const dz = roofD * 0.93;
       local.add(M.steelPainted, post(0.42, 0.8, 8), [vx + ox, onSlope(dz) + 0.4, vz - roofD / 2 + dz]);

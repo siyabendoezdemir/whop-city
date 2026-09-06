@@ -1265,15 +1265,38 @@ export function buildSurroundings(seed: number): THREE.Group {
       // width of the near foreground, so one roof shape repeated eight times
       // along the bottom of the frame is a tiling pattern rather than a
       // street.
+      // Slate, zinc or sheet — not felt. Felt is a flat-deck finish and it is
+      // the one material in the palette with no direction in it, so on a pitch
+      // it reads as a patch of the road laid over the building.
       const slate = rng.pick([M.roofZinc, M.roofZincWorn, M.roofSheet]);
       const turn = rng.chance(0.5) ? Math.PI : 0;
       if (rng.chance(0.72)) {
-        b.add(slate, wedge(blk.w + 0.7, 1.5, blk.d + 0.7), [blk.x, base + blk.h + 0.75, blk.z], [0, turn, 0]);
-        b.add(M.fascia, box(blk.w + 0.8, 0.22, 0.24), [
-          blk.x,
-          base + blk.h + 0.06,
-          blk.z + (turn ? -1 : 1) * ((blk.d + 0.7) / 2),
-        ]);
+        // A pitch, at a pitch.
+        //
+        // A metre and a half of rise over a fifteen-metre depth is six
+        // degrees. At a camera that looks down at thirty-one, six degrees is
+        // flat: the whole roof faces the lens as one plane, and a row of these
+        // along the bottom of the frame was a row of pale slabs. Proportional
+        // to the depth instead, so a shed reads as a shed, with the two things
+        // that make a roof legible from above — a ridge line and something
+        // coming through it.
+        //
+        // Which end is the ridge is decided by the turn, and it was decided
+        // backwards: `wedge()` puts its full-height face at +z, so an unturned
+        // wedge ridges at +z. Both fittings had the opposite, which stood the
+        // capping on air a couple of metres above the gutter line with a
+        // chimney balanced on it, and buried the gutter along the ridge. Every
+        // low block in the foreground row, which is most of the bottom of the
+        // default frame. Pinned by a test in `geom.test.ts`.
+        const rise = Math.min(3.2, Math.max(1.7, blk.d * 0.17));
+        const ridgeZ = blk.z + (turn ? -1 : 1) * ((blk.d + 0.7) / 2 - 0.24);
+        const eavesZ = blk.z + (turn ? 1 : -1) * ((blk.d + 0.7) / 2);
+        b.add(slate, wedge(blk.w + 0.7, rise, blk.d + 0.7), [blk.x, base + blk.h + rise / 2, blk.z], [0, turn, 0]);
+        b.add(M.roofZincWorn, box(blk.w + 0.8, 0.24, 0.48), [blk.x, base + blk.h + rise + 0.02, ridgeZ]);
+        b.add(M.fascia, box(blk.w + 0.8, 0.22, 0.24), [blk.x, base + blk.h + 0.06, eavesZ]);
+        const stackX = blk.x + rng.range(-blk.w * 0.3, blk.w * 0.3);
+        b.add(M.brickDark, box(1.0, 1.9, 0.9), [stackX, base + blk.h + rise + 0.55, ridgeZ]);
+        b.add(M.fascia, box(1.18, 0.2, 1.08), [stackX, base + blk.h + rise + 1.6, ridgeZ]);
       } else {
         b.add(M.fascia, box(blk.w + 0.4, 0.3, blk.d + 0.4), [blk.x, base + blk.h + 0.1, blk.z]);
         b.add(M.gravel, box(blk.w - 0.3, 0.22, blk.d - 0.3), [blk.x, base + blk.h + 0.2, blk.z]);

@@ -540,12 +540,16 @@ export function roofOf(
       // Ribs across the slope. Sheeting is profiled, and once the slope is the
       // face the player is given, an unbroken four-metre panel of one grey is
       // the thing that reads as unfinished.
+      //
+      // In the darker zinc, because the first set were `roofZinc` at #949fad
+      // laid on `roofSheet` at #9ba1a6 — three per cent apart, which is a rib
+      // you can find by reading the source and nowhere else.
       for (let r = 1; r < 4; r++) {
         const t = r / 4;
         b.add(
-          M.roofZinc,
-          box(0.1, 0.07, d - 0.3),
-          [s * (xa + bayW * t), h + rise * t + 0.11, 0],
+          M.roofZincWorn,
+          box(0.12, 0.09, d - 0.3),
+          [s * (xa + bayW * t), h + rise * t + 0.12, 0],
           [0, 0, s * Math.atan2(rise, bayW)],
         );
       }
@@ -595,9 +599,31 @@ export function roofOf(
  */
 function pitchedRoof(b: PartsBuilder, skin: Skin, w: number, d: number, h: number, rng: Rng): void {
   const rise = 1.9;
-  b.add(skin.roof, wedge(w + 0.5, rise, d + 0.5), [0, h + rise / 2, 0]);
-  // Ridge capping along the high edge, and a gable wall up each side.
-  b.add(M.roofZincWorn, box(w + 0.7, 0.22, 0.42), [0, h + rise + 0.02, -(d + 0.5) / 2 + 0.2]);
+  const run = d + 0.5;
+
+  // Turned, so the roof falls the way the building faces.
+  //
+  // These masses front at +z, so the pitch has to fall that way and put its
+  // ridge at the back — which is what every fitting below was placed against.
+  // But `wedge()` extrudes a triangle and rotates it, and that puts the
+  // full-height face at +z, so an unturned wedge slopes up toward the street.
+  // The whole roof was therefore built back to front: ridge capping floating a
+  // metre and a half above the gutter line, the gutter itself buried in the
+  // wall under the ridge, the chimney standing on air off the eaves, and both
+  // rooflights hovering four hundred millimetres clear of the slate. Once per
+  // bay, and the Creator Quarter is made of these.
+  //
+  // Turning it is the whole fix; the placements were right all along. Pinned
+  // by a test in `geom.test.ts`, because which end of a wedge is tall is a
+  // fact about an extrusion and cannot be read from here.
+  b.add(skin.roof, wedge(w + 0.5, rise, run), [0, h + rise / 2, 0], [0, Math.PI, 0]);
+  /** The slope's surface, `t` of the way down from the ridge at the back. */
+  const at = (t: number) => h + rise * (1 - t);
+  const zAt = (t: number) => -run / 2 + run * t;
+  /** The rotation that lays a part flat in the slope rather than across it. */
+  const lie = Math.atan2(rise, run);
+
+  b.add(M.roofZincWorn, box(w + 0.7, 0.22, 0.42), [0, h + rise + 0.02, zAt(0) + 0.2]);
   // A party wall, not a barge board.
   //
   // These bays stand in a terrace, and a terrace puts a pitch between two
@@ -608,39 +634,39 @@ function pitchedRoof(b: PartsBuilder, skin: Skin, w: number, d: number, h: numbe
   // thing on the plot, and the first one the eye found. A wall carrying a
   // coping is the correct detail either way, and it reads as the edge of a
   // building whatever is on the other side of it.
-  const rake = Math.atan2(rise, d + 0.5);
   for (const sx of [-1, 1]) {
     const px = (sx * (w + 0.62)) / 2;
-    b.add(skin.body, box(0.34, 0.66, d + 0.62), [px, h + rise / 2 + 0.22, 0], [rake, 0, 0]);
-    b.add(M.fascia, box(0.46, 0.16, d + 0.74), [px, h + rise / 2 + 0.61, 0], [rake, 0, 0]);
+    b.add(skin.body, box(0.34, 0.66, d + 0.62), [px, h + rise / 2 + 0.22, 0], [lie, 0, 0]);
+    b.add(M.fascia, box(0.46, 0.16, d + 0.74), [px, h + rise / 2 + 0.61, 0], [lie, 0, 0]);
   }
   // Gutter and fascia at the low edge.
   b.add(M.fascia, box(w + 0.62, 0.2, 0.2), [0, h + 0.1, d / 2 + 0.3]);
   b.add(M.aluminium, box(w + 0.5, 0.16, 0.2), [0, h + 0.06, d / 2 + 0.42]);
-  /** The slope's surface, `t` of the way down from the ridge. */
-  const at = (t: number) => h + rise * (1 - t);
-  const fall = -Math.atan2(rise, d + 0.5);
-  // Two rooflights, set in a dark kerb and lying in the pitch rather than on
+  // Two rooflights, set in a pale kerb and lying in the pitch rather than on
   // it. A workshop floor under a roof this size is lit from above or not at all.
   for (const ox of [-w * 0.22, w * 0.22]) {
     const t = 0.42;
-    const pz = -(d + 0.5) / 2 + (d + 0.5) * t;
-    b.add(M.ironDark, box(w * 0.2, 0.14, d * 0.2), [ox, at(t) + 0.08, pz], [fall, 0, 0]);
-    b.add(skin.glass === M.glassDim ? M.glassDim : M.glassRoof, box(w * 0.15, 0.09, d * 0.15), [ox, at(t) + 0.16, pz], [fall, 0, 0]);
+    b.add(M.kerb, box(w * 0.21, 0.16, d * 0.21), [ox, at(t) + 0.09, zAt(t)], [lie, 0, 0]);
+    b.add(
+      skin.glass === M.glassDim ? M.glassDim : M.glassRoof,
+      box(w * 0.14, 0.1, d * 0.14),
+      [ox, at(t) + 0.18, zAt(t)],
+      [lie, 0, 0],
+    );
   }
-  // A stack or a vent, whichever the dice give, off to one side of the ridge.
+  // A stack or a vent, whichever the dice give, just below the ridge.
   const cx = w * (rng.chance(0.5) ? -0.3 : 0.3);
   if (rng.chance(0.55)) {
     const stackH = 1.7;
-    b.add(M.brickDark, box(1.0, stackH, 0.9), [cx, at(0.16) + stackH / 2 - 0.2, -(d + 0.5) / 2 + (d + 0.5) * 0.16]);
-    b.add(M.fascia, box(1.16, 0.18, 1.06), [cx, at(0.16) + stackH - 0.2, -(d + 0.5) / 2 + (d + 0.5) * 0.16]);
+    b.add(M.brickDark, box(1.0, stackH, 0.9), [cx, at(0.16) + stackH / 2 - 0.2, zAt(0.16)]);
+    b.add(M.fascia, box(1.16, 0.18, 1.06), [cx, at(0.16) + stackH - 0.2, zAt(0.16)]);
     for (const ox of [-0.22, 0.22]) {
-      b.add(M.ironDark, post(0.13, 0.4, 6), [cx + ox, at(0.16) + stackH, -(d + 0.5) / 2 + (d + 0.5) * 0.16]);
+      b.add(M.ironDark, post(0.13, 0.4, 6), [cx + ox, at(0.16) + stackH, zAt(0.16)]);
     }
   } else {
-    b.add(M.roofZincWorn, box(1.5, 0.5, 0.9), [cx, at(0.2) + 0.32, -(d + 0.5) / 2 + (d + 0.5) * 0.2]);
-    b.add(M.steel, post(0.14, 0.8, 6), [cx, at(0.2) + 0.85, -(d + 0.5) / 2 + (d + 0.5) * 0.2]);
-    b.add(M.ironDark, post(0.28, 0.16, 6), [cx, at(0.2) + 1.3, -(d + 0.5) / 2 + (d + 0.5) * 0.2]);
+    b.add(M.roofZincWorn, box(1.5, 0.5, 0.9), [cx, at(0.2) + 0.32, zAt(0.2)]);
+    b.add(M.steel, post(0.14, 0.8, 6), [cx, at(0.2) + 0.85, zAt(0.2)]);
+    b.add(M.ironDark, post(0.28, 0.16, 6), [cx, at(0.2) + 1.3, zAt(0.2)]);
   }
 }
 
