@@ -8,6 +8,7 @@ import {
   pavingSeams,
   renderGrain,
   roofRibs,
+  turfGrain,
   waterRipples,
 } from "./textures";
 
@@ -65,6 +66,19 @@ export const M = {
   grass: standard("#7fa860", 0.92),
   water: standard("#4d90b8", 0.28, 0.1),
   gravel: standard("#948d80", 0.98),
+
+  // ------------------------------------------------------------- farmland
+  // The plain the city stands on. Deliberately close together in value: the
+  // point is that the distance reads as worked land rather than as one flat
+  // fill, not that anybody counts the crops. Anything with real contrast out
+  // here competes with the city, which is the thing you are meant to look at.
+  meadow: standard("#7ba55d", 0.94),
+  pasture: standard("#86ad64", 0.94),
+  cropGreen: standard("#8fb262", 0.95),
+  cropYoung: standard("#9cb96c", 0.95),
+  stubble: standard("#bdb47e", 0.96),
+  fallow: standard("#93a367", 0.96),
+  ploughed: standard("#9d8563", 0.97),
 
   // ------------------------------------------------------------ structure
   brick: standard("#b4664a", 0.86),
@@ -193,6 +207,19 @@ export function applySurfaceDetail(): void {
   assign(M.gravel, grain);
   assign(M.dirt, grain);
   assign(M.dirtDry, grain);
+  const turf = turfGrain();
+  for (const material of [
+    M.grass,
+    M.meadow,
+    M.pasture,
+    M.cropGreen,
+    M.cropYoung,
+    M.stubble,
+    M.fallow,
+    M.ploughed,
+  ]) {
+    assign(material, turf);
+  }
   // World UVs are baked at half a unit per metre, which makes a 256px tile two
   // metres across — about one screen pixel on the creek at this camera. The
   // ripple map gets its own repeat so a tile spans tens of metres and can

@@ -5,7 +5,15 @@ import { Rng } from "../lib/rng";
 import { M } from "../scene/materials";
 import { InstanceKit, registerProps } from "./props";
 import type { Rig } from "./actors";
-import { PARCELS, buildCityGround, buildSurroundings, buildTraffic, buildWaterLife } from "./cityPlan";
+import {
+  PARCELS,
+  buildCityGround,
+  buildPedestrians,
+  buildSurroundings,
+  buildTraffic,
+  buildWaterLife,
+} from "./cityPlan";
+import { buildCountryside } from "./countryside";
 import { buildParcelGround, emitLocal, parcelMatrix, type Parcel } from "./parcel";
 import {
   buildCommerceCore,
@@ -151,8 +159,9 @@ export function buildTerrain(seedText: string): Terrain {
   const kit = new InstanceKit();
   registerProps(kit);
 
-  const rigs: Rig[] = [...buildWaterLife(), ...buildTraffic(seed)];
+  const rigs: Rig[] = [...buildWaterLife(), ...buildTraffic(seed), ...buildPedestrians(seed)];
 
+  group.add(buildCountryside(kit, seed));
   group.add(buildCityGround(kit, seed));
   group.add(buildSurroundings(seed));
 

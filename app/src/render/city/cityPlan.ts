@@ -4,8 +4,21 @@ import { PartsBuilder, bevelBox, box, post, slab, wedge } from "../lib/geom";
 import { Rng } from "../lib/rng";
 import { ACTOR_SURFACE, M } from "../scene/materials";
 import { Prop, type InstanceKit } from "./props";
-import type { Rig } from "./actors";
+import { makePerson, type Rig } from "./actors";
 import type { EdgeKind, Parcel } from "./parcel";
+import {
+  crossingsOn,
+  deckHeight,
+  drivableCore,
+  findCircuit,
+  buildRoadGraph,
+  subtract,
+  walkwayWidth,
+  type Circuit,
+  type Road,
+} from "./roads";
+
+export type { Road } from "./roads";
 
 /**
  * The city plan.
@@ -41,39 +54,50 @@ export const WORLD = {
   ground: 0,
 } as const;
 
-export type Road = {
-  axis: "x" | "z";
-  at: number;
-  from: number;
-  to: number;
-  width: number;
-  grade: "boulevard" | "street" | "lane";
-  gaps?: Array<[number, number]>;
-};
+/** How far out anything laid on the ground is allowed to run. */
+export const REACH = 460;
 
+/**
+ * The network.
+ *
+ * Every road now ends in one of exactly two ways: at another road, or off the
+ * edge of the world. The previous layout had seven roads and five of them
+ * simply stopped in mid-air, which is the single most model-like thing a city
+ * can do — a real street either meets something or carries on past where you
+ * can see. A ring road closes the east and south sides, and two highways leave
+ * town and run out into the fog.
+ */
 export const ROADS: Road[] = [
   // North quay road, running the length of the headland and over the canal.
   {
+    id: "quay-north",
     axis: "x",
     at: WORLD.bridgeZ,
-    from: -70,
-    to: 124,
+    from: -66,
+    to: 128,
     width: 10,
     grade: "street",
-    gaps: [[WORLD.canalX0 - 6, WORLD.canalX1 + 6]],
+    gaps: [[WORLD.canalX0 - 6.5, WORLD.canalX1 + 6.5]],
+    decks: [{ from: WORLD.canalX0 - 6.5, to: WORLD.canalX1 + 6.5, height: 0.585 }],
   },
-  // West quay road.
-  { axis: "z", at: -66, from: -84, to: 44, width: 9.5, grade: "street" },
-  // The boulevard through the middle of the city.
-  { axis: "x", at: -18, from: -66, to: 104, width: 13, grade: "boulevard" },
-  // Main cross street, headland to foreground.
-  { axis: "z", at: 4, from: -84, to: 40, width: 10, grade: "street" },
+  // West quay road, from the headland down to the southern edge of town.
+  { id: "quay-west", axis: "z", at: -66, from: -84, to: 66, width: 9.5, grade: "street" },
+  // The boulevard through the middle of the city, and on out of it.
+  { id: "boulevard", axis: "x", at: -18, from: -66, to: REACH, width: 13, grade: "boulevard", open: "to" },
+  // Main cross street, headland to the southern street.
+  { id: "cross-mid", axis: "z", at: 4, from: -84, to: 30, width: 10, grade: "street" },
   // Eastern cross street through the core.
-  { axis: "z", at: 52, from: -84, to: -18, width: 9, grade: "street" },
+  { id: "cross-east", axis: "z", at: 52, from: -84, to: -18, width: 9, grade: "street" },
   // Southern street behind the creator blocks.
-  { axis: "x", at: 30, from: -66, to: 76, width: 9, grade: "street" },
-  // Service lane behind the maker yards.
-  { axis: "z", at: -30, from: -46, to: 16, width: 6.5, grade: "lane" },
+  { id: "south-street", axis: "x", at: 30, from: -66, to: 128, width: 9, grade: "street" },
+  // Service lane behind the maker yards, quay road to southern street.
+  { id: "forge-lane", axis: "z", at: -30, from: -84, to: 30, width: 6.5, grade: "lane" },
+  // Ring road closing the east side.
+  { id: "ring-east", axis: "z", at: 128, from: -84, to: 66, width: 10, grade: "street" },
+  // Ring road closing the south side.
+  { id: "ring-south", axis: "x", at: 66, from: -66, to: 128, width: 10, grade: "street" },
+  // The road south, out of town and over the hill.
+  { id: "highway-south", axis: "z", at: 88, from: 66, to: REACH, width: 10, grade: "street", open: "to" },
 ];
 
 const KERB_H = 0.15;
@@ -86,36 +110,14 @@ const KERB_H = 0.15;
  */
 const MARKING_W = 0.3;
 
-function inGap(road: Road, t: number): boolean {
-  return Boolean(road.gaps?.some(([a, b]) => t > a && t < b));
-}
-
 /** Terrain, both bays, the canal, the bridge and the whole road network. */
 export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
   const rng = new Rng(seed).fork("city-ground");
   const b = new PartsBuilder();
-  const kerbY = WORLD.ground + KERB_H;
   const N = WORLD.northShore;
   const W = WORLD.westShore;
 
-  // -------------------------------------------------------------- landmass
-  // One quadrant of land. The two bays are the space it does not occupy.
-  //
-  // Its top sits just below WORLD.ground rather than exactly on it. Every
-  // carriageway's top face is at WORLD.ground, and two coplanar surfaces are
-  // two surfaces with an equal claim on the same depth values. It happens to
-  // resolve consistently under an orthographic camera looking at horizontal
-  // planes, because the interpolated depth is constant across both, but that is
-  // luck rather than design and it would not survive a perspective camera.
-  b.add(M.concreteDark, box(300, 1.6, 300), [W + 150, WORLD.ground - 0.88, N + 150]);
-
-  // Bays. Two planes at the same level so they read as one body of water.
-  b.add(M.water, box(420, 0.12, N - WORLD.northFar), [10, WORLD.ground - 1.8, (N + WORLD.northFar) / 2]);
-  b.add(M.water, box(W - WORLD.westFar, 0.12, 300), [(W + WORLD.westFar) / 2, WORLD.ground - 1.8, N + 150]);
-
-  // Far banks, with a strip of built-up shore so the horizon is not empty.
-  b.add(M.concreteDark, box(460, 1.8, 120), [10, WORLD.ground - 0.9, WORLD.northFar - 60]);
-  b.add(M.concreteDark, box(120, 1.8, 340), [WORLD.westFar - 60, WORLD.ground - 0.9, N + 150]);
+  buildLand(b);
 
   // -------------------------------------------------------------- quays
   const quay = (
@@ -165,10 +167,9 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
   const cw = WORLD.canalX1 - WORLD.canalX0;
   const cx = (WORLD.canalX0 + WORLD.canalX1) / 2;
   const clen = WORLD.canalEndZ - N;
-  b.add(M.water, box(cw, 0.12, clen), [cx, WORLD.ground - 1.8, N + clen / 2]);
   for (const side of [-1, 1]) {
     const wx = cx + side * (cw / 2 + 0.45);
-    b.add(M.concreteDark, box(0.9, 2.4, clen), [wx, WORLD.ground - 1.1, N + clen / 2]);
+    b.add(M.concreteDark, box(1.4, 3.2, clen), [wx, WORLD.ground - 1.5, N + clen / 2]);
     b.add(M.kerb, slab(1.3, 0.16, clen, 0.04), [wx, WORLD.ground + 0.06, N + clen / 2]);
     b.add(M.sidewalk, box(3.2, 0.18, clen), [wx + side * 2.0, WORLD.ground + 0.05, N + clen / 2]);
     for (let z = N + 8; z < WORLD.canalEndZ - 4; z += 9) {
@@ -187,39 +188,58 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
   buildHeadland(b, kit, rng);
 
   // ----------------------------------------------------------------- roads
-  for (const road of ROADS) {
-    const alongX = road.axis === "x";
-    const length = road.to - road.from;
-    const mid = (road.from + road.to) / 2;
-    const half = road.width / 2;
-    const walkW = road.grade === "boulevard" ? 4.4 : road.grade === "street" ? 3.2 : 1.5;
-    const place = (t: number, off: number): [number, number, number] =>
-      alongX ? [t, 0, road.at + off] : [road.at + off, 0, t];
+  for (const road of ROADS) buildRoad(b, kit, rng, road);
+  buildJunctions(b);
 
-    const step = 4;
-    for (let t = road.from; t < road.to; t += step) {
-      if (inGap(road, t + step / 2)) continue;
-      const p = place(t + step / 2, 0);
-      b.add(
-        road.grade === "lane" ? M.asphaltPatched : M.asphalt,
-        box(alongX ? step : road.width, 0.24, alongX ? road.width : step),
-        [p[0], WORLD.ground - 0.12, p[2]],
-      );
-    }
+  return b.build("city-ground", false, true);
+}
 
-    for (const side of [-1, 1]) {
-      const kp = place(mid, side * (half + 0.17));
-      b.add(M.kerb, box(alongX ? length : 0.34, KERB_H, alongX ? 0.34 : length), [
-        kp[0],
-        WORLD.ground + KERB_H / 2,
-        kp[2],
-      ]);
-      const wp = place(mid, side * (half + 0.34 + walkW / 2));
-      b.add(M.sidewalk, box(alongX ? length : walkW, 0.18, alongX ? walkW : length), [
-        wp[0],
-        kerbY - 0.09,
-        wp[2],
-      ]);
+/**
+ * One road, aware of everything that crosses it.
+ *
+ * Each layer — carriageway, kerb, footway, median, markings, planting — asks
+ * the network which stretches belong to a junction and simply does not lay
+ * itself there. A junction is then a clear square of asphalt with a footway
+ * corner at each side, instead of the previous pile-up of a raised pavement
+ * crossing a carriageway and a planted central reservation sealing the mouth
+ * of the side street.
+ */
+function buildRoad(b: PartsBuilder, kit: InstanceKit, rng: Rng, road: Road): void {
+  const alongX = road.axis === "x";
+  const half = road.width / 2;
+  const walkW = walkwayWidth(road.grade);
+  const kerbY = WORLD.ground + KERB_H;
+  const crossings = crossingsOn(road, ROADS);
+  const place = (t: number, off: number): [number, number, number] =>
+    alongX ? [t, 0, road.at + off] : [road.at + off, 0, t];
+  const along = (from: number, to: number, width: number) =>
+    alongX ? ([to - from, width] as const) : ([width, to - from] as const);
+
+  // Where this road gives way: the other carriageway is laid through, so this
+  // one stops at its kerb line rather than doubling up on the same plane.
+  const yieldsTo = crossings
+    .filter((c) => c.yields)
+    .map((c) => [c.at - c.half, c.at + c.half] as const);
+  const surface = road.grade === "lane" ? M.asphaltPatched : M.asphalt;
+  const holes = [...yieldsTo, ...(road.gaps ?? [])];
+
+  for (const [from, to] of subtract(road.from, road.to, holes)) {
+    const [w, d] = along(from, to, road.width);
+    const p = place((from + to) / 2, 0);
+    b.add(surface, box(w, 0.24, d), [p[0], WORLD.ground - 0.12, p[2]]);
+  }
+
+  // Kerb and footway stop clear of every junction, on both sides.
+  const corners = crossings.map((c) => [c.at - c.reach, c.at + c.reach] as const);
+  const edgeHoles = [...corners, ...(road.gaps ?? [])];
+  for (const side of [-1, 1]) {
+    for (const [from, to] of subtract(road.from, road.to, edgeHoles)) {
+      const kp = place((from + to) / 2, side * (half + 0.17));
+      const [kw, kd] = along(from, to, 0.34);
+      b.add(M.kerb, box(kw, KERB_H, kd), [kp[0], WORLD.ground + KERB_H / 2, kp[2]]);
+      const wp = place((from + to) / 2, side * (half + 0.34 + walkW / 2));
+      const [ww, wd] = along(from, to, walkW);
+      b.add(M.sidewalk, box(ww, 0.18, wd), [wp[0], kerbY - 0.09, wp[2]]);
       // Paving joints used to be modelled here as 5cm plates. At the default
       // framing 5cm is under half a pixel, so every one of them landed on a
       // different part of the pixel grid as the camera crept along and popped
@@ -227,66 +247,230 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
       // procedural paving-seam texture, which is the right place for detail
       // this fine, so the geometry is gone and nothing is lost.
     }
+  }
 
-    if (road.grade === "boulevard") {
-      b.add(M.kerb, box(alongX ? length : 2.4, 0.2, alongX ? 2.4 : length), [
+  if (road.grade === "boulevard") {
+    // Central reservation, broken at every junction so traffic can turn across
+    // it and so the side streets are not walled off.
+    for (const [from, to] of subtract(road.from, road.to, edgeHoles)) {
+      const mid = (from + to) / 2;
+      const [kw, kd] = along(from, to, 2.4);
+      b.add(M.kerb, box(kw, 0.2, kd), [
         alongX ? mid : road.at,
         WORLD.ground + 0.1,
         alongX ? road.at : mid,
       ]);
-      b.add(M.grass, box(alongX ? length - 1 : 1.9, 0.1, alongX ? 1.9 : length - 1), [
+      const [gw, gd] = along(from + 0.5, to - 0.5, 1.9);
+      b.add(M.grass, box(gw, 0.1, gd), [
         alongX ? mid : road.at,
         WORLD.ground + 0.2,
         alongX ? road.at : mid,
       ]);
-      for (let t = road.from + 7; t < road.to - 5; t += 11) {
+      for (let t = from + 5; t < to - 3; t += 11) {
         const p = place(t, 0);
         Prop.tree(kit, [p[0], WORLD.ground + 0.24, p[2]], rng.range(0, 6.2), rng.range(0.92, 1.2));
       }
-    } else if (road.grade !== "lane") {
-      // A real lane marking is about 15cm, which is 1.4 pixels here and
-      // therefore crawls. Widened until it survives the pixel grid: at this
-      // scale the line still reads as a lane marking and it stops flickering.
-      for (let t = road.from + 2; t < road.to; t += 6) {
-        if (inGap(road, t)) continue;
+    }
+  } else if (road.grade !== "lane") {
+    // A real lane marking is about 15cm, which is 1.4 pixels here and
+    // therefore crawls. Widened until it survives the pixel grid: at this
+    // scale the line still reads as a lane marking and it stops flickering.
+    for (const [from, to] of subtract(road.from, road.to, [...corners, ...holes])) {
+      for (let t = from + 2; t < to - 1; t += 6) {
         const p = place(t, 0);
-        b.add(M.roadLine, box(alongX ? 3 : MARKING_W, 0.02, alongX ? MARKING_W : 3), [
+        b.add(M.roadLine, box(...boxSpan(alongX, 3, MARKING_W), 0.02), [
           p[0],
           WORLD.ground + 0.006,
           p[2],
         ]);
       }
     }
+  }
 
-    if (road.grade !== "lane") {
-      for (let t = road.from + 9; t < road.to - 6; t += 13) {
-        if (inGap(road, t)) continue;
+  if (road.grade !== "lane") {
+    const verge = subtract(road.from + 4, road.to - 4, edgeHoles);
+    for (const [from, to] of verge) {
+      for (let t = from + 5; t < to - 3; t += 13) {
         for (const side of [-1, 1]) {
           const p = place(t, side * (half + 1.6));
           b.add(M.dirt, box(1.5, 0.06, 1.5), [p[0], kerbY - 0.02, p[2]]);
           Prop.tree(kit, [p[0], kerbY, p[2]], rng.range(0, 6.2), rng.range(0.86, 1.12));
         }
       }
-      for (let t = road.from + 16; t < road.to - 8; t += 23) {
-        if (inGap(road, t)) continue;
+      for (let t = from + 12; t < to - 6; t += 23) {
         const p = place(t, half + 1.0);
         Prop.lamp(kit, [p[0], kerbY, p[2]], alongX ? Math.PI : Math.PI / 2);
       }
     }
   }
+}
 
-  // Zebra crossings at the two junctions the camera looks straight at.
-  for (const [jx, jz] of [
-    [4, -18],
-    [52, -18],
-    [4, -84],
-  ] as const) {
-    for (let i = 0; i < 7; i++) {
-      b.add(M.roadLine, box(0.62, 0.02, 8), [jx - 3 + i, WORLD.ground + 0.008, jz + 10.5]);
+/** Box dimensions for something that runs along X or along Z. */
+function boxSpan(alongX: boolean, length: number, width: number): [number, number] {
+  return alongX ? [length, width] : [width, length];
+}
+
+/**
+ * The junctions themselves: footway corners and crossing stripes.
+ *
+ * Built from the network rather than from a hand-written list of coordinates,
+ * so a road added to the plan gets proper corners without anyone remembering
+ * to come back here.
+ */
+function buildJunctions(b: PartsBuilder): void {
+  const kerbY = WORLD.ground + KERB_H;
+  const seen = new Set<string>();
+
+  for (const road of ROADS) {
+    if (road.axis !== "x") continue;
+    for (const cross of crossingsOn(road, ROADS)) {
+      const key = `${cross.at}:${road.at}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const halfX = cross.half;
+      const halfZ = road.width / 2;
+      const walkX = walkwayWidth(cross.other.grade);
+      const walkZ = walkwayWidth(road.grade);
+
+      // A paved corner in each quadrant, joining the two footways round the
+      // turn. Without these the pavement simply stopped at every junction.
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          b.add(M.sidewalk, box(walkX, 0.18, walkZ), [
+            cross.at + sx * (halfX + 0.34 + walkX / 2),
+            kerbY - 0.09,
+            road.at + sz * (halfZ + 0.34 + walkZ / 2),
+          ]);
+          b.add(M.kerb, box(walkX + 0.34, KERB_H, 0.34), [
+            cross.at + sx * (halfX + 0.34 + walkX / 2),
+            WORLD.ground + KERB_H / 2,
+            road.at + sz * (halfZ + 0.17),
+          ]);
+          b.add(M.kerb, box(0.34, KERB_H, walkZ), [
+            cross.at + sx * (halfX + 0.17),
+            WORLD.ground + KERB_H / 2,
+            road.at + sz * (halfZ + 0.34 + walkZ / 2),
+          ]);
+        }
+      }
+
+      // Crossing stripes on each approach, set back from the middle so the
+      // turning space stays clear.
+      if (road.grade === "lane" || cross.other.grade === "lane") continue;
+      const bars = (
+        count: number,
+        origin: [number, number],
+        stepX: number,
+        stepZ: number,
+        w: number,
+        d: number,
+      ) => {
+        for (let i = 0; i < count; i++) {
+          b.add(M.roadLine, box(w, 0.02, d), [
+            origin[0] + stepX * i,
+            WORLD.ground + 0.008,
+            origin[1] + stepZ * i,
+          ]);
+        }
+      };
+      const acrossX = Math.max(3, Math.floor(cross.other.width / 1.6));
+      for (const sz of [-1, 1]) {
+        bars(
+          acrossX,
+          [cross.at - cross.other.width / 2 + 0.8, road.at + sz * (halfZ - 1.5)],
+          1.6,
+          0,
+          0.62,
+          2.6,
+        );
+      }
+      const acrossZ = Math.max(3, Math.floor(road.width / 1.6));
+      for (const sx of [-1, 1]) {
+        bars(
+          acrossZ,
+          [cross.at + sx * (halfX - 1.5), road.at - road.width / 2 + 0.8],
+          0,
+          1.6,
+          2.6,
+          0.62,
+        );
+      }
     }
   }
+}
 
-  return b.build("city-ground", false, true);
+/**
+ * The land, and where it stops.
+ *
+ * The first pass stood the city on a three-hundred-metre square of dark
+ * concrete. Two things were wrong with that and both were plainly visible: the
+ * square ran out, so panning south-east walked you off the end of the world
+ * onto a grey cliff over nothing; and the parts of it no building stood on read
+ * as an enormous empty car park, because that is what an unbroken field of
+ * paving is.
+ *
+ * It is open country now. The plain runs far enough in every direction that no
+ * camera the game allows can reach its edge, the distance is eaten by the fog
+ * rather than by a boundary, and the city sits in the middle of it. Nothing is
+ * paved except what somebody paved: carriageways, footways, quays and plots.
+ * The green between them is the ground the city was built on.
+ *
+ * Land and water tile the plane exactly — near shore, channel, far shore, with
+ * the two arms of the channel meeting at the corner. The old layout left a
+ * notch there where the north and west banks failed to meet, which showed as a
+ * step in the far shoreline every time the camera looked north-west.
+ */
+function buildLand(b: PartsBuilder): void {
+  const N = WORLD.northShore;
+  const W = WORLD.westShore;
+  const NF = WORLD.northFar;
+  const WF = WORLD.westFar;
+  const R = REACH + 320;
+  // Sits just below WORLD.ground. Every carriageway's top face is at
+  // WORLD.ground, and two coplanar surfaces are two surfaces with an equal
+  // claim on the same depth values. It happens to resolve consistently under an
+  // orthographic camera looking at horizontal planes, but that is luck rather
+  // than design and it would not survive a perspective camera.
+  const y = WORLD.ground - 0.88;
+  const plane = (x0: number, x1: number, z0: number, z1: number, material = M.grass) => {
+    b.add(material, box(x1 - x0, 1.6, z1 - z0), [(x0 + x1) / 2, y, (z0 + z1) / 2]);
+  };
+
+  // The city's own side of the water, in three pieces so the canal is a hole in
+  // the land rather than a stripe painted on top of it. It was the latter: the
+  // inlet was authored under a slab that covered it completely, which left a
+  // handsome bridge spanning a perfectly solid street.
+  plane(W, WORLD.canalX0, N, R);
+  plane(WORLD.canalX1, R, N, R);
+  plane(WORLD.canalX0, WORLD.canalX1, WORLD.canalEndZ, R);
+  // The far shore, an L that closes the corner the old layout left open.
+  plane(-R, R, -R, NF);
+  plane(-R, WF, NF, R);
+
+  // The channel between them, at one level so it reads as one body of water,
+  // and deep enough that no camera angle finds daylight under the shoreline.
+  const water = (x0: number, x1: number, z0: number, z1: number) => {
+    b.add(M.water, box(x1 - x0, 1.4, z1 - z0), [
+      (x0 + x1) / 2,
+      WORLD.ground - 2.44,
+      (z0 + z1) / 2,
+    ]);
+  };
+  water(WF, R, NF, N);
+  water(WF, W, N, R);
+  water(WORLD.canalX0, WORLD.canalX1, N, WORLD.canalEndZ);
+
+  // Shoreline. The quays only run the length of the city; past them the coast
+  // is a bank, and it has to be there, because the land is a slab with a
+  // visible cut face and the water is below it.
+  const bank = (x0: number, x1: number, z0: number, z1: number) => {
+    b.add(M.dirt, box(x1 - x0, 2.9, z1 - z0), [(x0 + x1) / 2, WORLD.ground - 1.4, (z0 + z1) / 2]);
+  };
+  bank(W - 1.2, R, N - 1.2, N + 1.2);
+  bank(W - 1.2, W + 1.2, N, R);
+  bank(-R, R, NF - 1.2, NF + 1.2);
+  bank(WF - 1.2, WF + 1.2, NF, R);
 }
 
 /**
@@ -403,48 +587,236 @@ function vehicleGeometry(kind: VehicleKind, paint: THREE.Material): THREE.Group 
 
 const PAINTS = [M.vanBody, M.accent, M.renderTeal, M.plaster, M.accentDeep, M.ironDark, M.vanAccent];
 
+/**
+ * A driveable path: a closed circuit turned into a smooth, offset, sampled
+ * polyline with a length, so anything following it can be positioned by
+ * distance travelled and never has to be teleported.
+ */
+export type Path = {
+  readonly points: readonly THREE.Vector3[];
+  /** Cumulative arc length at each point; last entry is the total. */
+  readonly marks: readonly number[];
+  readonly length: number;
+};
+
+/** Corner radius, in metres, for a vehicle turning at a junction. */
+const TURN_RADIUS = 7;
+
+/**
+ * Offsets a circuit into its own lane and rounds off the corners.
+ *
+ * Two things make the difference between a route and a slideshow. The offset
+ * is taken to the right of travel, so opposing streams sit on their own sides
+ * of the centre line and a loop driven clockwise and the same loop driven the
+ * other way do not overlap. And the corners are arcs rather than vertices, so
+ * a vehicle leans into a turn over a couple of car lengths instead of snapping
+ * ninety degrees in one frame.
+ */
+export function layPath(circuit: Circuit, offset: number, height: (x: number, z: number) => number): Path {
+  const n = circuit.points.length;
+  const at = (i: number) => circuit.points[((i % n) + n) % n];
+
+  // Offset each leg to the right, then meet consecutive legs at their corner.
+  const corners: Array<{ x: number; z: number; inX: number; inZ: number; outX: number; outZ: number }> = [];
+  for (let i = 0; i < n; i++) {
+    const previous = at(i - 1);
+    const here = at(i);
+    const next = at(i + 1);
+    const dIn = unit(here.x - previous.x, here.z - previous.z);
+    const dOut = unit(next.x - here.x, next.z - here.z);
+    const rIn = { x: dIn.z, z: -dIn.x };
+    const rOut = { x: dOut.z, z: -dOut.x };
+    const point = meet(
+      { x: here.x + rIn.x * offset, z: here.z + rIn.z * offset },
+      dIn,
+      { x: here.x + rOut.x * offset, z: here.z + rOut.z * offset },
+      dOut,
+    );
+    corners.push({ x: point.x, z: point.z, inX: dIn.x, inZ: dIn.z, outX: dOut.x, outZ: dOut.z });
+  }
+
+  const points: THREE.Vector3[] = [];
+  const push = (x: number, z: number) => {
+    const last = points[points.length - 1];
+    if (last && Math.abs(last.x - x) < 0.01 && Math.abs(last.z - z) < 0.01) return;
+    points.push(new THREE.Vector3(x, height(x, z), z));
+  };
+
+  for (let i = 0; i < n; i++) {
+    const c = corners[i];
+    const previous = corners[(i - 1 + n) % n];
+    const runIn = Math.hypot(c.x - previous.x, c.z - previous.z);
+    const radius = Math.min(TURN_RADIUS, runIn * 0.4);
+    const straight = Math.abs(c.inX * c.outZ - c.inZ * c.outX) < 0.01;
+    if (straight || radius < 0.5) {
+      push(c.x, c.z);
+      continue;
+    }
+    const ax = c.x - c.inX * radius;
+    const az = c.z - c.inZ * radius;
+    const bx = c.x + c.outX * radius;
+    const bz = c.z + c.outZ * radius;
+    const steps = 5;
+    for (let s = 0; s <= steps; s++) {
+      const k = s / steps;
+      const j = 1 - k;
+      push(j * j * ax + 2 * j * k * c.x + k * k * bx, j * j * az + 2 * j * k * c.z + k * k * bz);
+    }
+  }
+
+  const marks = [0];
+  for (let i = 1; i <= points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i % points.length];
+    marks.push(marks[i - 1] + a.distanceTo(b));
+  }
+  return { points, marks, length: marks[marks.length - 1] };
+}
+
+function unit(x: number, z: number): { x: number; z: number } {
+  const length = Math.hypot(x, z) || 1;
+  return { x: x / length, z: z / length };
+}
+
+/** Where two offset lines meet. Parallel legs fall back to the first point. */
+function meet(
+  p: { x: number; z: number },
+  d: { x: number; z: number },
+  q: { x: number; z: number },
+  e: { x: number; z: number },
+): { x: number; z: number } {
+  const denominator = d.x * e.z - d.z * e.x;
+  if (Math.abs(denominator) < 1e-6) return p;
+  const t = ((q.x - p.x) * e.z - (q.z - p.z) * e.x) / denominator;
+  return { x: p.x + d.x * t, z: p.z + d.z * t };
+}
+
+/** Position and heading a given distance along a path. */
+export function sample(path: Path, distance: number, into: THREE.Vector3): number {
+  const total = path.length;
+  const s = ((distance % total) + total) % total;
+  // Linear scan from a proportional guess: paths are short and near-uniform.
+  let i = Math.min(path.points.length - 1, Math.floor((s / total) * path.points.length));
+  while (i > 0 && path.marks[i] > s) i--;
+  while (i < path.points.length - 1 && path.marks[i + 1] <= s) i++;
+  const a = path.points[i];
+  const b = path.points[(i + 1) % path.points.length];
+  const span = path.marks[i + 1] - path.marks[i] || 1;
+  const k = (s - path.marks[i]) / span;
+  into.lerpVectors(a, b, k);
+  return Math.atan2(b.x - a.x, b.z - a.z);
+}
+
+/** Running-surface height anywhere on the network, so bridges are driven over. */
+function surfaceHeight(x: number, z: number): number {
+  let lift = 0;
+  for (const road of ROADS) {
+    if (!road.decks) continue;
+    const across = road.axis === "x" ? z - road.at : x - road.at;
+    if (Math.abs(across) > road.width / 2 + 1) continue;
+    lift = Math.max(lift, deckHeight(road, road.axis === "x" ? x : z));
+  }
+  return WORLD.ground + 0.02 + lift;
+}
+
+/**
+ * Traffic.
+ *
+ * Empty carriageways were the loudest remaining tell that this was a model
+ * rather than a place. Each vehicle is a single merged mesh under the shared
+ * actor material, so a dozen of them cost a dozen draw calls.
+ *
+ * What they drive is the difference from the first pass. Every vehicle now
+ * follows a closed circuit found in the road graph: it turns at junctions,
+ * keeps right, climbs the bridge deck rather than being switched off underneath
+ * it, and comes back round to where it started. Nothing pops into or out of
+ * existence, because nothing ever needs to.
+ */
 export function buildTraffic(seed: number): Rig[] {
   const rng = new Rng(seed).fork("traffic");
+  const graph = drivableCore(buildRoadGraph(ROADS));
   const rigs: Rig[] = [];
-  const y = WORLD.ground + 0.02;
 
-  // Route, lane offset and how many vehicles share it.
-  const routes: Array<{ road: Road; lane: number; count: number; speed: number }> = [
-    { road: ROADS[2], lane: 4.2, count: 4, speed: 7.5 },
-    { road: ROADS[2], lane: -4.2, count: 3, speed: 6.8 },
-    { road: ROADS[0], lane: 2.6, count: 2, speed: 8.4 },
-    { road: ROADS[3], lane: 2.7, count: 2, speed: 6.2 },
-    { road: ROADS[1], lane: -2.6, count: 2, speed: 5.6 },
-  ];
+  const routes: Path[] = [];
+  for (let i = 0; i < 6; i++) {
+    const circuit = findCircuit(graph, rng, 4);
+    if (!circuit) continue;
+    // Both sides of the road: the same loop driven each way, offset right.
+    routes.push(layPath(circuit, 3.0, surfaceHeight));
+    routes.push(layPath(reverse(circuit), 3.0, surfaceHeight));
+  }
+  if (routes.length === 0) return rigs;
 
-  for (const route of routes) {
-    const { road, lane } = route;
-    const alongX = road.axis === "x";
-    // Nearside lane runs one way, offside the other, as a real street does.
-    const forward = lane > 0;
-    const span = road.to - road.from;
-    for (let i = 0; i < route.count; i++) {
+  const position = new THREE.Vector3();
+  for (const [index, path] of routes.entries()) {
+    // Long circuits carry more traffic than short ones, as they would.
+    const count = Math.max(1, Math.min(4, Math.round(path.length / 150)));
+    for (let i = 0; i < count; i++) {
       const kind: VehicleKind = rng.pick(["car", "hatch", "hatch", "car", "pickup", "bus", "truck"]);
       const group = vehicleGeometry(kind, rng.pick(PAINTS));
-      const offset = (i + rng.range(0.05, 0.4)) / route.count;
-      const speed = route.speed * rng.range(0.85, 1.15);
-      const heading = alongX
-        ? forward
-          ? Math.PI / 2
-          : -Math.PI / 2
-        : forward
-          ? 0
-          : Math.PI;
-      group.rotation.y = heading;
+      const speed = rng.range(6.5, 9.5) * (kind === "bus" || kind === "truck" ? 0.8 : 1);
+      const start = path.length * ((i + rng.range(0.02, 0.3)) / count) + index * 11;
       rigs.push({
         group,
         update: (t: number) => {
-          const p = ((t * speed) / span + offset) % 1;
-          const travel = forward ? road.from + p * span : road.to - p * span;
-          if (alongX) group.position.set(travel, y, road.at + lane);
-          else group.position.set(road.at + lane, y, travel);
-          // Hide while crossing a bridge gap in the carriageway.
-          group.visible = !inGap(road, travel);
+          const heading = sample(path, start + t * speed, position);
+          group.position.copy(position);
+          group.rotation.y = heading;
+        },
+      });
+    }
+  }
+
+  return rigs;
+}
+
+function reverse(circuit: Circuit): Circuit {
+  return { points: [...circuit.points].reverse(), legs: [...circuit.legs].reverse() };
+}
+
+/**
+ * People on the pavement.
+ *
+ * Same graph, one lane further out and a good deal slower. Walkers used to run
+ * a straight line between two authored points and snap back to the start, which
+ * is exactly as convincing as it sounds; these follow the footway round corners
+ * and keep going.
+ */
+export function buildPedestrians(seed: number): Rig[] {
+  const rng = new Rng(seed).fork("pedestrians");
+  const graph = drivableCore(buildRoadGraph(ROADS));
+  const rigs: Rig[] = [];
+
+  const paths: Path[] = [];
+  for (let i = 0; i < 5; i++) {
+    const circuit = findCircuit(graph, rng, 4);
+    if (!circuit) continue;
+    paths.push(layPath(circuit, rng.range(8.4, 9.6), surfaceHeight));
+    paths.push(layPath(reverse(circuit), rng.range(8.4, 9.6), surfaceHeight));
+  }
+
+  const position = new THREE.Vector3();
+  for (const path of paths) {
+    const count = Math.max(1, Math.min(3, Math.round(path.length / 260)));
+    for (let i = 0; i < count; i++) {
+      const rig = makePerson({
+        pose: rng.chance(0.25) ? "carry" : "walk",
+        build: rng.range(0.92, 1.08),
+        body: rng.pick([M.personBody, M.personAlt, M.accentDeep, M.renderTeal]),
+        hat: rng.chance(0.3) ? "cap" : "none",
+        seed: rng.next() * 1e6,
+      });
+      const speed = rng.range(1.1, 1.6);
+      const start = path.length * ((i + rng.range(0.05, 0.4)) / count);
+      rigs.push({
+        group: rig.group,
+        update: (t: number) => {
+          const heading = sample(path, start + t * speed, position);
+          rig.group.position.set(position.x, position.y + 0.14, position.z);
+          const step = t * speed * 3.4;
+          rig.group.position.y += Math.abs(Math.sin(step)) * 0.06;
+          rig.group.rotation.y = heading;
+          rig.group.rotation.z = Math.sin(step) * 0.08;
         },
       });
     }
@@ -657,24 +1029,32 @@ export function buildSurroundings(seed: number): THREE.Group {
     }
   };
 
-  // East of the core: mid-rise continuing the downtown grain off-frame.
+  // East of the core: mid-rise continuing the downtown grain toward the ring.
   rowZ(74, -80, -26, 8, 15, 16);
-  rowZ(98, -80, -10, 10, 22, 17);
-  rowX(-56, 68, 130, 8, 17, 15);
-  // South and south-east: held low and pushed back, so nothing stands in front
-  // of the Creator Quarter in the foreground.
-  rowX(64, 30, 124, 4.5, 7.5, 15);
+  rowZ(98, -80, -26, 10, 22, 17);
+  rowX(-56, 68, 122, 8, 17, 15);
+  rowX(-30, 68, 122, 7, 14, 15);
+  // Between the boulevard and the southern street, east of the quarter.
+  rowX(8, 92, 122, 6, 11, 15);
+  // South of the ring road: held low, so nothing stands in front of the
+  // Creator Quarter in the foreground.
+  rowX(82, 20, 122, 4.5, 7.5, 14);
+  rowX(46, -58, -40, 4.5, 7.0, 14);
   // West side, behind the forge and running off the left edge.
-  rowX(66, -58, 12, 4.5, 7.5, 15);
+  rowX(82, -58, 4, 4.5, 7.5, 14);
   // Far bank north.
-  rowX(WORLD.northFar - 12, -170, 230, 9, 20, 20);
-  rowX(WORLD.northFar - 34, -170, 230, 12, 30, 24);
+  rowX(WORLD.northFar - 12, -260, 320, 9, 20, 20);
+  rowX(WORLD.northFar - 34, -260, 320, 12, 30, 24);
   // Far bank west.
-  rowZ(WORLD.westFar - 12, -150, 190, 8, 18, 20);
-  rowZ(WORLD.westFar - 34, -150, 190, 11, 28, 24);
+  rowZ(WORLD.westFar - 12, -150, 260, 8, 18, 20);
+  rowZ(WORLD.westFar - 34, -150, 260, 11, 28, 24);
 
   for (const blk of blocks) {
     const base = 0.15;
+    // Standing on open ground now rather than on a paved slab, so every block
+    // brings its own forecourt. Without it a nine-storey office grows straight
+    // out of a meadow.
+    b.add(M.sidewalk, box(blk.w + 7, 0.2, blk.d + 7), [blk.x, base - 0.06, blk.z]);
     b.add(rng.pick(bodies), box(blk.w, blk.h, blk.d), [blk.x, base + blk.h / 2, blk.z]);
     b.add(M.fascia, box(blk.w + 0.3, 0.34, blk.d + 0.3), [blk.x, base + blk.h + 0.08, blk.z]);
     // A dark deck sitting proud of the parapet. Without it the lit top face of

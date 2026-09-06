@@ -608,6 +608,23 @@ export function CityCanvas({
           stage.renderer.render(stage.scene, stage.camera);
         },
 
+        /**
+         * Every moving thing on the terrain, where it is right now.
+         *
+         * Exists so a test can step the clock and check that nothing teleports.
+         * Traffic used to run a modulo along a single street and switch itself
+         * off inside the bridge gap, and "does the car vanish" is not a
+         * question a screenshot can answer.
+         */
+        actors: () =>
+          (terrainRef.current?.group.getObjectByName("actors")?.children ?? []).map((child) => ({
+            name: child.name,
+            visible: child.visible,
+            x: child.position.x,
+            y: child.position.y,
+            z: child.position.z,
+          })),
+
         info: () => {
           const info = stage.renderer.info;
           return {
