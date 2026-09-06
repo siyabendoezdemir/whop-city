@@ -240,6 +240,33 @@ describe("GET /api/city/live", () => {
     expect(fetches, "a visitor cost the business an upstream read").toEqual([]);
   });
 
+  it("costs a handful of reads, not a snapshot's worth", async () => {
+    // A poll every fifteen seconds is only defensible if it is cheap. The
+    // snapshot's own capture would answer "which account is this" too, but it
+    // fans out into products, plans and a per-product affiliate detail read to
+    // do it — and that is the cost this endpoint exists to avoid paying.
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      paths.push(url.pathname);
+      return new Response(JSON.stringify({ access_level: "admin", data: [] }), { status: 200 });
+    });
+
+    const env = {
+      WHOP_API_ORIGIN: "https://api.whop.com",
+      CITY_SEED_SECRET: SECRET,
+      CITY_SESSION_SECRET: SECRET,
+      WHOP_ACCOUNT_ID: ACCOUNT,
+    };
+    await handleLiveRequest(request(await signedIn()), env);
+
+    expect(paths.some((path) => path.includes("/products"))).toBe(false);
+    expect(paths.some((path) => path.includes("/plans"))).toBe(false);
+    // Seven stats metrics, one payments list, and the access check that decided
+    // the caller was allowed to ask.
+    expect(paths.length).toBeLessThanOrEqual(10);
+  });
+
   it("refuses a session signed with somebody else's secret", async () => {
     const forged = `city_session=${encodeURIComponent(
       await mintSession("user_real", ACCOUNT, "a-completely-different-secret-value"),

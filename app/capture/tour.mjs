@@ -34,22 +34,40 @@ const SS = Number(process.env.SS ?? 1);
 const FPS = Number(process.env.FPS ?? 16);
 const VIEW = { width: 960, height: 600 };
 
-const JUNCTION = { focus: [4, 0, -18], height: 54 };
+/**
+ * The junction the middle shot sits on.
+ *
+ * Not the downtown crossroads, which is ringed by towers that stand between it
+ * and this camera — from the fixed three-quarter angle you cannot see the road
+ * at all. This one is where the cross street ends at the southern street, on
+ * the open edge of the quarter: clear sightlines, and a T means every vehicle
+ * arriving down the cross street has to turn.
+ */
+const JUNCTION = { focus: [4, 0, 30], height: 62 };
 const BRIDGE = { focus: [37, 0, -84], height: 48 };
 
 const LEGS = [
   { note: "the city in open country", from: { focus: [-2, 0, -30], height: 116 }, to: { focus: [12, 0, -14], height: 252 }, seconds: 4.5 },
-  { note: "down to the crossroads", from: { focus: [12, 0, -14], height: 252 }, to: JUNCTION, seconds: 2.5 },
-  { note: "traffic turning through it", from: JUNCTION, to: JUNCTION, seconds: 5.0 },
-  { note: "along the quay to the canal", from: JUNCTION, to: BRIDGE, seconds: 2.5 },
+  { note: "down to the junction", from: { focus: [12, 0, -14], height: 252 }, to: JUNCTION, seconds: 2.5 },
+  { note: "traffic turning through it", from: JUNCTION, to: JUNCTION, seconds: 5.5 },
+  { note: "across to the canal", from: JUNCTION, to: BRIDGE, seconds: 2.5 },
   { note: "over the bridge", from: BRIDGE, to: BRIDGE, seconds: 4.0 },
 ];
 
 const DURATION = LEGS.reduce((total, leg) => total + leg.seconds, 0);
-/** World time at which the last shot begins. */
-const BRIDGE_SHOT_AT = DURATION - LEGS[LEGS.length - 1].seconds;
 const ease = (k) => k * k * (3 - 2 * k);
 const mix = (a, b, k) => a + (b - a) * k;
+
+/** Where each held shot sits in the film, in seconds from the start. */
+const SHOTS = (() => {
+  let at = 0;
+  const spans = LEGS.map((leg) => {
+    const span = { from: at, to: at + leg.seconds };
+    at += leg.seconds;
+    return span;
+  });
+  return { junction: spans[2], bridge: spans[4] };
+})();
 
 const FRAMES = framesDir();
 for (const file of readdirSync(FRAMES)) rmSync(resolve(FRAMES, file), { recursive: true });
@@ -60,45 +78,87 @@ const page = await openCity(browser, { scenario: "thriving", ss: SS, view: VIEW 
 page.on("pageerror", (error) => console.log("PAGE ERROR:", String(error).slice(0, 200)));
 
 /**
- * When a vehicle is actually up on the bridge deck.
+ * Where to start the world clock.
  *
- * Steps the world without drawing it and watches the stretch of the quay road
- * that spans the canal. Returns the middle of the longest crossing found, so
- * the shot is centred on a vehicle in the act rather than catching the tail of
- * one.
+ * The two held shots each need something to be happening in them: a vehicle
+ * turning at the junction, and a vehicle up on the bridge deck. Both are
+ * properties of the simulation at a given moment, not of the camera, so rather
+ * than guessing an offset and hoping, this steps the world without drawing it
+ * and searches for a start time where both shots land on one.
+ *
+ * One clock for the whole film, so the traffic is continuous across the cuts.
  */
-const bridgeMoment = await page.evaluate(() => {
-  const onBridge = (t) =>
-    window.__city
-      .actors(t)
-      .some(
-        (actor) =>
-          actor.name.startsWith("vehicle-") &&
-          actor.x > 30 &&
-          actor.x < 44 &&
-          Math.abs(actor.z + 84) < 7 &&
-          actor.y > 0.45,
+const clockOffset = await page.evaluate(
+  ([junction, bridge]) => {
+    const STEP = 0.25;
+    const HORIZON = 1200;
+
+    // Sample the world once, then read the two questions off the samples.
+    const frames = [];
+    for (let t = 0; t <= HORIZON; t += STEP) {
+      frames.push(
+        window.__city.actors(t).filter((actor) => actor.name.startsWith("vehicle-")),
       );
-
-  let best = null;
-  let run = null;
-  for (let t = 0; t <= 900; t += 0.25) {
-    if (onBridge(t)) {
-      run ??= t;
-    } else if (run !== null) {
-      const length = t - run;
-      if (!best || length > best.length) best = { at: run + length / 2, length };
-      run = null;
     }
-  }
-  return best;
-});
 
-if (!bridgeMoment) throw new Error("no vehicle crosses the bridge — the routes are wrong");
-console.log(`bridge crossing at t=${bridgeMoment.at.toFixed(2)}s, lasting ${bridgeMoment.length.toFixed(2)}s`);
+    const onBridge = frames.map((actors) =>
+      actors.some(
+        (actor) => actor.x > 30 && actor.x < 44 && Math.abs(actor.z + 84) < 7 && actor.y > 0.45,
+      ),
+    );
 
-// Line the crossing up with the middle of the last shot.
-const clockOffset = bridgeMoment.at - (BRIDGE_SHOT_AT + LEGS[LEGS.length - 1].seconds / 2);
+    /**
+     * A vehicle changing direction inside the junction.
+     *
+     * Compared against its own heading a second earlier, so a lane change or
+     * the natural wobble of a rounded corner does not count: a turn is a
+     * quarter circle.
+     */
+    const back = Math.round(1 / STEP);
+    const turning = frames.map((actors, index) => {
+      if (index < back) return false;
+      const before = frames[index - back];
+      return actors.some((actor, seat) => {
+        const was = before[seat];
+        if (!was) return false;
+        const near = Math.hypot(actor.x - junction[0], actor.z - junction[1]) < 22;
+        if (!near) return false;
+        const nowHeading = Math.atan2(actor.x - was.x, actor.z - was.z);
+        const moved = Math.hypot(actor.x - was.x, actor.z - was.z);
+        if (moved < 1) return false;
+        // Heading a second ago, from the step before that.
+        const earlier = frames[index - back * 2]?.[seat];
+        if (!earlier) return false;
+        const wasHeading = Math.atan2(was.x - earlier.x, was.z - earlier.z);
+        const delta = Math.abs(((nowHeading - wasHeading + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+        return delta > 1.0;
+      });
+    });
+
+    const anyIn = (flags, from, to) => {
+      for (let t = from; t <= to; t += STEP) {
+        if (flags[Math.round(t / STEP)]) return true;
+      }
+      return false;
+    };
+
+    for (let offset = 0; offset < HORIZON - 60; offset += STEP) {
+      if (!anyIn(onBridge, offset + bridge[0], offset + bridge[1])) continue;
+      if (!anyIn(turning, offset + junction[2], offset + junction[3])) continue;
+      return offset;
+    }
+    return null;
+  },
+  [
+    [JUNCTION.focus[0], JUNCTION.focus[2], SHOTS.junction.from, SHOTS.junction.to],
+    [SHOTS.bridge.from, SHOTS.bridge.to],
+  ],
+);
+
+if (clockOffset === null) {
+  throw new Error("could not find a moment with both a turn and a bridge crossing in it");
+}
+console.log(`world clock starts at t=${clockOffset.toFixed(2)}s`);
 
 const clip = await page.locator("canvas").boundingBox();
 const total = Math.round(DURATION * FPS);

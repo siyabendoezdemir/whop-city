@@ -24,11 +24,10 @@ import { metricsFrom } from "./project";
 import { readSales, type Sale } from "./sales";
 import { resolveScenario } from "./scenarios";
 import { withSingleFlight } from "./snapshotCache";
-import { captureSnapshot } from "./snapshot";
 import { readStats } from "./stats";
 import { viewerFor } from "./viewer";
 import { deploymentKey, resolveSource } from "./snapshotRoute";
-import type { Env } from "./whop-client";
+import { readOwningAccountId, type Env } from "./whop-client";
 
 export const LIVE_PATH = "/api/city/live";
 export const LIVE_METHOD = "GET";
@@ -83,9 +82,13 @@ async function readLive(env: Env, scenario: string | null, viewing: string | nul
   }
   if (source !== "live") return CLOSED;
 
-  const capture = await captureSnapshot(env);
-  if (!capture.ok || capture.snapshot.accountId === null) return CLOSED;
-  const accountId = viewing ?? capture.snapshot.accountId;
+  // The owning account, and nothing else. The snapshot's own capture would
+  // answer this too, but it costs a fan-out of products, plans and per-product
+  // affiliate details to do it — which is the exact cost this endpoint exists
+  // to avoid paying every fifteen seconds.
+  const account = await readOwningAccountId(env);
+  if (!account.ok) return CLOSED;
+  const accountId = viewing ?? account.data;
 
   // Independent: a business whose payments the credential cannot read should
   // still get live figures, and a stats node that will not answer should not
@@ -125,7 +128,7 @@ export async function handleLiveRequest(request: Request, env: Env): Promise<Res
       : null;
 
     const body = await withSingleFlight(
-      `live|${deploymentKey(env, source)}|${scenario ?? ""}|${viewer.viewing ?? ""}`,
+      `live|${deploymentKey(env, source)}|${scenario ?? ""}|${viewer.audience}|${viewer.viewing ?? ""}`,
       () => readLive(env, scenario, viewer.viewing),
       {
         ttlMs: LIVE_TTL_MS,

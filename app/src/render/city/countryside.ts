@@ -41,16 +41,17 @@ const CROPS = [
 const FARMED = 470;
 const CELL = 38;
 
-/** Corridor either side of a road's centre line that stays clear. */
-function roadClearance(): Array<{ axis: "x" | "z"; at: number; from: number; to: number; half: number }> {
-  return ROADS.map((road) => ({
-    axis: road.axis,
-    at: road.at,
-    from: Math.min(road.from, road.to) - 6,
-    to: Math.max(road.from, road.to) + 6,
-    half: road.width / 2 + walkwayWidth(road.grade) + 4,
-  }));
-}
+/** Top of a ploughed field, a hair above the plain it sits on. */
+const FIELD_TOP = WORLD.ground - 0.02;
+
+/** Corridor either side of every road's centre line that stays unploughed. */
+const CLEARANCE = ROADS.map((road) => ({
+  axis: road.axis,
+  at: road.at,
+  from: Math.min(road.from, road.to) - 6,
+  to: Math.max(road.from, road.to) + 6,
+  half: road.width / 2 + walkwayWidth(road.grade) + 4,
+}));
 
 /**
  * Ground that is already spoken for.
@@ -76,7 +77,7 @@ function isWater(x: number, z: number): boolean {
 }
 
 function onRoad(x: number, z: number, pad = 0): boolean {
-  for (const road of roadClearance()) {
+  for (const road of CLEARANCE) {
     const across = road.axis === "x" ? z - road.at : x - road.at;
     const along = road.axis === "x" ? x : z;
     if (Math.abs(across) < road.half + pad && along > road.from && along < road.to) return true;
@@ -99,9 +100,6 @@ function plant(kit: InstanceKit, x: number, z: number, rng: Rng, dry = false): v
     rng.range(1.0, 1.7),
   );
 }
-
-/** Top of a ploughed field, a hair above the plain it sits on. */
-const FIELD_TOP = WORLD.ground - 0.02;
 
 export function buildCountryside(kit: InstanceKit, seed: number): THREE.Group {
   const rng = new Rng(seed).fork("countryside");
