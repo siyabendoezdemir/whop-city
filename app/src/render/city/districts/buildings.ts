@@ -250,7 +250,14 @@ export function shopfront(
   const unitW = w / units;
   // Fabric comes in more than one colour, and a parade where every blind
   // matches reads as one shop with a very long window.
-  const awnings = [M.canvasAwning, M.renderTeal, M.canvasAwningFaded, M.timber];
+  //
+  // Four cloths stepped by two is two cloths: `(i * 2 + units) % 4` only ever
+  // takes two values, so a parade alternated between the same pair and — with
+  // one unit in three going without — put three and four matching blinds in a
+  // row. Stepped by three, which is coprime with four, consecutive units never
+  // match. `timber` is also gone from the set: at #c08a4f it read as a bar of
+  // gold paint rather than as canvas.
+  const awnings = [M.canvasAwning, M.renderTeal, M.canvasAwningFaded, M.tarp];
 
   // The fascia the whole parade hangs off, and a pier between each pair.
   b.add(M.ironDark, box(w, 0.52, 0.34), [0, 3.24, z - 0.04]);
@@ -279,7 +286,7 @@ export function shopfront(
     b.add(M.signBoard, box(unitW - 0.62, 0.56, 0.12), [cx, 2.98, z + 0.1]);
     b.add(state === "healthy" ? M.signLit : M.signDead, box(unitW - 1.5, 0.3, 0.07), [cx, 2.98, z + 0.17]);
     if (!shut && (i + units) % 3 !== 0) {
-      const cloth = awningMaterial ?? awnings[(i * 2 + units) % awnings.length];
+      const cloth = awningMaterial ?? awnings[(i * 3 + units) % awnings.length];
       b.add(cloth, box(unitW - 0.7, 0.1, 1.15), [cx, 2.54, z + 0.62], [0.17, 0, 0]);
       b.add(cloth, box(unitW - 0.7, 0.24, 0.09), [cx, 2.41, z + 1.16]);
     }
@@ -742,14 +749,23 @@ export function shedCladding(
   h: number,
   state: StateName,
 ): void {
-  const casing = state === "struggling" ? M.steelRust : M.steelPainted;
+  // Painted steel, not white steel.
+  //
+  // The first version of this used `steelPainted` at #e0e4e8 for the frame
+  // lines and `concreteDark` at #a09c93 for the dado, on a shed whose sheeting
+  // is #f1e6d3. Every one of those is within a few per cent of its neighbour,
+  // so a wall that had a plinth, eight frame lines and a clerestory on it
+  // still read as one blank cream plane — which is the largest plane in the
+  // district and the one the camera is pointed at.
+  const casing = state === "struggling" ? M.steelRust : M.steel;
   const lights = state === "struggling" ? M.glassDim : M.glass;
 
   // Plinth and dado. A shed is knocked about at the bottom, so it is protected
   // to about the height of a lorry deck, and that band is what gives the wall a
   // base to stand on.
   const dado = Math.min(1.9, h * 0.18);
-  b.add(M.concreteDark, box(w + 0.24, dado, d + 0.24), [0, dado / 2, 0]);
+  b.add(M.brickDark, box(w + 0.24, dado, d + 0.24), [0, dado / 2, 0]);
+  b.add(M.concreteDark, box(w + 0.3, 0.36, d + 0.3), [0, 0.18, 0]);
   b.add(skin.trim, box(w + 0.34, 0.2, d + 0.34), [0, dado + 0.06, 0]);
 
   // Frame lines. Wide enough to be more than one pixel at working distance, and
@@ -776,6 +792,11 @@ export function shedCladding(
   const bandH = Math.min(1.25, (h - dado) * 0.26);
   const cy = h - 1.4;
   if (cy > dado + 1.4) {
+    // Dark reveal behind the glass. Pale blue glass at three-quarter opacity
+    // on a cream wall is a slightly bluer cream wall; the spandrel is what
+    // turns it into a hole.
+    b.add(M.ironDark, box(w * 0.98, bandH + 0.22, d + 0.1), [0, cy, 0]);
+    b.add(M.ironDark, box(w + 0.1, bandH + 0.22, d * 0.98), [0, cy, 0]);
     b.add(lights, box(w * 0.97, bandH, d + 0.14), [0, cy, 0]);
     b.add(lights, box(w + 0.14, bandH, d * 0.97), [0, cy, 0]);
     for (let i = 1; i < along * 2; i++) {

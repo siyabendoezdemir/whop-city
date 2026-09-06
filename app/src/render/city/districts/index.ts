@@ -553,7 +553,10 @@ export function buildOfferForge(ctx: Ctx): void {
   const gx1 = x1 - 1.6;
   if (hasYard) {
   const gTop = y + Math.max(5.4, Math.min(target * 0.6, 8.2));
-  const gSteel = state === "struggling" ? M.steelRust : M.steelPainted;
+  // Galvanised, not gloss white. `steelPainted` is #e0e4e8, which on a gantry
+  // standing in an open yard against pale concrete read as scaffolding rather
+  // than as the one piece of lifting plant on the plot.
+  const gSteel = state === "struggling" ? M.steelRust : M.steel;
   for (const gx of [gx0, gx1]) {
     for (const gz of [z0 + 3.0, z0 + 11.0]) {
       local.add(gSteel, box(0.42, gTop - y, 0.42), [gx, (gTop + y) / 2, gz]);
@@ -582,62 +585,101 @@ export function buildOfferForge(ctx: Ctx): void {
 
   if (state === "rising") {
     // Slab, footings and a part-clad frame under a crane.
+    //
+    // Level one is the first rung a player ever buys, and on the Forge it buys
+    // a building site rather than a building — which is the right story and was
+    // the wrong picture. The frame was near-white `steelPainted`, so a portal
+    // frame read as scaffold poles, and the two "clad" bays were a sawtooth
+    // roof with one thin wall under it and open air on the other three sides:
+    // a roof hovering over a slab. Half the district's level-one state looked
+    // like geometry that had failed to load.
+    //
+    // Structural steel is grey, and the clad end of a shed going up is a
+    // finished shed with nothing beyond it yet.
     local.add(M.concrete, box(wsW + 0.6, 0.34, wsD + 0.6), [wsCX, y + 0.1, wsCZ]);
     const bays = Math.max(3, Math.round(wsW / 3.2));
     const bayW = wsW / bays;
-    for (let i = 0; i <= bays; i++) {
-      const bx = wsX0 + i * bayW;
-      for (const bz of [wsCZ - wsD / 2 + 0.5, wsCZ, wsCZ + wsD / 2 - 0.5]) {
-        local.add(M.concreteDark, box(0.9, 0.42, 0.9), [bx, y + 0.36, bz]);
-        local.add(M.steelPainted, box(0.32, eave, 0.32), [bx, y + eave / 2, bz]);
-      }
-      local.add(M.steelPainted, box(0.24, 0.24, wsD), [bx, y + eave, wsCZ]);
-    }
-    for (let i = 0; i < bays; i++) {
-      const bx = wsX0 + i * bayW;
-      const len = Math.hypot(bayW, 2.2);
-      for (const bz of [wsCZ - wsD / 2 + 0.5, wsCZ, wsCZ + wsD / 2 - 0.5]) {
-        local.add(M.steelPainted, box(len, 0.22, 0.22), [bx + bayW / 2, y + eave + 1.1, bz], [0, 0, Math.atan2(2.2, bayW)]);
-      }
-    }
-    // Two bays clad already.
+    // Two bays are up: mass, cladding and roof, standing on the slab.
+    const cladW = bayW * 2;
+    const cladX = wsX0 + cladW / 2;
+    local.add(skin.body, bevelBox(cladW, eave, wsD, 0.08), [cladX, y + eave / 2, wsCZ]);
     const cladInner = new PartsBuilder();
-    roofOf(cladInner, skin, "sawtooth", bayW * 2, wsD, eave, rng);
+    shedCladding(cladInner, skin, cladW, wsD, eave, state);
+    roofOf(cladInner, skin, "sawtooth", cladW, wsD, eave, rng);
     const cladGroup = cladInner.build("clad");
-    cladGroup.position.set(wsX0 + bayW, y, wsCZ);
+    cladGroup.position.set(cladX, y, wsCZ);
     cladGroup.updateMatrixWorld(true);
     cladGroup.traverse((c) => {
       if (c instanceof THREE.Mesh) local.add(c.material as THREE.Material, c.geometry.clone().applyMatrix4(c.matrixWorld));
     });
-    local.add(skin.body, box(bayW * 2, eave, 0.22), [wsX0 + bayW, y + eave / 2, wsCZ + wsD / 2]);
-
-    // Tower crane. Sized to the site rather than to a constant, so it does not
-    // stand twice the height of the thing it is putting up.
-    const mx = wsX0 - 2.4;
-    const mz = wsCZ - wsD / 2 + 3.0;
-    const mastH = Math.max(7.4, target + 2.2);
-    for (const [ox, oz] of [[-0.68, -0.68], [0.68, -0.68], [-0.68, 0.68], [0.68, 0.68]]) {
-      local.add(M.hazard, box(0.2, mastH, 0.2), [mx + ox, y + mastH / 2, mz + oz]);
+    // The open frame runs on from the clad end. Columns on pad footings, an
+    // eaves beam, and rafters over the bays that have no sheeting yet.
+    const frame = M.steel;
+    for (let i = 2; i <= bays; i++) {
+      const bx = wsX0 + i * bayW;
+      for (const bz of [wsCZ - wsD / 2 + 0.5, wsCZ, wsCZ + wsD / 2 - 0.5]) {
+        local.add(M.concreteDark, box(0.9, 0.42, 0.9), [bx, y + 0.36, bz]);
+        local.add(frame, box(0.34, eave, 0.34), [bx, y + eave / 2, bz]);
+      }
+      local.add(frame, box(0.26, 0.26, wsD), [bx, y + eave, wsCZ]);
+      // Cross-bracing in the end bay, which is what stops a run of bare posts
+      // reading as a fence.
+      if (i === bays) {
+        const diag = Math.hypot(bayW, eave);
+        for (const s of [-1, 1]) {
+          local.add(frame, box(diag, 0.16, 0.16), [bx - bayW / 2, y + eave / 2, wsCZ - wsD / 2 + 0.5], [0, 0, s * Math.atan2(eave, bayW)]);
+        }
+      }
     }
+    for (let i = 2; i < bays; i++) {
+      const bx = wsX0 + i * bayW;
+      const len = Math.hypot(bayW, 2.2);
+      for (const bz of [wsCZ - wsD / 2 + 0.5, wsCZ, wsCZ + wsD / 2 - 0.5]) {
+        local.add(frame, box(len, 0.24, 0.24), [bx + bayW / 2, y + eave + 1.1, bz], [0, 0, Math.atan2(2.2, bayW)]);
+      }
+    }
+    // Sheeting stacked against the frame, waiting to go on.
+    local.add(M.roofSheet, box(bayW * 0.9, 0.5, 2.2), [wsX0 + bayW * 2.6, y + 0.55, wsCZ + wsD / 2 - 1.6], [0, 0, 0.06]);
+    local.add(M.ironDark, box(bayW * 0.94, 0.16, 2.4), [wsX0 + bayW * 2.6, y + 0.24, wsCZ + wsD / 2 - 1.6]);
+
+    // Tower crane, sized to the site.
+    //
+    // It used to be a solid-yellow lattice with a seventeen-metre jib and a
+    // five-metre counter on a twenty-two-metre plot, standing at the plot's
+    // own boundary: twenty-two metres of the most saturated colour in the
+    // palette slewed straight across the frame, over the street unit and out
+    // past the kerb on both sides. A crane is the tallest thing on a site and
+    // it is meant to be seen, but it is not meant to be the building.
+    const counter = 3.4;
+    const jibLen = Math.min(13.0, wsW - 1.5);
+    // Beside the frame rather than inside it, and clear of the vent stack.
+    const mx = wsX0 - 2.2;
+    const mz = wsCZ - wsD / 2 + 4.2;
+    const mastH = Math.max(7.4, Math.min(target + 2.6, 13.5));
+    for (const [ox, oz] of [[-0.62, -0.62], [0.62, -0.62], [-0.62, 0.62], [0.62, 0.62]]) {
+      local.add(M.hazard, box(0.18, mastH, 0.18), [mx + ox, y + mastH / 2, mz + oz]);
+    }
+    // Lacing in the darker of the two site yellows, so the mast reads as a
+    // lattice rather than as one filled bar.
     for (let i = 0; i * 2.2 + 0.8 < mastH - 1.2; i++) {
       const ly = y + 0.8 + i * 2.2;
-      local.add(M.hazard, box(1.5, 0.14, 0.14), [mx, ly, mz - 0.68]);
-      local.add(M.hazard, box(1.5, 0.14, 0.14), [mx, ly, mz + 0.68]);
-      local.add(M.hazard, box(0.14, 0.14, 1.5), [mx - 0.68, ly, mz]);
-      local.add(M.hazard, box(0.14, 0.14, 1.5), [mx + 0.68, ly, mz]);
+      local.add(M.hazardDark, box(1.36, 0.12, 0.12), [mx, ly, mz - 0.62]);
+      local.add(M.hazardDark, box(1.36, 0.12, 0.12), [mx, ly, mz + 0.62]);
+      local.add(M.hazardDark, box(0.12, 0.12, 1.36), [mx - 0.62, ly, mz]);
+      local.add(M.hazardDark, box(0.12, 0.12, 1.36), [mx + 0.62, ly, mz]);
     }
-    local.add(M.concreteDark, box(3.4, 0.7, 3.4), [mx, y + 0.35, mz]);
+    local.add(M.concreteDark, box(3.2, 0.7, 3.2), [mx, y + 0.35, mz]);
     const jibY = y + mastH + 1.1;
-    local.add(M.steel, box(1.9, 0.6, 1.9), [mx, y + mastH + 0.3, mz]);
-    local.add(M.hazard, bevelBox(1.5, 1.4, 1.6, 0.14), [mx + 1.3, y + mastH + 1.2, mz]);
-    local.add(M.hazard, box(17.0, 0.42, 0.42), [mx + 8.7, jibY, mz]);
-    local.add(M.hazard, box(17.0, 0.14, 0.14), [mx + 8.7, jibY - 0.86, mz]);
-    for (let i = 0; i < 8; i++) {
-      local.add(M.hazard, box(1.8, 0.1, 0.1), [mx + 1.4 + i * 2.1, jibY - 0.44, mz], [0, 0, i % 2 ? 0.62 : -0.62]);
+    local.add(M.steel, box(1.7, 0.6, 1.7), [mx, y + mastH + 0.3, mz]);
+    local.add(M.hazard, bevelBox(1.4, 1.3, 1.5, 0.14), [mx + 1.2, y + mastH + 1.2, mz]);
+    local.add(M.hazard, box(jibLen, 0.36, 0.36), [mx + jibLen / 2, jibY, mz]);
+    local.add(M.hazardDark, box(jibLen, 0.12, 0.12), [mx + jibLen / 2, jibY - 0.78, mz]);
+    for (let i = 0; i * 2.1 + 1.4 < jibLen; i++) {
+      local.add(M.hazardDark, box(1.7, 0.09, 0.09), [mx + 1.4 + i * 2.1, jibY - 0.4, mz], [0, 0, i % 2 ? 0.62 : -0.62]);
     }
-    local.add(M.hazard, box(5.2, 0.4, 0.4), [mx - 3.0, jibY, mz]);
-    local.add(M.concreteDark, box(1.6, 1.3, 2.2), [mx - 5.0, jibY - 0.2, mz]);
-    local.add(M.steel, box(0.16, 3.0, 0.16), [mx, jibY + 1.6, mz]);
+    local.add(M.hazard, box(counter, 0.34, 0.34), [mx - counter / 2, jibY, mz]);
+    local.add(M.concreteDark, box(1.5, 1.2, 2.0), [mx - counter + 0.4, jibY - 0.2, mz]);
+    local.add(M.steel, box(0.14, 2.6, 0.14), [mx, jibY + 1.4, mz]);
 
     // Hoist as a rig so the load swings.
     const hookLocal = new PartsBuilder();
@@ -646,7 +688,7 @@ export function buildOfferForge(ctx: Ctx): void {
     hookLocal.add(M.steel, box(2.6, 0.22, 0.5), [0, -6.7, 0]);
     hookLocal.add(M.timberPale, box(2.4, 0.5, 1.1), [0, -7.1, 0]);
     const hook = hookLocal.build("crane-hook");
-    const hookWorld = toWorld(ctx, [mx + 9.5, jibY, mz]);
+    const hookWorld = toWorld(ctx, [mx + jibLen * 0.62, jibY, mz]);
     hook.position.set(...hookWorld);
     ctx.rigs.push({
       group: hook,
@@ -1042,19 +1084,21 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       local.add(M.roofZinc, box(unitW - 0.1, 0.16, mewsD + 0.7), [cx, y + h + 0.42, mewsZ], [fall, 0, 0]);
       // Two rooflights in a dark kerb, rather than one warm panel.
       //
-      // These used to be lit glass — emissive, at three-quarter strength, and
-      // facing straight up into a camera that looks straight down. A dozen of
-      // them across the quarter's mews ranges read as luminous yellow stickers
-      // stuck to the tiles, and they were the brightest thing in a district
-      // whose subject is the terrace in front of them.
+      // These have now been wrong twice. First they were emissive, which lit
+      // them up in broad daylight. Then they were wall glass laid flat, which
+      // at this camera reflects the warm haze band along the horizon at a
+      // grazing angle and comes out an opaque cream — the same luminous yellow
+      // sticker by a different route, and the brightest thing in a district
+      // whose subject is the terrace in front of them. `glassRoof` is the
+      // material for glazing that lies down.
       const lightZ = mewsD * 0.16;
       const lightY = y + h + 0.5 - Math.tan(fall) * lightZ;
       for (const ox of [-unitW * 0.19, unitW * 0.19]) {
-        local.add(M.ironDark, box(unitW * 0.3, 0.12, mewsD * 0.3), [cx + ox, lightY, mewsZ + lightZ], [fall, 0, 0]);
+        local.add(M.ironDark, box(unitW * 0.28, 0.14, mewsD * 0.28), [cx + ox, lightY, mewsZ + lightZ], [fall, 0, 0]);
         local.add(
-          state === "struggling" ? M.glassDim : M.glass,
-          box(unitW * 0.25, 0.08, mewsD * 0.25),
-          [cx + ox, lightY + 0.08, mewsZ + lightZ],
+          state === "struggling" ? M.glassDim : M.glassRoof,
+          box(unitW * 0.21, 0.08, mewsD * 0.21),
+          [cx + ox, lightY + 0.07, mewsZ + lightZ],
           [fall, 0, 0],
         );
       }
@@ -1122,7 +1166,7 @@ export function buildCreatorQuarter(ctx: Ctx): void {
         const pz = vz - roofD / 2 + dz;
         local.add(M.ironDark, box(2.9, 0.14, 1.9), [vx + ox, onSlope(dz) + 0.06, pz], [pitch, 0, 0]);
         local.add(
-          state === "struggling" ? M.glassDim : M.glass,
+          state === "struggling" ? M.glassDim : M.glassRoof,
           box(2.6, 0.1, 1.6),
           [vx + ox, onSlope(dz) + 0.16, pz],
           [pitch, 0, 0],
@@ -1156,7 +1200,13 @@ export function buildCreatorQuarter(ctx: Ctx): void {
         const px = -faceW / 2 + (faceW / piers) * (i + 0.5);
         const pw = faceW / piers - 1.1;
         inner.add(M.brickDark, box(pw, vh - 2.4, 0.14), [px, (vh - 2.4) / 2 + 1.1, across / 2 + 0.06]);
-        inner.add(state === "struggling" ? M.glassDim : M.glassLit, box(pw * 0.62, 0.9, 0.1), [px, vh - 1.9, across / 2 + 0.13]);
+        // A high window into a dark hall, in a dark reveal. It used to be
+        // `glassLit`: emissive, at three-quarter strength, in full daylight,
+        // repeated four times across every visible elevation — a row of amber
+        // rectangles that read as labels stuck to the brick rather than as
+        // openings in it.
+        inner.add(M.ironDark, box(pw * 0.68, 1.05, 0.12), [px, vh - 1.9, across / 2 + 0.11]);
+        inner.add(state === "struggling" ? M.glassDim : M.glass, box(pw * 0.6, 0.86, 0.1), [px, vh - 1.9, across / 2 + 0.16]);
         inner.add(M.plaster, box(pw * 0.7, 0.16, 0.16), [px, vh - 1.3, across / 2 + 0.16]);
       }
       inner.add(M.plaster, box(faceW + 0.5, 0.3, 0.3), [0, vh - 0.55, across / 2 + 0.16]);

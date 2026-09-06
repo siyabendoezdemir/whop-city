@@ -67,14 +67,27 @@ export const REACH = 460;
  * can see. A ring road closes the east and south sides, and two highways leave
  * town and run out into the fog.
  */
+/**
+ * How far a road runs past the junction at its end.
+ *
+ * Where two roads both *end* at the same crossroads — the four corners of the
+ * ring — the one that gives way has its carriageway cut out of the junction,
+ * and the one laid through stopped dead on the other's centre line. That left
+ * a five-by-ten-metre rectangle of bare ground at each outside corner of the
+ * network, and a vehicle turning there had its nose over grass. The through
+ * road runs on to the far kerb instead. The overrun is inside the crossing
+ * road's own width, so nothing new is visible except the corner being paved.
+ */
+const CORNER_OVERRUN = 4.5;
+
 export const ROADS: Road[] = [
   // North quay road, running the length of the headland and over the canal.
   {
     id: "quay-north",
     axis: "x",
     at: WORLD.bridgeZ,
-    from: -66,
-    to: 128,
+    from: -66 - CORNER_OVERRUN,
+    to: 128 + CORNER_OVERRUN,
     width: 10,
     grade: "street",
     gaps: [[WORLD.canalX0 - 6.5, WORLD.canalX1 + 6.5]],
@@ -95,7 +108,15 @@ export const ROADS: Road[] = [
   // Ring road closing the east side.
   { id: "ring-east", axis: "z", at: 128, from: -84, to: 66, width: 10, grade: "street" },
   // Ring road closing the south side.
-  { id: "ring-south", axis: "x", at: 66, from: -66, to: 128, width: 10, grade: "street" },
+  {
+    id: "ring-south",
+    axis: "x",
+    at: 66,
+    from: -66 - CORNER_OVERRUN,
+    to: 128 + CORNER_OVERRUN,
+    width: 10,
+    grade: "street",
+  },
   // The road south, out of town and over the hill.
   { id: "highway-south", axis: "z", at: 88, from: 66, to: REACH, width: 10, grade: "street", open: "to" },
 ];
@@ -324,11 +345,49 @@ function boxSpan(alongX: boolean, length: number, width: number): [number, numbe
 }
 
 /**
+ * A flat slab cut from an outline given in world XZ.
+ *
+ * `ExtrudeGeometry` works in the shape's own XY plane and extrudes along +Z, so
+ * the outline goes in as (x, −z) and the result is laid down and pushed up from
+ * y = 0 to y = `thickness`. One-off geometry by definition: every junction
+ * corner is a different polygon, so none of this is worth caching.
+ */
+function pad(outline: ReadonlyArray<readonly [number, number]>, thickness: number): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  outline.forEach(([x, z], i) => (i === 0 ? shape.moveTo(x, -z) : shape.lineTo(x, -z)));
+  shape.closePath();
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
+  geometry.rotateX(-Math.PI / 2);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/**
+ * How much is taken off the square at a junction corner, and in how many steps.
+ *
+ * Three metres is the small end of a real kerb radius and about as much as the
+ * narrower footways here can give up. Four segments is enough that the arc
+ * reads as a curve at every framing the game allows.
+ */
+const CORNER_RADIUS = 3.0;
+const CORNER_STEPS = 4;
+
+/**
  * The junctions themselves: footway corners and crossing stripes.
  *
  * Built from the network rather than from a hand-written list of coordinates,
  * so a road added to the plan gets proper corners without anyone remembering
  * to come back here.
+ *
+ * The corners are radiused. They used to be square boxes of footway butted
+ * into a square hole in the carriageway, which is wrong twice over. It looks
+ * wrong — a right-angled kerb is a thing you only see in a plan drawing, and at
+ * this camera the junctions read as a paint job rather than as junctions. And
+ * it drives wrong: traffic turning at a junction follows an arc that cuts
+ * inside the corner, and a nine-metre bus cuts further inside than that, so
+ * what the player kept seeing was a coach mounting the pavement at a crossroads.
+ * A three-metre radius gives back about the two metres of diagonal the turn
+ * needs.
  */
 function buildJunctions(b: PartsBuilder): void {
   const kerbY = WORLD.ground + KERB_H;
@@ -345,26 +404,66 @@ function buildJunctions(b: PartsBuilder): void {
       const halfZ = road.width / 2;
       const walkX = walkwayWidth(cross.other.grade);
       const walkZ = walkwayWidth(road.grade);
+      const surface = road.grade === "lane" && cross.other.grade === "lane" ? M.asphaltPatched : M.asphalt;
 
       // A paved corner in each quadrant, joining the two footways round the
       // turn. Without these the pavement simply stopped at every junction.
       for (const sx of [-1, 1]) {
         for (const sz of [-1, 1]) {
-          b.add(M.sidewalk, box(walkX, 0.18, walkZ), [
-            cross.at + sx * (halfX + 0.34 + walkX / 2),
-            kerbY - 0.09,
-            road.at + sz * (halfZ + 0.34 + walkZ / 2),
-          ]);
-          b.add(M.kerb, box(walkX + 0.34, KERB_H, 0.34), [
-            cross.at + sx * (halfX + 0.34 + walkX / 2),
-            WORLD.ground + KERB_H / 2,
-            road.at + sz * (halfZ + 0.17),
-          ]);
-          b.add(M.kerb, box(0.34, KERB_H, walkZ), [
-            cross.at + sx * (halfX + 0.17),
-            WORLD.ground + KERB_H / 2,
-            road.at + sz * (halfZ + 0.34 + walkZ / 2),
-          ]);
+          // The centre the kerb curves about: one radius in from each kerb
+          // line, so the arc is tangent to both.
+          const radius = Math.min(CORNER_RADIUS, walkX * 0.95, walkZ * 0.95);
+          const ox = cross.at + sx * (halfX + radius);
+          const oz = road.at + sz * (halfZ + radius);
+          /** A point on the corner arc, at `r` from the centre. */
+          const on = (r: number, i: number): [number, number] => {
+            const a = (Math.PI / 2) * (i / CORNER_STEPS);
+            return [ox - sx * r * Math.cos(a), oz - sz * r * Math.sin(a)];
+          };
+
+          // Carriageway in the bite the radius takes out of the corner.
+          const bite: Array<[number, number]> = [[cross.at + sx * halfX, road.at + sz * halfZ]];
+          for (let i = 0; i <= CORNER_STEPS; i++) bite.push(on(radius, i));
+          b.add(surface, pad(bite, 0.24), [0, WORLD.ground - 0.24, 0]);
+
+          // Footway: the corner rectangle with the same curve cut out of it.
+          const ax = cross.at + sx * (halfX + 0.34);
+          const bx = cross.at + sx * (halfX + 0.34 + walkX);
+          const az = road.at + sz * (halfZ + 0.34);
+          const bz = road.at + sz * (halfZ + 0.34 + walkZ);
+          const walk: Array<[number, number]> = [];
+          for (let i = 0; i <= CORNER_STEPS; i++) walk.push(on(radius - 0.34, i));
+          walk.push([bx, az], [bx, bz], [ax, bz]);
+          b.add(M.sidewalk, pad(walk, 0.18), [0, kerbY - 0.18, 0]);
+
+          // Kerb round the curve, then out along both straights to meet the
+          // runs the road itself laid.
+          for (let i = 0; i < CORNER_STEPS; i++) {
+            const a = (Math.PI / 2) * ((i + 0.5) / CORNER_STEPS);
+            const rr = radius - 0.17;
+            b.add(
+              M.kerb,
+              box(0.34, KERB_H, (Math.PI / 2 / CORNER_STEPS) * rr + 0.08),
+              [ox - sx * rr * Math.cos(a), WORLD.ground + KERB_H / 2, oz - sz * rr * Math.sin(a)],
+              [0, Math.atan2(sx * Math.sin(a), -sz * Math.cos(a)), 0],
+            );
+          }
+          const runX = walkX + 0.34 - radius;
+          const runZ = walkZ + 0.34 - radius;
+          if (runX > 0.1) {
+            b.add(M.kerb, box(runX, KERB_H, 0.34), [
+              cross.at + sx * (halfX + radius + runX / 2),
+              WORLD.ground + KERB_H / 2,
+              road.at + sz * (halfZ + 0.17),
+            ]);
+          }
+          if (runZ > 0.1) {
+            b.add(M.kerb, box(0.34, KERB_H, runZ), [
+              cross.at + sx * (halfX + 0.17),
+              WORLD.ground + KERB_H / 2,
+              road.at + sz * (halfZ + radius + runZ / 2),
+            ]);
+          }
         }
       }
 
@@ -621,6 +720,17 @@ export type Path = {
 
 /** Corner radius, in metres, for a vehicle turning at a junction. */
 const TURN_RADIUS = 7;
+/**
+ * The same, for the turn that goes the short way round.
+ *
+ * A lane offset to the right of travel puts its corner *outside* the junction
+ * on one of the two turns, and a rounded corner always cuts to the inside — so
+ * on that turn the arc leaves the carriageway rather than crossing it. Seven
+ * metres of radius bulges two and a half metres past the lane corner, which on
+ * a nine-metre street is the far side of the kerb. Four and a half is about the
+ * least the sum of the path's own cut and a long vehicle's body cut comes to.
+ */
+const TIGHT_RADIUS = 4.5;
 
 /**
  * Offsets a circuit into its own lane and rounds off the corners.
@@ -666,8 +776,11 @@ export function layPath(circuit: Circuit, offset: number, height: (x: number, z:
     const c = corners[i];
     const previous = corners[(i - 1 + n) % n];
     const runIn = Math.hypot(c.x - previous.x, c.z - previous.z);
-    const radius = Math.min(TURN_RADIUS, runIn * 0.4);
-    const straight = Math.abs(c.inX * c.outZ - c.inZ * c.outX) < 0.01;
+    const turn = c.inX * c.outZ - c.inZ * c.outX;
+    const radius = turn * offset < 0
+      ? Math.min(TIGHT_RADIUS, runIn * 0.3)
+      : Math.min(TURN_RADIUS, runIn * 0.4);
+    const straight = Math.abs(turn) < 0.01;
     if (straight || radius < 0.5) {
       push(c.x, c.z);
       continue;
@@ -772,9 +885,22 @@ function surfaceHeight(x: number, z: number): number {
  * it, and comes back round to where it started. Nothing pops into or out of
  * existence, because nothing ever needs to.
  */
+/**
+ * The roads traffic is allowed to plan on.
+ *
+ * Service lanes are out. `forge-lane` is six and a half metres wide, which
+ * leaves three and a quarter either side of the centre line: a lane offset of
+ * three puts a two-and-a-half-metre bus's outside wheels a foot past the kerb
+ * before it has even reached a corner. A lane is for the yard it serves, and
+ * the through routes are the streets.
+ */
+export const DRIVEN_ROADS = ROADS.filter((road) => road.grade !== "lane");
+/** Distance right of the centre line for a vehicle. Half the carriageway, near enough. */
+export const LANE_OFFSET = 2.6;
+
 export function buildTraffic(seed: number): Rig[] {
   const rng = new Rng(seed).fork("traffic");
-  const graph = drivableCore(buildRoadGraph(ROADS));
+  const graph = drivableCore(buildRoadGraph(DRIVEN_ROADS));
   const rigs: Rig[] = [];
 
   const routes: Path[] = [];
@@ -782,8 +908,8 @@ export function buildTraffic(seed: number): Rig[] {
     const circuit = findCircuit(graph, rng, 4);
     if (!circuit) continue;
     // Both sides of the road: the same loop driven each way, offset right.
-    routes.push(layPath(circuit, 3.0, surfaceHeight));
-    routes.push(layPath(reverse(circuit), 3.0, surfaceHeight));
+    routes.push(layPath(circuit, LANE_OFFSET, surfaceHeight));
+    routes.push(layPath(reverse(circuit), LANE_OFFSET, surfaceHeight));
   }
   if (routes.length === 0) return rigs;
 
@@ -848,15 +974,19 @@ function reverse(circuit: Circuit): Circuit {
  */
 export function buildPedestrians(seed: number): Rig[] {
   const rng = new Rng(seed).fork("pedestrians");
-  const graph = drivableCore(buildRoadGraph(ROADS));
+  const graph = drivableCore(buildRoadGraph(DRIVEN_ROADS));
   const rigs: Rig[] = [];
 
   const paths: Path[] = [];
+  // On the footway, not past it. A street here is nine to ten metres wide with
+  // a 3.2m footway outside its kerb, so the paving runs from about 4.8 to 8.0
+  // out from the centre line; the old 8.4–9.6 put every walker in the city on
+  // the far side of it, tramping across front gardens and forecourts.
   for (let i = 0; i < 5; i++) {
     const circuit = findCircuit(graph, rng, 4);
     if (!circuit) continue;
-    paths.push(layPath(circuit, rng.range(8.4, 9.6), surfaceHeight));
-    paths.push(layPath(reverse(circuit), rng.range(8.4, 9.6), surfaceHeight));
+    paths.push(layPath(circuit, rng.range(6.9, 7.7), surfaceHeight));
+    paths.push(layPath(reverse(circuit), rng.range(6.9, 7.7), surfaceHeight));
   }
 
   const position = new THREE.Vector3();
@@ -1169,13 +1299,23 @@ export function buildSurroundings(seed: number): THREE.Group {
       b.add(M.glassDim, box(blk.w + 0.06, 1.1, blk.d * 0.8), [blk.x, y, blk.z]);
     }
     if (!low && rng.chance(0.6)) {
-      const rw = blk.w * rng.range(0.22, 0.4);
-      const rh = rng.range(0.9, 2.4);
-      b.add(M.aluminium, box(rw, rh, blk.d * 0.3), [
-        blk.x + rng.range(-blk.w * 0.2, blk.w * 0.2),
-        base + blk.h + rh / 2,
-        blk.z + rng.range(-blk.d * 0.2, blk.d * 0.2),
-      ]);
+      // Overrun and plant, not a plain slab.
+      //
+      // This was one `aluminium` box — the palest, most metallic material in
+      // the palette — up to two and a half metres tall and a third of the
+      // roof across. Thirty-odd of these stand behind the city, and every one
+      // of them read as a blank white lid balanced on a grey block.
+      const rw = blk.w * rng.range(0.2, 0.32);
+      const rd = blk.d * rng.range(0.22, 0.32);
+      const rh = rng.range(1.2, 2.4);
+      const rx = blk.x + rng.range(-blk.w * 0.2, blk.w * 0.2);
+      const rz = blk.z + rng.range(-blk.d * 0.2, blk.d * 0.2);
+      b.add(body, box(rw, rh, rd), [rx, base + blk.h + rh / 2, rz]);
+      b.add(M.fascia, box(rw + 0.24, 0.2, rd + 0.24), [rx, base + blk.h + rh + 0.1, rz]);
+      b.add(M.ironDark, box(rw * 0.9, 0.6, 0.1), [rx, base + blk.h + rh * 0.55, rz + rd / 2 + 0.06]);
+      for (const ox of [-1, 1]) {
+        b.add(M.steelPainted, box(1.3, 0.55, 1.0), [rx + ox * (rw / 2 + 1.2), base + blk.h + 0.4, rz]);
+      }
     }
   }
 

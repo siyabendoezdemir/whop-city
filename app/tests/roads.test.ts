@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 
 import { Rng } from "../src/render/lib/rng";
-import { ROADS, layPath, sample } from "../src/render/city/cityPlan";
+import { DRIVEN_ROADS, LANE_OFFSET, ROADS, layPath, sample } from "../src/render/city/cityPlan";
 import {
   buildRoadGraph,
   crossingsOn,
@@ -12,6 +12,7 @@ import {
   findCircuit,
   inJunction,
   subtract,
+  type Circuit,
   type Road,
 } from "../src/render/city/roads";
 
@@ -76,21 +77,52 @@ describe("crossings", () => {
 });
 
 describe("the network as authored", () => {
+  /** Whether a point is inside some other road's carriageway. */
+  function paved(x: number, z: number, self: Road): boolean {
+    return ROADS.some((other) => {
+      if (other === self || other.axis === self.axis) return false;
+      const along = other.axis === "x" ? x : z;
+      const across = other.axis === "x" ? z - other.at : x - other.at;
+      return along >= other.from && along <= other.to && Math.abs(across) <= other.width / 2 + 0.01;
+    });
+  }
+
   it("gives every road either a junction or an open end at both ends", () => {
+    // Ending "at a junction" means ending on the crossing road's asphalt, not
+    // on its centre line: the road laid through a corner runs on to the far
+    // kerb so the corner is paved.
     const loose: string[] = [];
     for (const road of ROADS) {
-      const stops = crossingsOn(road, ROADS).map((c) => c.at);
       const open = road.open;
-      const meets = (t: number) => stops.some((s) => Math.abs(s - t) < 0.01);
-      // The quay road's western end is the tip of the headland, and a headland
-      // is allowed to be the end of the road.
-      const headland = road.id === "quay-north";
-      if (!meets(road.from) && open !== "from" && open !== "both" && !headland) {
+      const at = (t: number): [number, number] =>
+        road.axis === "x" ? [t, road.at] : [road.at, t];
+      if (open !== "from" && open !== "both" && !paved(...at(road.from), road)) {
         loose.push(`${road.id}@${road.from}`);
       }
-      if (!meets(road.to) && open !== "to" && open !== "both") loose.push(`${road.id}@${road.to}`);
+      if (open !== "to" && open !== "both" && !paved(...at(road.to), road)) {
+        loose.push(`${road.id}@${road.to}`);
+      }
     }
     expect(loose).toEqual([]);
+  });
+
+  it("paves the outside corners, where two roads both run out", () => {
+    // The four corners of the ring. Each is a point just outside both centre
+    // lines, which used to be bare ground.
+    const corners: Array<[number, number]> = [
+      [-69, -87],
+      [131, -87],
+      [-69, 69],
+      [131, 69],
+    ];
+    for (const [x, z] of corners) {
+      const covered = ROADS.some((road) => {
+        const along = road.axis === "x" ? x : z;
+        const across = road.axis === "x" ? z - road.at : x - road.at;
+        return along >= road.from && along <= road.to && Math.abs(across) <= road.width / 2;
+      });
+      expect(covered, `nothing paved at ${x}, ${z}`).toBe(true);
+    }
   });
 
   it("leaves nothing a vehicle could drive into and not out of", () => {
@@ -170,5 +202,92 @@ describe("circuits", () => {
       }
     }
     expect(closest).toBeGreaterThan(2);
+  });
+});
+
+/**
+ * How far inside a carriageway a point is. Negative means it is over the kerb.
+ *
+ * Bridge gaps are not holes for this purpose: the deck carries the road across
+ * them, which is the whole point of the bridge.
+ */
+function clearance(x: number, z: number): number {
+  let best = Number.NEGATIVE_INFINITY;
+  for (const road of DRIVEN_ROADS) {
+    const along = road.axis === "x" ? x : z;
+    if (along < road.from || along > road.to) continue;
+    const across = road.axis === "x" ? z - road.at : x - road.at;
+    best = Math.max(best, road.width / 2 - Math.abs(across));
+  }
+  return best;
+}
+
+function reversed(circuit: Circuit): Circuit {
+  return { points: [...circuit.points].reverse(), legs: [...circuit.legs].reverse() };
+}
+
+describe("what the traffic actually drives over", () => {
+  /**
+   * The bus, because it is the worst case by a distance.
+   *
+   * A vehicle is placed at the midpoint of two samples half a wheelbase apart,
+   * so its body cuts inside the arc it is turning through — which is what a
+   * long vehicle does, and which on top of the path's own corner cut used to
+   * put a nine-metre coach a clear two metres onto the footway at every
+   * crossroads in the city. The junction corners are radiused now and the turn
+   * that goes the short way round is laid tighter; this pins both.
+   */
+  it("never puts a bus further over a kerb than the corner radius allows", () => {
+    const core = drivableCore(buildRoadGraph(DRIVEN_ROADS));
+    const rng = new Rng("kerb-watch");
+    const front = new THREE.Vector3();
+    const rear = new THREE.Vector3();
+    // Wheelbase, half-length and half-width of the authored bus body.
+    const axle = 3.5;
+    const nose = 4.7;
+    const flank = 1.25;
+
+    let worst = 0;
+    let where = "nowhere";
+    let checked = 0;
+    for (let i = 0; i < 6; i++) {
+      const circuit = findCircuit(core, rng, 4);
+      if (!circuit) continue;
+      for (const run of [circuit, reversed(circuit)]) {
+        const path = layPath(run, LANE_OFFSET, () => 0);
+        for (let s = 0; s < path.length; s += 0.5) {
+          sample(path, s + axle, front);
+          sample(path, s - axle, rear);
+          const cx = (front.x + rear.x) / 2;
+          const cz = (front.z + rear.z) / 2;
+          const yaw = Math.atan2(front.x - rear.x, front.z - rear.z);
+          const sin = Math.sin(yaw);
+          const cos = Math.cos(yaw);
+          for (const dl of [nose, -nose]) {
+            for (const dw of [flank, -flank]) {
+              const px = cx + sin * dl + cos * dw;
+              const pz = cz + cos * dl - sin * dw;
+              checked++;
+              const over = -clearance(px, pz);
+              if (over > worst) {
+                worst = over;
+                where = `${px.toFixed(1)}, ${pz.toFixed(1)}`;
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBeGreaterThan(4000);
+    // Measures zero as authored: the body never leaves the carriageway at all,
+    // never mind the extra the three-metre kerb radius gives back on the
+    // diagonal. The tolerance is there so a corner that starts clipping is a
+    // failure rather than a rounding argument.
+    expect(worst, `worst overhang at ${where}`).toBeLessThan(0.25);
+  });
+
+  it("keeps traffic off the service lanes, which are too narrow for it", () => {
+    expect(DRIVEN_ROADS.every((road) => road.grade !== "lane")).toBe(true);
+    expect(ROADS.some((road) => road.grade === "lane")).toBe(true);
   });
 });

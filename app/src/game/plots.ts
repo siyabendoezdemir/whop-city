@@ -16,10 +16,14 @@
  *   4   high-rise
  *   5   a tower with a crown on it
  *
- * Heights live here rather than in the renderer because two other things need
- * to agree with them: the attention marker that floats over a building has to
- * clear its roof, and the camera has to know how much air a district occupies.
- * One table, three readers, no drift.
+ * The ladder lives here rather than in the renderer because it is a game rule:
+ * how much a business has to earn before downtown gets another floor. The
+ * renderer reads it and builds to it.
+ *
+ * It does not predict how tall the result comes out. A plot is not one prism —
+ * it has a flue, or a crown, or a fly tower — so what a floating marker has to
+ * clear is measured off the geometry after it is built, not computed from the
+ * ladder. Two functions here used to do that arithmetic and nothing read them.
  */
 
 import type { StateName } from "../render/city/districts/buildings";
@@ -83,31 +87,6 @@ export const STOREY_HEIGHT: Record<DistrictId, number> = {
 export function storeysFor(parcelId: string, level: number): number {
   const ladder = STOREYS[districtOfPlot(parcelId)];
   return ladder[Math.max(0, Math.min(ladder.length - 1, Math.round(level)))];
-}
-
-/** The top of the main mass, in world units above the parcel's ground. */
-export function massHeight(parcelId: string, level: number): number {
-  return storeysFor(parcelId, level) * STOREY_HEIGHT[districtOfPlot(parcelId)];
-}
-
-/**
- * How much roof sits on top of the mass.
- *
- * Parapets, plant, a pitched cap, and on a finished plot the crown. Generous
- * rather than exact: this is what a floating marker clears, and a marker that
- * clips through a roof is worse than one that sits slightly high.
- */
-function roofAllowance(level: number): number {
-  if (level <= 0) return 0;
-  return level >= 5 ? 11 : 3.2;
-}
-
-/** Everything below a floating marker: mass, roof, and a little air. */
-export function skylineTop(parcelId: string, level: number): number {
-  const parcel = PARCELS.find((entry) => entry.id === parcelId);
-  const ground = parcel?.level ?? 0;
-  if (level <= 0) return ground + 2.2;
-  return ground + massHeight(parcelId, level) + roofAllowance(level);
 }
 
 /**
