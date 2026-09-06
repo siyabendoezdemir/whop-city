@@ -115,6 +115,14 @@ renderer integers, and the metrics block. No price, no product or offer title,
 no customer, no Whop identifier, no timestamp, no credential, no upstream
 response.
 
+The per-district words are a **residue**: the renderer builds from levels now,
+and a level comes from the metrics, so nothing on screen is drawn from `state`,
+`direction`, `signal`, `parcels` or `variant` any more. They are left on the
+wire because they are honestly derived, cost nothing, and describe the catalogue
+the way the metrics describe the trade — but they are not load-bearing, and if
+nothing has picked them up by the next pass they should come off.
+`tests/evidence.test.ts` still holds the derivation to what it claims to mean.
+
 The metrics are the game's resources, and because they are the business's real
 figures they are the owner's. `CityMetrics.source` names which of three
 situations produced the block: `owner` for a viewer Whop has vouched for as an

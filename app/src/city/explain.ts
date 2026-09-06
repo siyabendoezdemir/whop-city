@@ -1,10 +1,11 @@
 /**
- * Names for the places, and for how current the reading is.
+ * What the three places are called.
  *
- * The sentence describing what is physically visible in a district used to live
- * here too. It now lives in `playbook.ts` next to the moves that follow from
- * it, because two independently-maintained descriptions of the same district
- * drift, and the one the operator acts on should be the one they read.
+ * One list, so the rail, the quest card and anything else that names a district
+ * cannot drift apart. What each district is *for* is not written here: that is
+ * `readingFor` in `game/quests.ts`, next to the advice that follows from it,
+ * because two independently-maintained descriptions of the same place drift and
+ * the one the player acts on should be the one they read.
  */
 
 import type { DistrictId } from "./projection";
@@ -14,18 +15,3 @@ export const DISTRICT_NAMES: Record<DistrictId, string> = {
   "offer-forge": "Offer Forge",
   "creator-quarter": "Creator Quarter",
 };
-
-/** What the district is for, in City's own vocabulary. */
-export const DISTRICT_SUBTITLES: Record<DistrictId, string> = {
-  "commerce-core": "Where the business sells",
-  "offer-forge": "Where offers are shaped",
-  "creator-quarter": "Where others carry the offer",
-};
-
-/** A short, honest line about how current the reading is. */
-export const FRESHNESS_NOTE = {
-  live: "Read just now",
-  recent: "Read minutes ago",
-  stale: "Read over an hour ago",
-  unavailable: "Could not be read",
-} as const;
