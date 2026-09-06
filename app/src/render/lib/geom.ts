@@ -18,30 +18,78 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 export type Vec3 = [number, number, number];
 
+/**
+ * Prototype cache.
+ *
+ * A city is thousands of parts and most of them are the same part: every
+ * window reveal on a facade is the same box at a different matrix. Building
+ * one `BoxGeometry` per call meant allocating and normalising the identical
+ * buffers hundreds of times per rebuild.
+ *
+ * The primitives below therefore return a **shared, immutable** prototype.
+ * `transform` clones before it touches anything, so no caller can mutate one
+ * out from under another, and nothing in this cache is ever added to a scene
+ * or disposed. Anything that needs to mutate a geometry in place must build
+ * its own, which is why the extruded roof shapes elsewhere still do.
+ */
+const prototypes = new Map<string, THREE.BufferGeometry>();
+/**
+ * Identity, not a flag on the geometry.
+ *
+ * `userData` cannot carry this. `BufferGeometry.copy` assigns the source's
+ * `userData` **by reference**, so every clone of a prototype — and every clone
+ * of a clone, however many transforms deep — shares one object with it. A mark
+ * left there says "I am the prototype" on geometry that is nothing of the kind.
+ */
+const isPrototype = new WeakSet<THREE.BufferGeometry>();
+/** Prototype -> its merge-ready form. Same reason it is not on `userData`. */
+const flattened = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
+
+function prototype(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
+  const found = prototypes.get(key);
+  if (found) return found;
+  const made = make();
+  isPrototype.add(made);
+  prototypes.set(key, made);
+  return made;
+}
+
 /** Rounded box, centred on its own origin. Segments stay low; this is chunky by design. */
+/**
+ * Box with a caught edge.
+ *
+ * One segment, not two. The bevel exists so a long straight edge picks up a
+ * highlight instead of going to a hard vector line, and one segment does that
+ * exactly as well as two — the radius is five centimetres, which is under a
+ * pixel at every framing the game allows. Two segments cost three hundred
+ * triangles a box against a hundred and eight, and bevelled boxes are most of
+ * the city.
+ */
 export function bevelBox(w: number, h: number, d: number, radius = 0.05): THREE.BufferGeometry {
   const r = Math.min(radius, w / 2.05, h / 2.05, d / 2.05);
-  return new RoundedBoxGeometry(w, h, d, 2, r);
+  return prototype(`v:${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 1, r));
 }
 
 /** Plain box for parts that are hidden or never catch a silhouette edge. */
 export function box(w: number, h: number, d: number): THREE.BufferGeometry {
-  return new THREE.BoxGeometry(w, h, d);
+  return prototype(`b:${w}:${h}:${d}`, () => new THREE.BoxGeometry(w, h, d));
 }
 
 /** Right-angle wedge: the profile behind every pitched and sawtooth roof. */
 export function wedge(w: number, h: number, d: number): THREE.BufferGeometry {
-  const shape = new THREE.Shape();
-  shape.moveTo(-d / 2, -h / 2);
-  shape.lineTo(d / 2, -h / 2);
-  shape.lineTo(-d / 2, h / 2);
-  shape.closePath();
+  return prototype(`w:${w}:${h}:${d}`, () => {
+    const shape = new THREE.Shape();
+    shape.moveTo(-d / 2, -h / 2);
+    shape.lineTo(d / 2, -h / 2);
+    shape.lineTo(-d / 2, h / 2);
+    shape.closePath();
 
-  const geometry = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false });
-  geometry.rotateY(Math.PI / 2);
-  geometry.translate(-w / 2, 0, 0);
-  geometry.computeVertexNormals();
-  return geometry;
+    const geometry = new THREE.ExtrudeGeometry(shape, { depth: w, bevelEnabled: false });
+    geometry.rotateY(Math.PI / 2);
+    geometry.translate(-w / 2, 0, 0);
+    geometry.computeVertexNormals();
+    return geometry;
+  });
 }
 
 /** Chamfered slab used for kerbs, steps, plinths and retaining copings. */
@@ -51,7 +99,10 @@ export function slab(w: number, h: number, d: number, chamfer = 0.03): THREE.Buf
 
 /** Thin cylinder: bollards, posts, pipes, tree trunks. */
 export function post(radius: number, height: number, sides = 8): THREE.BufferGeometry {
-  return new THREE.CylinderGeometry(radius, radius * 1.06, height, sides, 1);
+  return prototype(
+    `p:${radius}:${height}:${sides}`,
+    () => new THREE.CylinderGeometry(radius, radius * 1.06, height, sides, 1),
+  );
 }
 
 /** Faceted blob for foliage. Flat-shaded, so it reads as carved rather than smooth. */
@@ -68,7 +119,24 @@ export function blob(radius: number, detail = 0): THREE.BufferGeometry {
  * costs some vertices and buys a merge that always succeeds.
  */
 function normalise(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  // A prototype only has to be flattened once. After that every placement is a
+  // buffer copy, which is the cheapest this can be without sharing geometry
+  // between parts that are about to be merged at different matrices.
+  //
+  // Keyed on the geometry itself. Keeping this on `userData` looked equivalent
+  // and was not: a non-indexed prototype is flattened by cloning, a clone
+  // shares its source's `userData` object, and so every placed copy ended up
+  // holding a reference back to the untransformed prototype. Re-adding one to a
+  // builder — which is exactly how a district composes a block and how a parcel
+  // bakes into the world — then handed back the prototype and threw the
+  // placement away. Whole building masses and roofs were being stacked at the
+  // origin while their windows and trim, built from indexed primitives that
+  // escaped the same path, stayed correctly on the plot.
+  const cached = flattened.get(geometry);
+  if (cached) return cached.clone();
+
   const flat = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  flat.userData = {};
   for (const name of Object.keys(flat.attributes)) {
     if (name !== "position" && name !== "normal" && name !== "uv" && name !== "color") {
       flat.deleteAttribute(name);
@@ -86,6 +154,11 @@ function normalise(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   }
   flat.morphAttributes = {};
   flat.clearGroups();
+  // Only prototypes are worth remembering; a one-off extrusion would just leak.
+  if (isPrototype.has(geometry)) {
+    flattened.set(geometry, flat);
+    return flat.clone();
+  }
   return flat;
 }
 
@@ -103,14 +176,23 @@ export function bakeWorldUv(geometry: THREE.BufferGeometry, scale = 0.5): void {
   const normal = geometry.getAttribute("normal");
   if (!position || !normal) return;
 
-  const uv = new Float32Array(position.count * 2);
-  for (let i = 0; i < position.count; i++) {
-    const x = position.getX(i);
-    const y = position.getY(i);
-    const z = position.getZ(i);
-    const nx = Math.abs(normal.getX(i));
-    const ny = Math.abs(normal.getY(i));
-    const nz = Math.abs(normal.getZ(i));
+  // Straight over the backing arrays rather than through `getX`. This runs once
+  // per material per rebuild over every vertex in the district — several
+  // hundred thousand of them on a grown city — and the accessor overhead was a
+  // measurable share of the time an upgrade takes.
+  const pos = position.array as ArrayLike<number>;
+  const nrm = normal.array as ArrayLike<number>;
+  const count = position.count;
+  const uv = new Float32Array(count * 2);
+
+  for (let i = 0; i < count; i++) {
+    const p = i * 3;
+    const x = pos[p];
+    const y = pos[p + 1];
+    const z = pos[p + 2];
+    const nx = nrm[p] < 0 ? -nrm[p] : nrm[p];
+    const ny = nrm[p + 1] < 0 ? -nrm[p + 1] : nrm[p + 1];
+    const nz = nrm[p + 2] < 0 ? -nrm[p + 2] : nrm[p + 2];
 
     let u: number;
     let v: number;
@@ -151,23 +233,30 @@ export function bakeVertexAo(
   const normal = geometry.getAttribute("normal");
   if (!position) return;
 
-  const colors = new Float32Array(position.count * 3);
-  for (let i = 0; i < position.count; i++) {
-    const height = position.getY(i) - groundY;
+  // Same reasoning as `bakeWorldUv`: raw arrays, because this is a per-vertex
+  // pass that runs on every rebuild.
+  const pos = position.array as ArrayLike<number>;
+  const nrm = normal ? (normal.array as ArrayLike<number>) : null;
+  const count = position.count;
+  const colors = new Float32Array(count * 3);
+
+  for (let i = 0; i < count; i++) {
+    const p = i * 3;
+    const height = pos[p + 1] - groundY;
     // Smoothstep up from the ground.
-    const t = Math.min(1, Math.max(0, height / reach));
+    const t = height <= 0 ? 0 : height >= reach ? 1 : height / reach;
     let shade = floor + (1 - floor) * (t * t * (3 - 2 * t));
 
-    if (normal) {
-      const ny = normal.getY(i);
+    if (nrm) {
+      const ny = nrm[p + 1];
       if (ny < -0.25) shade *= 0.78; // soffits and undersides
       else if (ny > 0.75) shade *= 1.03; // sun-facing tops lift slightly
     }
 
-    shade = Math.min(1.06, shade);
-    colors[i * 3] = shade;
-    colors[i * 3 + 1] = shade;
-    colors[i * 3 + 2] = shade;
+    if (shade > 1.06) shade = 1.06;
+    colors[p] = shade;
+    colors[p + 1] = shade;
+    colors[p + 2] = shade;
   }
   geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 }

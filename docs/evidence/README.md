@@ -4,6 +4,23 @@ Captured against the built app on the preview server (`pnpm build && pnpm
 preview`), not the dev bundle, with WebGL through SwiftShader. Regenerate with
 `pnpm capture`, `pnpm capture:fly` and `pnpm aliasing-check` from `app/`.
 
+### The operator loop
+
+Captured with `pnpm capture:loop` against a fixtures build, by clicking markers
+in the world rather than by calling the camera hook — so what is photographed is
+the product being used.
+
+| file | what it shows |
+| --- | --- |
+| `operator-1-signal.jpg` | Two districts asking urgently and one unbuilt. Lit masts in the world, the same ranking in the queue. Nothing selected yet. |
+| `operator-2-focus.jpg` | Commerce Core, selected by clicking its mast. Camera glided in, briefing open with three moves. |
+| `operator-3-resolved.jpg` | Every move reviewed. The queue says Reviewed, the progression pip filled, the mast stopped asking. |
+| `operator-4-changed.jpg` | Reviewed while shuttered, reopened when the city read healthy: "reads differently than when you reviewed it", and City cannot say why. |
+| `operator-5-unavailable.jpg` | No reading. Grey markers, no ranking, no moves, and the reason stated. |
+| `operator-6-default.jpg` | The approved world with markers, at the default framing. 157 draw calls, 221,184 triangles. |
+
+### The world
+
 | file | what it shows |
 | --- | --- |
 | `city-default.jpg` | The default city. Commerce Core healthy, Offer Forge rising, Creator Quarter healthy — the states the default fixture projects. |
@@ -31,3 +48,62 @@ The reading is understandable though. At the wide framing a car is roughly
 twelve pixels across and a canopy sways two or three, so at a glance the city
 reads more still than it is. That is a composition question about the default
 zoom rather than a bug, and it is worth a decision rather than a silent tweak.
+
+## The round (`pnpm capture:round`)
+
+A recorded playthrough of the release build. Every scenario named below is a
+**fixture**, not a live business: `pnpm build:fixtures` serves deterministic
+states so each condition can be shown. A live deployment runs the same code
+against a real projection.
+
+Captured at 1440x900 (the phone frames at 390x780), supersampling 1.
+
+| Frame | Scenario | What it shows |
+| --- | --- | --- |
+| `ui-1-rest` | struggling | The resting city: seal, one command bar, camera. Nothing else |
+| `ui-2-about` | struggling | What this is and whose, on demand rather than on arrival |
+| `ui-3-district` | struggling | Entering a district: identity, condition, one next action |
+| `ui-4-evidence` | struggling | The observation and its ambiguity, one click away |
+| `ui-5-survey` | struggling | A survey: the answered step collapses, carrying what was said |
+| `ui-5b-note` | struggling | The operator's own line, added to the plan and kept locally |
+| `ui-6-worked` | struggling | **The key frame.** Worked and still not adding up: the hazard mark still stands |
+| `ui-7-optional` | struggling | A fork: affiliates asked about, not assumed |
+| `ui-8-declined` | struggling | Set aside deliberately: an outcome, not a gap |
+| `ui-9-blank` | blank | A new business gets a different round |
+| `ui-10-decision` | blank | A pricing decision composed as a fork, not a form |
+| `ui-11-plan` | thriving | The deliverable, with observed and reported kept apart |
+| `ui-11b-newround` | thriving | Filed, and a fresh round open — the finished one is kept |
+| `ui-11c-filed` | thriving | Earlier rounds, still copyable and downloadable |
+| `ui-12-return` | struggling | Returning to a changed reading: kept, flagged, not claimed |
+| `ui-13-unavailable` | unavailable | No reading, so nothing suggested |
+| `ui-14-phone-rest` | struggling | A phone: the city fills the window |
+| `ui-15-phone-district` | struggling | A phone: the sheet takes the lower part, the city keeps the top |
+| `ui-16-phone-note` | struggling | A phone: typing, with the last line clear of the command bar |
+
+`city-round.mp4` — 42.7s. **These are the sixteen captured frames held at
+reading pace, not a live screen recording.** This machine has no GPU and
+presenting a WebGL frame costs seconds, so a live capture would misrepresent
+the timing. Every frame is a real capture of the built app; the film proves the
+sequence and the states, not motion quality.
+
+### Before and after, same camera framing
+
+| File | Pair |
+| --- | --- |
+| `before-after-rest.jpg` | The resting city, struggling, city framing |
+| `before-after-district.jpg` | Commerce Core selected, struggling |
+| `before-after-plan.jpg` | The finished round, thriving |
+
+### Renderer, measured at the default framing
+
+| Scenario | Draw calls | Triangles |
+| --- | --- | --- |
+| struggling | 133 | 151,530 |
+| thriving | 152 | 213,910 |
+| blank | 136 | 152,178 |
+| unavailable | 121 | 151,602 |
+| struggling, 390x780 | 108 | 146,072 |
+
+Budgets are 220 draw calls and 250,000 triangles. The desktop figures are
+unchanged from before the interface work: at the authored aspect and wider the
+projection is identical.

@@ -1,0 +1,375 @@
+/* ==========================================================================
+   Whop City — foundations
+   --------------------------------------------------------------------------
+   The world is the product. Everything here is a heads-up display over it, and
+   it follows the rules a strategy-game HUD follows for good reason: anchored
+   to the screen edges, never floating in the middle, chunky enough to hit
+   without aiming, and quiet everywhere except where something is waiting.
+
+   Materials are physical rather than glassy. Panels are dark carved stone with
+   a warm inner light; anything you can press has a thick bottom edge so
+   pressing it looks like pressing something. There is no blur anywhere: it
+   costs a full-screen pass and buys nothing over a render this dark.
+   ========================================================================== */
+
+@import "@fontsource/ibm-plex-sans/latin-400.css";
+@import "@fontsource/ibm-plex-sans/latin-500.css";
+@import "@fontsource/ibm-plex-sans/latin-600.css";
+@import "@fontsource/ibm-plex-sans-condensed/latin-500.css";
+@import "@fontsource/ibm-plex-sans-condensed/latin-600.css";
+
+:root {
+  /* Ink. Warm, because everything it sits on is warm. */
+  --ink: #f6ecd9;
+  --ink-2: #d3c1a3;
+  --ink-3: #a08f78;
+  --ink-4: #7b6c58;
+
+  /* Carved panel. Dark enough to sit over a bright sky without shouting. */
+  --panel: #1b1409;
+  --panel-lit: #2a1f11;
+  --panel-sunk: #120c05;
+  --panel-edge: #0a0703;
+  --panel-rim: rgba(255, 214, 150, 0.15);
+
+  /* Brass and gold — the one thing allowed to be bright. */
+  --gold: #ffc247;
+  --gold-hi: #ffe08a;
+  --gold-deep: #c8830f;
+  --gold-ink: #3a2405;
+
+  /* Condition. Used for state, never for decoration. */
+  --grow: #74dd8f;
+  --grow-deep: #2b8b47;
+  --warn: #ffab3d;
+  --bad: #ff7a53;
+  --calm: #7fb6e8;
+
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+  --lift: 0 4px 0 var(--panel-edge), 0 10px 22px rgba(0, 0, 0, 0.45);
+
+  --face: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --face-narrow: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+
+  --pad: 16px;
+  --gap: 10px;
+  --radius: 14px;
+  --pill: 999px;
+  --tap: 44px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #05080e;
+  /* The whole product is one fixed viewport. Nothing may scroll the document:
+     everything is positioned against it, so a stray scroll would slide the
+     entire interface off the world. Panels scroll their own contents. */
+  overflow: hidden;
+  overflow: clip;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--face);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* --------------------------------------------------------------------------
+   Stage
+   -------------------------------------------------------------------------- */
+
+.city {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overflow: clip;
+}
+
+/* The mount fills the stage; the canvas fills the mount. Without a box of its
+   own the mount takes the canvas's intrinsic size and overflows the window. */
+.city-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.city-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Boot and the closed door
+   -------------------------------------------------------------------------- */
+
+.boot {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--ink-2);
+  background: radial-gradient(120% 90% at 50% 30%, #16202e, #05080e 70%);
+}
+
+.boot__name {
+  font-family: var(--face-narrow);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.gate {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: 28px;
+  text-align: center;
+  background: radial-gradient(120% 90% at 50% 30%, #16202e, #05080e 70%);
+}
+
+.gate__crest {
+  width: 56px;
+  height: 56px;
+  color: var(--gold);
+}
+
+.gate__title {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.gate__line {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.gate__small {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-4);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons
+   --------------------------------------------------------------------------
+   One press. Gold when it wants pressing, stone when it does not, and a solid
+   bottom edge that collapses on :active so the press is physical.
+   -------------------------------------------------------------------------- */
+
+.press {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--tap);
+  padding: 0 20px;
+  font: inherit;
+  font-family: var(--face-narrow);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  color: var(--gold-ink);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 42%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  border-radius: var(--pill);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 0 #6d4405, 0 8px 16px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: transform 90ms ease, box-shadow 90ms ease, filter 120ms ease;
+}
+
+.press:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.press:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 1px 0 #6d4405;
+}
+
+.press:disabled {
+  color: #6d6353;
+  background: linear-gradient(180deg, #4a4132, #332c21);
+  border-color: #1d1810;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 0 #1d1810;
+  cursor: not-allowed;
+}
+
+.press[data-state="ready"] {
+  color: #06280f;
+  background: linear-gradient(180deg, #a7f5ba, var(--grow) 42%, var(--grow-deep));
+  border-color: #1c6134;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 0 #1c6134, 0 8px 20px rgba(46, 160, 84, 0.3);
+  animation: press-beckon 1.9s ease-in-out infinite;
+}
+
+@keyframes press-beckon {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.13);
+  }
+}
+
+.press__mark {
+  width: 17px;
+  height: 17px;
+}
+
+.press--ghost {
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: 13.5px;
+  color: var(--ink-2);
+  background: var(--panel-sunk);
+  border: 2px solid rgba(255, 214, 150, 0.18);
+  box-shadow: none;
+}
+
+.press--ghost:hover {
+  color: var(--ink);
+  border-color: rgba(255, 214, 150, 0.4);
+  filter: none;
+}
+
+.press--ghost:active {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+/* Shared panel material. Everything carved uses this. */
+.panelled {
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--lift);
+}
+
+/* --------------------------------------------------------------------------
+   Camera cluster — bottom centre, out of the way of both side panels
+   -------------------------------------------------------------------------- */
+
+.camera {
+  position: absolute;
+  left: 50%;
+  bottom: var(--pad);
+  z-index: 4;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--pill);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--lift);
+}
+
+.camera button {
+  width: 42px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  font-size: 19px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--pill);
+  cursor: pointer;
+}
+
+.camera button:hover {
+  color: var(--gold);
+  background: rgba(255, 194, 71, 0.12);
+}
+
+.camera button:active {
+  transform: translateY(1px);
+}
+
+/* --------------------------------------------------------------------------
+   Transient lines — bottom centre, above the camera
+   -------------------------------------------------------------------------- */
+
+.toast,
+.nudge {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pad) + 62px);
+  z-index: 4;
+  transform: translateX(-50%);
+  max-width: min(34rem, 60vw);
+  margin: 0;
+  padding: 9px 18px;
+  text-align: center;
+  font-size: 13.5px;
+  border-radius: var(--pill);
+}
+
+.toast {
+  font-family: var(--face-narrow);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 55%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  box-shadow: 0 4px 0 #6d4405, 0 10px 24px rgba(0, 0, 0, 0.45);
+  animation: toast-in 200ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.nudge {
+  color: var(--ink-2);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

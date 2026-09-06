@@ -6,9 +6,12 @@
  * way to reach an endpoint that is not written in this file. Adding a Whop
  * operation is a code change and a review, which is the point.
  *
- * Everything here is GET. There is no non-GET function, so no product route can
- * reach a payment, payout, transfer, account, team, OAuth-config or app-config
- * action — not behind a flag, not behind a session.
+ * Everything here is GET but one, so no product route can reach a payment,
+ * payout, transfer, account, team or person action — not behind a flag, not
+ * behind a session. The single exception is `writeOAuthConfig`, which changes
+ * two fields on **this deployment's own app record** so that a freshly
+ * published City can accept a sign-in at all. Its boundary is argued where it
+ * is defined; nothing else here is allowed to follow it.
  *
  * City never holds a credential. The hosted Website runtime attaches the app's
  * key in an outbound proxy, so there is no `Authorization` header anywhere in
@@ -60,6 +63,9 @@ const FAILED: Read<never> = { ok: false };
 const API_HOST = "api.whop.com";
 const API_DOMAIN_SUFFIX = ".whop.com";
 
+/** Used when the deployment does not name an origin, which is the usual case. */
+const DEFAULT_API_ORIGIN = `https://${API_HOST}`;
+
 function isPermittedApiHost(hostname: string): boolean {
   // Note the leading dot: "api.whop.com.evil.example" does not end with it, and
   // neither does "notwhop.com".
@@ -72,9 +78,34 @@ function isPermittedApiHost(hostname: string): boolean {
  * Returning null is the normal case in local development and means no outbound
  * request will be attempted at all.
  */
+/**
+ * Where the Whop API lives for this deployment.
+ *
+ * Defaults to the public API rather than requiring a binding. The hosted
+ * runtime does not inject `WHOP_API_ORIGIN` - measured, and recorded in
+ * `docs/website-auth-spike.md` - so requiring it meant every deployed City
+ * failed closed to the unavailable projection and no business was ever read.
+ *
+ * An override is still honoured and still has to survive the permitted-host
+ * check, so the widening is in what is *absent*, not in what is accepted.
+ */
+/**
+ * The app this deployment is, from whichever name the runtime used.
+ *
+ * Hosted Whop injects `WHOP_APP_ID`; the original code only looked for
+ * `APP_ID`, so the account fallback never fired where it was needed most.
+ */
+export function boundAppId(env: Env): string | null {
+  for (const key of ["WHOP_APP_ID", "APP_ID"] as const) {
+    const value = env[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return null;
+}
+
 export function apiOrigin(env: Env): string | null {
   const hosted = env.WHOP_API_ORIGIN;
-  if (typeof hosted !== "string" || hosted.length === 0) return null;
+  if (typeof hosted !== "string" || hosted.length === 0) return DEFAULT_API_ORIGIN;
   try {
     const url = new URL(hosted);
     if (url.protocol !== "https:") return null;
@@ -246,8 +277,21 @@ function isDefaultPlan(value: unknown): boolean {
 }
 
 /** `{ amount, currency }`, or null. The amount is what becomes a price. */
+/**
+ * A plan's price, in either shape the API has been seen to use.
+ *
+ * The live API returns a plain number with the currency as a sibling field.
+ * This validator originally accepted only an `{ amount, currency }` object,
+ * which was an assumption about a response nobody had ever received: the first
+ * deployment read a real business, every plan failed this check, and the whole
+ * capture failed closed to the unavailable projection.
+ *
+ * Both shapes are accepted now. The object form is kept because rejecting it
+ * would trade one unverified assumption for another.
+ */
 function isInitialPrice(value: unknown): boolean {
   if (value === null) return true;
+  if (typeof value === "number") return Number.isFinite(value) && value >= 0;
   if (!isObject(value)) return false;
   return field(value, "amount", isNullableQuantity) && field(value, "currency", isNullableString);
 }
@@ -283,7 +327,7 @@ function isWhopProduct(value: unknown): value is WhopProduct {
   );
 }
 
-function isWhopPlan(value: unknown): value is WhopPlan {
+export function isWhopPlan(value: unknown): value is WhopPlan {
   if (!isObject(value)) return false;
   return (
     field(value, "id", isNonEmptyString) &&
@@ -361,6 +405,100 @@ export async function readProductDetail(
 }
 
 /**
+ * GET /api/v1/companies/{id}
+ *
+ * What the business is called, so the interface can say which Whop the city is
+ * reading instead of leaving somebody with several of them to guess. A name
+ * and a public route, nothing else: no balance, no owner, no contact details,
+ * and never anything from this response reaches the public projection — it is
+ * served only on the owner's own gated endpoint.
+ */
+export async function readAccountName(
+  env: Env,
+  accountId: string,
+): Promise<Read<{ name: string; route: string | null }>> {
+  const read = await readJson<unknown>(env, `/api/v1/companies/${encodeURIComponent(accountId)}`);
+  if (!read.ok) return FAILED;
+  const body = read.data;
+  if (!isObject(body)) return FAILED;
+
+  // The field has been seen as both `title` and `name` depending on surface.
+  const name = [body.title, body.name].find(isNonEmptyString);
+  if (!name) return FAILED;
+  return {
+    ok: true,
+    data: { name: name.slice(0, 60), route: isNonEmptyString(body.route) ? body.route : null },
+  };
+}
+
+/**
+ * PATCH /api/v1/apps/{id} — the one non-GET in this file.
+ *
+ * Every Blueprint deployment registers a **new app**, and a new app has no
+ * OAuth callback whitelisted and is a `confidential` client. So the first
+ * person to press "Sign in with Whop" on a freshly published City gets
+ * `redirect_uri is invalid` from Whop before anything else happens, and the
+ * only fix is a configuration change on the app. Making that a manual step for
+ * every deployer is a broken product; doing it here makes publishing one step.
+ *
+ * The exception is bounded as tightly as it can be:
+ *
+ *   - one method, one path, and the path is **this deployment's own app id**,
+ *     read from a binding. There is no parameter and no caller can supply one.
+ *   - exactly two fields in the body, both derived — the callback from the
+ *     request's own origin, the client type from a literal.
+ *   - it touches no business, no product, no plan, no payment and no person.
+ *     `developer:update_app` is the only permission involved, and the spike
+ *     verified in production that the injected credential holds it and that
+ *     both fields land.
+ *   - it is skipped entirely when the app is already configured, so the steady
+ *     state is a read.
+ *
+ * See `docs/website-auth-spike.md`, "a deployed Website can self-bootstrap".
+ */
+export type OAuthConfig = { redirectUris: string[]; clientType: string | null };
+
+export async function readOAuthConfig(env: Env): Promise<Read<OAuthConfig>> {
+  const appId = boundAppId(env);
+  if (!appId) return FAILED;
+  const app = await readJson<unknown>(env, `/api/v1/apps/${encodeURIComponent(appId)}`);
+  if (!app.ok || !isObject(app.data)) return FAILED;
+  const uris = Array.isArray(app.data.redirect_uris)
+    ? app.data.redirect_uris.filter(isNonEmptyString)
+    : [];
+  return {
+    ok: true,
+    data: {
+      redirectUris: uris,
+      clientType: isNonEmptyString(app.data.oauth_client_type) ? app.data.oauth_client_type : null,
+    },
+  };
+}
+
+export async function writeOAuthConfig(
+  env: Env,
+  redirectUris: readonly string[],
+): Promise<Read<true>> {
+  const origin = apiOrigin(env);
+  const appId = boundAppId(env);
+  if (origin === null || !appId) return FAILED;
+
+  try {
+    const response = await fetch(`${origin}/api/v1/apps/${encodeURIComponent(appId)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "Api-Version-Date": API_VERSION },
+      // A public client, because the alternative is a per-deployment secret
+      // that a hosted Website has nowhere safe to keep.
+      body: JSON.stringify({ redirect_uris: redirectUris, oauth_client_type: "public" }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    return response.ok ? { ok: true, data: true } : FAILED;
+  } catch {
+    return FAILED;
+  }
+}
+
+/**
  * GET /api/v1/apps/{id}
  *
  * Used only to learn which business the deployment belongs to. A Blueprint
@@ -374,7 +512,7 @@ export async function readOwningAccountId(env: Env): Promise<Read<string>> {
   const bound = env.WHOP_ACCOUNT_ID;
   if (typeof bound === "string" && bound.length > 0) return { ok: true, data: bound };
 
-  const appId = typeof env.APP_ID === "string" ? env.APP_ID : null;
+  const appId = boundAppId(env);
   if (!appId) return FAILED;
 
   const app = await readJson<unknown>(env, `/api/v1/apps/${encodeURIComponent(appId)}`);

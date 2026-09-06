@@ -1,10 +1,12 @@
 import * as THREE from "three";
 import { useEffect, useRef } from "react";
 
-import type { PublicCityProjection } from "../city/projection";
-import { buildCity, disposeCity, type City } from "../render/city/city";
+import type { DistrictId, PublicCityProjection } from "../city/projection";
+import { buildLots, buildTerrain, type Lots, type Terrain } from "../render/city/city";
+import { createWorks, type MarkerKind, type Works } from "../render/city/works";
+import { plotSite } from "../game/plots";
 import { applySurfaceDetail } from "../render/scene/materials";
-import { SUPERSAMPLE_DEFAULT, VIEW, createStage } from "../render/scene/stage";
+import { SUPERSAMPLE_DEFAULT, createStage } from "../render/scene/stage";
 import { FRAMING_ORDER, framingFor, type FramingKey } from "./framings";
 
 /**
@@ -25,6 +27,24 @@ type Props = {
   framing: FramingKey;
   /** 1 is the framing's own height; below 1 is closer. */
   zoom: number;
+  /**
+   * What the player has done in each district. Drawn as a separate mark beside
+   * the condition, never instead of it.
+   */
+  /** Level per building id: what the business has earned and the player took. */
+  levels: Readonly<Record<string, number>>;
+  /**
+   * Which plots are asking for attention, and why. Drawn in the world above
+   * the roofline rather than as HTML over the canvas, so the bubbles cannot
+   * lag the camera.
+   */
+  markers: Readonly<Record<string, MarkerKind>>;
+  selected: string | null;
+  onSelectPlot: (plotId: string) => void;
+  /** A district was picked in the world. The shell decides what that means. */
+  onSelectDistrict: (districtId: DistrictId) => void;
+  /** WebGL could not start. The shell swaps in the readable fallback. */
+  onUnavailable: () => void;
 };
 
 /** Eased so a scripted fly-through is reproducible frame for frame. */
@@ -33,6 +53,17 @@ function ease(t: number): number {
 }
 
 /** How fast the camera settles on a new framing, in inverse seconds. */
+/**
+ * How far the camera may roam.
+ *
+ * The world is an island. These are its shoulders, so a player who flings the
+ * camera never ends up staring at empty water wondering where the city went.
+ */
+const PAN_BOUNDS = { minX: -150, maxX: 150, minZ: -170, maxZ: 120 };
+/** Zoom stops. Close enough to read a shopfront, wide enough to see the island. */
+const MIN_FRUSTUM = 26;
+const MAX_FRUSTUM = 220;
+
 const GLIDE_RATE = 3.2;
 
 /**
@@ -64,24 +95,57 @@ function needsReadback(): boolean {
   return isCaptureMode();
 }
 
-export function CityCanvas({ projection, framing, zoom }: Props) {
+export function CityCanvas({
+  projection,
+  framing,
+  zoom,
+  levels,
+  markers,
+  selected,
+  onSelectPlot,
+  onSelectDistrict,
+  onUnavailable,
+}: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<ReturnType<typeof createStage> | null>(null);
-  const cityRef = useRef<City | null>(null);
+  const terrainRef = useRef<Terrain | null>(null);
+  const lotsRef = useRef<Lots | null>(null);
+  /** Set only by the capture hook. Null in the product, always. */
+  const pinnedRef = useRef<Record<string, number> | null>(null);
+
+  const worksRef = useRef<Works | null>(null);
+  // Held in a ref so the pointer handler, which is installed once, always
+  // calls the current one.
+  const onSelectPlotRef = useRef(onSelectPlot);
+  onSelectPlotRef.current = onSelectPlot;
   // Kept in refs so the animation loop reads the current value without being
   // torn down and restarted on every camera change.
   const viewRef = useRef({ framing, zoom });
   viewRef.current = { framing, zoom };
+  // Same reason: the pick handler is installed once and must see current props.
+  const selectRef = useRef(onSelectDistrict);
+  selectRef.current = onSelectDistrict;
+  const unavailableRef = useRef(onUnavailable);
+  unavailableRef.current = onUnavailable;
 
   // --------------------------------------------------------------- the stage
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
 
-    const stage = createStage(mount, {
-      supersample: supersampleFromLocation(),
-      preserveDrawingBuffer: needsReadback(),
-    });
+    let stage: ReturnType<typeof createStage>;
+    try {
+      stage = createStage(mount, {
+        supersample: supersampleFromLocation(),
+        preserveDrawingBuffer: needsReadback(),
+      });
+    } catch {
+      // No WebGL, a lost context at construction, or a blocked canvas. The
+      // shell has a readable version of the same briefing; hand over to it
+      // rather than leaving a blank rectangle where the city should be.
+      unavailableRef.current();
+      return;
+    }
     applySurfaceDetail();
     stageRef.current = stage;
 
@@ -105,16 +169,140 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
       held.height = initial.height * viewRef.current.zoom;
     }
 
+    /**
+     * Where the camera is going.
+     *
+     * Two ways to set it. Picking a district sets a framing and the camera
+     * flies there; dragging or scrolling sets this directly and takes over,
+     * because a city you cannot move around is a diorama, not a game. Whoever
+     * moved it last wins, and the glide eases toward it either way so both
+     * feel like the same camera.
+     */
+    const want = { focus: held.focus.clone(), height: held.height, free: false };
+
+    let lastZoom = viewRef.current.zoom;
+    let lastFraming: string = viewRef.current.framing;
+
     const glide = (dt: number) => {
       const { framing: key, zoom: bias } = viewRef.current;
-      const target = framingFor(key);
+
+      // Choosing a district takes the camera back: you asked to go somewhere,
+      // so it flies there even if you had dragged away.
+      if (key !== lastFraming) {
+        lastFraming = key;
+        want.free = false;
+      }
+      // The zoom buttons drive the same camera the wheel does, so they keep
+      // working after a drag instead of quietly doing nothing.
+      if (bias !== lastZoom) {
+        if (want.free) {
+          want.height = THREE.MathUtils.clamp((want.height * bias) / lastZoom, MIN_FRUSTUM, MAX_FRUSTUM);
+        }
+        lastZoom = bias;
+      }
+
+      if (!want.free) {
+        const target = framingFor(key);
+        want.focus.set(...target.focus);
+        want.height = target.height * bias;
+      }
       // Exponential approach, framerate-independent. Roughly nine tenths of the
       // way there in three quarters of a second.
+      coast(dt);
       const k = 1 - Math.exp(-dt * GLIDE_RATE);
-      held.focus.lerp(new THREE.Vector3(...target.focus), k);
-      held.height += (target.height * bias - held.height) * k;
+      // Zoom is always eased; position is eased only when flying somewhere,
+      // because a drag has already put it exactly where the hand wants it.
+      if (!want.free || down.size === 0) held.focus.lerp(want.focus, k);
+      held.height += (want.height - held.height) * k;
       stage.frame(held.focus, held.height);
     };
+
+    // ------------------------------------------------------- flying around
+    // The camera looks down the 45 degrees the art was composed at and never
+    // rotates, so dragging is two fixed directions on the ground: screen right
+    // is one, screen up is the other. Clash of Clans does the same — the angle
+    // is the art, the position is the player's.
+    //
+    // Both are read off the camera's own matrix rather than reconstructed from
+    // the azimuth. Reconstructing them is how the vertical axis ended up
+    // inverted: the hand-written "up" was the negative of the camera's, so
+    // dragging down pulled the city up.
+    stage.camera.updateMatrixWorld();
+    const camRight = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 0).setY(0);
+    const camUp = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 1).setY(0);
+
+    /**
+     * How far the ground has to move to move the picture by one unit.
+     *
+     * The camera looks down at the ground, so a metre travelled north is not a
+     * metre up the screen — it is `sin(elevation)` of one, about a half at this
+     * angle. Ignoring that made a vertical drag move the world at half the
+     * speed of the hand while a horizontal drag tracked it exactly, which is
+     * the "sluggish, fighting me" feeling that has nothing to do with speed
+     * settings: the ground was simply not staying under the cursor.
+     */
+    const perRight = 1 / Math.max(0.2, camRight.length());
+    const perUp = 1 / Math.max(0.2, camUp.length());
+    const groundRight = camRight.clone().normalize();
+    const groundUp = camUp.clone().normalize();
+
+    /** Keep the city on screen: you may roam the promontory, not the void. */
+    const clampFocus = (focus: THREE.Vector3) => {
+      focus.x = THREE.MathUtils.clamp(focus.x, PAN_BOUNDS.minX, PAN_BOUNDS.maxX);
+      focus.z = THREE.MathUtils.clamp(focus.z, PAN_BOUNDS.minZ, PAN_BOUNDS.maxZ);
+      return focus;
+    };
+
+    const takeOver = () => {
+      if (want.free) return;
+      // Start from where the camera actually is, so grabbing it mid-flight
+      // does not snap.
+      want.focus.copy(held.focus);
+      want.height = held.height;
+      want.free = true;
+    };
+
+    /** Pixels per second, carried after the pointer lifts. */
+    const drift = { x: 0, z: 0 };
+
+    const panBy = (dxPixels: number, dyPixels: number) => {
+      takeOver();
+      // One screen pixel is this many world units at the current zoom.
+      const perPixel = held.height / Math.max(1, stage.renderer.domElement.clientHeight);
+      const before = want.focus.clone();
+      // Grab, not push: the ground under the cursor stays under the cursor, so
+      // the camera moves opposite to the hand on both axes.
+      want.focus.addScaledVector(groundRight, -dxPixels * perPixel * perRight);
+      want.focus.addScaledVector(groundUp, dyPixels * perPixel * perUp);
+      clampFocus(want.focus);
+      // Direct, not eased: the ground has to stay under the cursor. Easing here
+      // is what made dragging feel like pulling the city on a rubber band.
+      held.focus.copy(want.focus);
+      drift.x = want.focus.x - before.x;
+      drift.z = want.focus.z - before.z;
+    };
+
+    /** Let go and the city keeps sliding, then settles. */
+    const coast = (dt: number) => {
+      if (!want.free) return;
+      if (Math.abs(drift.x) < 0.004 && Math.abs(drift.z) < 0.004) return;
+      if (down.size > 0) return;
+      want.focus.x += drift.x;
+      want.focus.z += drift.z;
+      clampFocus(want.focus);
+      held.focus.copy(want.focus);
+      const decay = Math.exp(-dt * 5.2);
+      drift.x *= decay;
+      drift.z *= decay;
+    };
+
+    const zoomBy = (factor: number) => {
+      takeOver();
+      want.height = THREE.MathUtils.clamp(want.height * factor, MIN_FRUSTUM, MAX_FRUSTUM);
+    };
+
+    // `down` is declared below the handlers that read it, so the pan helpers
+    // above see it through the closure rather than at definition time.
 
     /**
      * Fit the authored aspect into whatever space there is.
@@ -125,12 +313,14 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
      * makes the city fill the frame on a viewport of any shape.
      */
     const fit = () => {
-      const availableWidth = mount.clientWidth || window.innerWidth;
-      const availableHeight = mount.clientHeight || window.innerHeight;
-      const scale = Math.min(availableWidth / VIEW.width, availableHeight / VIEW.height);
+      // Fill whatever box the shell gives us. The stage keeps the authored
+      // frustum *height* and widens or grows it to match the aspect, so a
+      // 21:9 monitor sees more city rather than two black bars, and nothing is
+      // ever stretched. Letterboxing to 1440x900 is what left a wide desktop
+      // with a small picture in the middle of a black field.
       stage.resize(
-        Math.max(320, Math.round(VIEW.width * scale)),
-        Math.max(200, Math.round(VIEW.height * scale)),
+        Math.max(320, Math.round(mount.clientWidth || window.innerWidth)),
+        Math.max(200, Math.round(mount.clientHeight || window.innerHeight)),
       );
     };
 
@@ -138,10 +328,141 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
       const dt = timer.getDelta();
       clock += dt;
       glide(dt);
-      cityRef.current?.update(clock);
+      terrainRef.current?.update(clock);
+      lotsRef.current?.update(clock);
+      worksRef.current?.update(clock);
       stage.renderer.render(stage.scene, stage.camera);
       raf = requestAnimationFrame(loop);
     };
+
+    // ------------------------------------------------------- picking
+    // A district is selected by clicking its marker in the world. The raycast
+    // runs against the markers only: the city is one merged mesh per material,
+    // so hit-testing the architecture would tell us which *material* was
+    // clicked, not which district.
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    let pressedAt: { x: number; y: number } | null = null;
+
+    /**
+     * What is under the pointer. Pure.
+     *
+     * It used to select the plot it found, and the hover handler calls it to
+     * decide the cursor — so moving the mouse across a building selected it
+     * and flew the camera there. A hit test answers a question; it does not
+     * act on the answer.
+     */
+    type Hit = { kind: "plot"; id: string } | { kind: "district"; id: DistrictId };
+
+    const pickAt = (event: PointerEvent): Hit | null => {
+      const rect = stage.renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, stage.camera);
+      // Plots are the finer target and win ties: clicking a building the
+      // player put up should open that building, not the district around it.
+      const plotHits = worksRef.current
+        ? raycaster.intersectObjects(worksRef.current.picks, false)
+        : [];
+      if (plotHits.length > 0) {
+        const plotId = plotHits[0].object.userData.plotId as string | undefined;
+        if (plotId) return { kind: "plot", id: plotId };
+      }
+
+      return null;
+    };
+
+    // Pointers currently down, so one finger can drag and two can pinch.
+    const down = new Map<number, { x: number; y: number }>();
+    let pinchGap = 0;
+    let dragged = 0;
+
+    const canvas = stage.renderer.domElement;
+
+    const onPointerDown = (event: PointerEvent) => {
+      down.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (down.size === 1) {
+        pressedAt = { x: event.clientX, y: event.clientY };
+        dragged = 0;
+        canvas.setPointerCapture(event.pointerId);
+        canvas.style.cursor = "grabbing";
+      } else if (down.size === 2) {
+        const [a, b] = [...down.values()];
+        pinchGap = Math.hypot(a.x - b.x, a.y - b.y);
+      }
+    };
+
+    const onPointerUp = (event: PointerEvent) => {
+      const wasDragging = dragged;
+      down.delete(event.pointerId);
+      if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
+      canvas.style.cursor = "grab";
+
+      // A click that travelled was someone moving the city, not choosing
+      // something in it.
+      const start = pressedAt;
+      pressedAt = null;
+      if (!start || down.size > 0) return;
+      if (wasDragging > 6) return;
+      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 6) return;
+
+      // Selection happens here, on a click that did not travel — never in the
+      // hover handler.
+      const hit = pickAt(event);
+      if (hit?.kind === "plot") onSelectPlotRef.current(hit.id);
+      else if (hit?.kind === "district") selectRef.current(hit.id);
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const previous = down.get(event.pointerId);
+
+      if (previous && down.size === 2) {
+        // Pinch: the gap between the two fingers is the zoom.
+        down.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        const [a, b] = [...down.values()];
+        const gap = Math.hypot(a.x - b.x, a.y - b.y);
+        if (pinchGap > 0 && gap > 0) zoomBy(pinchGap / gap);
+        pinchGap = gap;
+        dragged += 10;
+        return;
+      }
+
+      if (previous && event.buttons === 0) {
+        // The button came up somewhere we never heard about. Let go.
+        down.delete(event.pointerId);
+        canvas.style.cursor = "grab";
+        return;
+      }
+
+      if (previous) {
+        const dx = event.clientX - previous.x;
+        const dy = event.clientY - previous.y;
+        down.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        dragged += Math.hypot(dx, dy);
+        // A small wobble on the way to a click should not move the city.
+        if (dragged > 4) panBy(dx, dy);
+        return;
+      }
+
+      canvas.style.cursor = pickAt(event) ? "pointer" : "grab";
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      // Trackpads report small pixel deltas and mice report large ones, so the
+      // step is capped rather than proportional — otherwise one mouse notch
+      // crosses the whole zoom range.
+      const step = Math.sign(event.deltaY) * Math.min(0.3, Math.abs(event.deltaY) / 280);
+      zoomBy(1 + step);
+    };
+
+    canvas.style.cursor = "grab";
+    canvas.style.touchAction = "none";
+    canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("pointerup", onPointerUp);
+    canvas.addEventListener("pointercancel", onPointerUp);
+    canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("wheel", onWheel, { passive: false });
 
     window.addEventListener("resize", fit);
     fit();
@@ -153,10 +474,23 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
     const originalBackground = stage.scene.background;
     const originalFog = stage.scene.fog;
 
+    /** World point to CSS pixels on the canvas. Null in, null out. */
+    const project = (world: THREE.Vector3 | null) => {
+      if (!world) return null;
+      const rect = stage.renderer.domElement.getBoundingClientRect();
+      const at = world.clone().project(stage.camera);
+      return {
+        x: rect.left + ((at.x + 1) / 2) * rect.width,
+        y: rect.top + ((1 - at.y) / 2) * rect.height,
+      };
+    };
+
     const renderAt = (focus: THREE.Vector3, height: number, t: number) => {
       clock = t;
       stage.frame(focus, height);
-      cityRef.current?.update(t);
+      terrainRef.current?.update(t);
+      lotsRef.current?.update(t);
+      worksRef.current?.update(t);
       stage.renderer.render(stage.scene, stage.camera);
     };
 
@@ -183,7 +517,8 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
 
         renderFrame: (t: number) => {
           clock = t;
-          cityRef.current?.update(t);
+          terrainRef.current?.update(t);
+          lotsRef.current?.update(t);
           stage.renderer.render(stage.scene, stage.camera);
         },
 
@@ -207,6 +542,30 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
          * any of it changes while the camera moves, every texel remaps to a
          * different world position and the whole map shimmers.
          */
+        /**
+         * Where a district's marker is on screen, in CSS pixels.
+         *
+        /**
+         * Where a plot's marker floats, on screen, in CSS pixels.
+         *
+         * Rides the measured roofline, so a building growing a storey moves
+         * this up the screen. That is what makes it a usable assertion for
+         * "the building actually got taller".
+         */
+        plotPoint: (plotId: string) => project(worksRef.current?.anchor(plotId) ?? null),
+
+        /**
+         * Where a plot's ground sits on screen. What to click to select it.
+         *
+         * Separate from `plotPoint` because they diverge by most of a tower on
+         * a grown plot, and a click aimed at the roof of one building lands on
+         * the ground of the one behind it.
+         */
+        plotGround: (plotId: string) => {
+          const site = plotSite(plotId);
+          return project(new THREE.Vector3(site.x, 1, site.z));
+        },
+
         shadowRig: () => {
           const c = stage.sun.shadow.camera;
           return [
@@ -228,7 +587,7 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
         silhouette: (on: boolean) => {
           stage.scene.background = on ? new THREE.Color("#ffffff") : originalBackground;
           stage.scene.fog = on ? null : originalFog;
-          cityRef.current?.group.traverse((child) => {
+          for (const half of [terrainRef.current?.group, lotsRef.current?.group]) half?.traverse((child) => {
             if (!(child instanceof THREE.Mesh) && !(child instanceof THREE.InstancedMesh)) return;
             const named = child.parent?.name ?? "";
             const isContext =
@@ -251,6 +610,57 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
           stage.renderer.render(stage.scene, stage.camera);
         },
 
+        /**
+         * Stands the plots at levels of the caller's choosing.
+         *
+         * The game decides levels from what the business earned — that is the
+         * point of it, and it also means there is no way to look at the forge
+         * at level two without finding a business that earned exactly that.
+         * Reviewing eleven plots across six levels each needs the sixty-six of
+         * them on demand.
+         */
+        setLevels: (next: Record<string, number>) => {
+          // Pinned, not just applied. The shell rebuilds the plots whenever the
+          // figures move, and a live poll landing mid-capture would quietly put
+          // the earned city back while the camera was pointed at a level two.
+          pinnedRef.current = next;
+          const standing = lotsRef.current;
+          if (standing) {
+            stage.scene.remove(standing.group);
+            standing.dispose();
+          }
+          const lots = buildLots(projection.seed, next);
+          lotsRef.current = lots;
+          stage.scene.add(lots.group);
+          worksRef.current?.apply({ tops: lots.tops, markers: {}, selected: null });
+          lots.update(0);
+          stage.renderer.render(stage.scene, stage.camera);
+        },
+
+        /**
+         * Every moving thing on the terrain, where it is right now.
+         *
+         * Exists so a test can step the clock and check that nothing teleports.
+         * Traffic used to run a modulo along a single street and switch itself
+         * off inside the bridge gap, and "does the car vanish" is not a
+         * question a screenshot can answer.
+         */
+        actors: (t?: number) => {
+          // Steps the world without drawing it. Continuity is a property of the
+          // motion, not of the pixels, and software-rendering a supersampled
+          // city a thousand times to find that out takes minutes.
+          if (t !== undefined) terrainRef.current?.update(t);
+          return (terrainRef.current?.group.getObjectByName("actors")?.children ?? []).map(
+            (child) => ({
+              name: child.name,
+              visible: child.visible,
+              x: child.position.x,
+              y: child.position.y,
+              z: child.position.z,
+            }),
+          );
+        },
+
         info: () => {
           const info = stage.renderer.info;
           return {
@@ -258,8 +668,8 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
             triangles: info.render.triangles,
             geometries: info.memory.geometries,
             textures: info.memory.textures,
-            parcels: cityRef.current?.stats.parcels ?? 0,
-            propInstances: cityRef.current?.stats.instances ?? 0,
+            parcels: lotsRef.current?.stats.parcels ?? 0,
+            propInstances: lotsRef.current?.stats.instances ?? 0,
           };
         },
 
@@ -271,8 +681,18 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
 
     return () => {
       cancelAnimationFrame(raf);
+      canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("pointerup", onPointerUp);
+      canvas.removeEventListener("pointercancel", onPointerUp);
+      canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", fit);
       delete (window as { __city?: unknown }).__city;
+      if (worksRef.current) {
+        stage.scene.remove(worksRef.current.group);
+        worksRef.current.dispose();
+        worksRef.current = null;
+      }
       black.dispose();
       stage.renderer.dispose();
       mount.removeChild(stage.renderer.domElement);
@@ -280,30 +700,95 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
     };
   }, []);
 
-  // ---------------------------------------------------------- the world itself
-  // Rebuilt whenever the projection changes, which is the only thing that
-  // changes it. Serialised as the dependency so an identical projection
-  // arriving as a new object does not throw the city away and build it again.
-  const projectionKey = JSON.stringify(projection);
+  // ------------------------------------------------------------- the terrain
+  // Everything that does not depend on what the player built: the ground, the
+  // roads, both bays, the surrounding massing, the traffic. It is most of the
+  // geometry in the scene and it is built once. The seed is the only thing
+  // that could change it, and the seed is stable per business.
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    if (cityRef.current) {
-      stage.scene.remove(cityRef.current.group);
-      disposeCity(cityRef.current);
-    }
+    const terrain = buildTerrain(projection.seed);
+    terrainRef.current = terrain;
+    stage.scene.add(terrain.group);
+    terrain.update(0);
 
-    const city = buildCity(projection);
-    cityRef.current = city;
-    stage.scene.add(city.group);
+    return () => {
+      stage.scene.remove(terrain.group);
+      terrain.dispose();
+      terrainRef.current = null;
+    };
+  }, [projection.seed]);
+
+  // ----------------------------------------------------------------- the lots
+  // The eleven plots and everything standing on them. Rebuilt when a level
+  // moves, which is a fraction of the work rebuilding the world used to be.
+  const planKey = JSON.stringify(levels);
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const lots = buildLots(projection.seed, pinnedRef.current ?? levels);
+    lotsRef.current = lots;
+    stage.scene.add(lots.group);
+
+    // The works stand outside both halves: a rebuild must not take the markers
+    // and pick targets with it.
+    if (!worksRef.current) {
+      const works = createWorks(Object.keys(levels), stage.camera);
+      worksRef.current = works;
+      stage.scene.add(works.group);
+    }
+    worksRef.current?.apply({ tops: lots.tops, markers, selected });
 
     const f = framingFor(viewRef.current.framing);
     stage.frame(new THREE.Vector3(...f.focus), f.height * viewRef.current.zoom);
-    city.update(0);
+    lots.update(0);
     stage.renderer.render(stage.scene, stage.camera);
+
+    return () => {
+      // Whatever is current, not the one this effect happened to build. The
+      // capture hook below can swap the lots out from under it, and disposing
+      // the closed-over object would drop the replacement on the floor and
+      // free something already freed.
+      const standing = lotsRef.current;
+      if (standing) {
+        stage.scene.remove(standing.group);
+        standing.dispose();
+      }
+      lotsRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectionKey]);
+  }, [projection.seed, planKey]);
+
+  // ------------------------------------------------- markers follow the state
+  // Cheap, and runs whenever the game state moves: a marker appearing is one
+  // instance matrix, not a city.
+  const markerKey = JSON.stringify(markers);
+  useEffect(() => {
+    const stage = stageRef.current;
+    const works = worksRef.current;
+    const lots = lotsRef.current;
+    if (!stage || !works || !lots) return;
+    works.apply({ tops: lots.tops, markers, selected });
+    if (isCaptureMode()) {
+      works.update(0);
+      stage.renderer.render(stage.scene, stage.camera);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markerKey, selected]);
+
+
+  // On a phone the dossier is a sheet over the lower two thirds, so the framing
+  // is pushed up into the part of the screen that is still the city.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const narrow = (stage.renderer.domElement.clientWidth || 0) < 780;
+    stage.setBias(narrow && framing !== "city" ? 0.24 : 0);
+    if (isCaptureMode()) stage.renderer.render(stage.scene, stage.camera);
+  }, [framing]);
 
   // ------------------------------------------------------- camera, on demand
   // In capture mode there is no loop, so a framing change has to draw itself.
@@ -312,7 +797,8 @@ export function CityCanvas({ projection, framing, zoom }: Props) {
     if (!stage || !isCaptureMode()) return;
     const f = framingFor(framing);
     stage.frame(new THREE.Vector3(...f.focus), f.height * zoom);
-    cityRef.current?.update(0);
+    terrainRef.current?.update(0);
+    lotsRef.current?.update(0);
     stage.renderer.render(stage.scene, stage.camera);
   }, [framing, zoom]);
 

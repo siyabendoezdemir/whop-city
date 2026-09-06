@@ -8,6 +8,7 @@ import {
   pavingSeams,
   renderGrain,
   roofRibs,
+  turfGrain,
   waterRipples,
 } from "./textures";
 
@@ -66,6 +67,19 @@ export const M = {
   water: standard("#4d90b8", 0.28, 0.1),
   gravel: standard("#948d80", 0.98),
 
+  // ------------------------------------------------------------- farmland
+  // The plain the city stands on. Deliberately close together in value: the
+  // point is that the distance reads as worked land rather than as one flat
+  // fill, not that anybody counts the crops. Anything with real contrast out
+  // here competes with the city, which is the thing you are meant to look at.
+  meadow: standard("#7ba55d", 0.94),
+  pasture: standard("#86ad64", 0.94),
+  cropGreen: standard("#8fb262", 0.95),
+  cropYoung: standard("#9cb96c", 0.95),
+  stubble: standard("#bdb47e", 0.96),
+  fallow: standard("#93a367", 0.96),
+  ploughed: standard("#9d8563", 0.97),
+
   // ------------------------------------------------------------ structure
   brick: standard("#b4664a", 0.86),
   brickDark: standard("#8f4f39", 0.88),
@@ -78,9 +92,33 @@ export const M = {
   plaster: standard("#e6ddcd", 0.88),
 
   // ------------------------------------------------------------- roofing
-  roofZinc: standard("#6c7683", 0.62, 0.35),
-  roofZincWorn: standard("#5d646d", 0.85, 0.2),
-  roofFelt: standard("#4c4a48", 0.95),
+  //
+  // The camera looks down at thirty-one degrees, which makes roofs somewhere
+  // near half of everything on screen — more than that over the sheds and the
+  // mews, where the pitch is the building. They were the darkest surfaces in
+  // the palette and carried enough metalness to mirror the sky, so a zinc
+  // pitch came out a near-black navy and every shed, hall and mews range in
+  // the city read as a hole with walls round it.
+  //
+  // Lifted twice now, and taken most of the way off metal. The sun sits at
+  // twenty-seven degrees, so an upward-facing surface gets it at a grazing
+  // angle and is lit mainly by the sky — which means a roof always renders a
+  // long way under its own albedo. The first lift of fifteen per cent got the
+  // sheds out of the near-black; this one gets the mews and hall pitches out
+  // of navy. Still clearly the cool half of the palette against warm brick and
+  // render — the roofs are meant to be slate, not silver.
+  roofZinc: standard("#949fad", 0.72, 0.12),
+  roofZincWorn: standard("#7d838d", 0.88, 0.08),
+  roofFelt: standard("#5c5a57", 0.95),
+  /**
+   * Profiled sheeting, for the big industrial decks.
+   *
+   * A sawtooth over a fourteen-metre shed is the largest single plane on the
+   * Offer Forge, and putting slate on it made the whole district read as
+   * derelict. Factory roofs are pale galvanised sheet, which is also what
+   * keeps the sawtooth's own glazing legible against it.
+   */
+  roofSheet: standard("#9ba1a6", 0.8, 0.06),
   fascia: standard("#f6f1e6", 0.8),
 
   // --------------------------------------------------------------- metal
@@ -95,6 +133,27 @@ export const M = {
     transparent: true,
     opacity: 0.78,
     envMapIntensity: 1.5,
+  }),
+  /**
+   * Glazing that lies down.
+   *
+   * `glass` is authored for a wall: sharp, mirror-smooth, and reflecting the
+   * environment at one and a half times, which on a vertical face picks up the
+   * blue above the horizon and reads as glass. Lay the same material nearly
+   * flat — a rooflight in a mews pitch, daylight in a hall roof — and the
+   * reflected ray goes to the warm haze band instead, at a grazing angle where
+   * Fresnel is strongest. Every rooflight in the city was coming out as an
+   * opaque cream rectangle: from above, which is most of what this camera sees,
+   * the Creator Quarter's mews ranges looked like somebody had stuck post-its
+   * to the tiles.
+   *
+   * Rooflights are patent glazing, wired or diffusing, over a dark interior.
+   * Rough, barely reflective, and darker than the deck it sits in.
+   */
+  glassRoof: standard("#7d93a4", 0.62, 0.04, {
+    transparent: true,
+    opacity: 0.92,
+    envMapIntensity: 0.3,
   }),
   glassDim: standard("#6f8391", 0.35, 0.1, { transparent: true, opacity: 0.85 }),
   glassLit: standard("#ffe9b8", 0.25, 0, {
@@ -193,6 +252,19 @@ export function applySurfaceDetail(): void {
   assign(M.gravel, grain);
   assign(M.dirt, grain);
   assign(M.dirtDry, grain);
+  const turf = turfGrain();
+  for (const material of [
+    M.grass,
+    M.meadow,
+    M.pasture,
+    M.cropGreen,
+    M.cropYoung,
+    M.stubble,
+    M.fallow,
+    M.ploughed,
+  ]) {
+    assign(material, turf);
+  }
   // World UVs are baked at half a unit per metre, which makes a 256px tile two
   // metres across — about one screen pixel on the creek at this camera. The
   // ripple map gets its own repeat so a tile spans tens of metres and can
@@ -218,11 +290,12 @@ export function applySurfaceDetail(): void {
   // Roofs and metalwork.
   assign(M.roofZinc, ribs);
   assign(M.roofZincWorn, ribs);
+  assign(M.roofSheet, ribs);
   assign(M.roofFelt, grain);
   assign(M.shutter, ribs);
 
   // Glazing: value variation per pane is what stops glass reading as paint.
-  for (const material of [M.glass, M.glassDim, M.glassLit]) {
+  for (const material of [M.glass, M.glassRoof, M.glassDim, M.glassLit]) {
     material.map = panes;
     material.needsUpdate = true;
   }

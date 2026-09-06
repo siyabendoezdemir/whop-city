@@ -170,7 +170,36 @@ export function registerProps(kit: InstanceKit): void {
     [post(0.07, 4.2, 8), [0, 2.1, 0]],
     [box(0.09, 0.09, 0.92), [0, 4.16, 0.42]],
   ]), M.ironDark);
-  kit.define("lamp.head", protoGeo([[bevelBox(0.34, 0.14, 0.5, 0.05), [0, 4.06, 0.82]]]), M.aluminium);
+  // A plain box, not a bevelled one. The lantern is 34cm across and four
+  // metres up: three pixels at the default framing, for which a rounded box
+  // was spending three hundred triangles a lamp and twenty-two thousand across
+  // the city — more than the entire countryside.
+  kit.define("lamp.head", protoGeo([[box(0.34, 0.14, 0.5), [0, 4.06, 0.82]]]), M.aluminium);
+
+  /**
+   * The tree used in open country.
+   *
+   * One canopy and a square trunk, merged into a single prototype: thirty-six
+   * triangles against the eighty-four of the street tree, and one instanced
+   * mesh instead of two. There are hundreds of these and they are a hundred
+   * metres away, where the difference is invisible and the budget is not.
+   */
+  kit.define(
+    "tree.far",
+    protoGeo([
+      [post(0.13, 1.6, 4), [0, 0.8, 0]],
+      [blob(1.05), [0, 2.5, 0], [0, 0.4, 0], [1, 0.9, 1]],
+    ]),
+    M.foliage,
+  );
+  kit.define(
+    "tree.farDry",
+    protoGeo([
+      [post(0.13, 1.6, 4), [0, 0.8, 0]],
+      [blob(0.9), [0, 2.3, 0], [0, 0.4, 0], [1, 0.8, 1]],
+    ]),
+    M.foliageDry,
+  );
 
   // ------------------------------------------------------------ site props
   kit.define("cone", protoGeo([
@@ -201,6 +230,13 @@ export function registerProps(kit: InstanceKit): void {
   kit.define("gravelPile", protoGeo([
     [new THREE.ConeGeometry(0.9, 0.62, 8), [0, 0.31, 0]],
   ]), M.gravel);
+  // Setting-out peg: what says a cleared plot is a plot rather than waste
+  // ground. Four of them along the building line and the grass reads as
+  // measured.
+  kit.define("peg", protoGeo([
+    [box(0.09, 0.85, 0.09), [0, 0.42, 0]],
+    [box(0.3, 0.16, 0.05), [0, 0.78, 0.03]],
+  ]), M.accent, { castShadow: false });
 
   // temporary fencing / hoarding
   kit.define("fence.mesh", protoGeo([[box(2.3, 1.9, 0.04), [0, 1.0, 0]]]), M.netting, {

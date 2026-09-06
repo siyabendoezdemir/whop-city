@@ -66,6 +66,40 @@ export function concreteGrain(): THREE.CanvasTexture {
   return speckle(256, 0.1, "concrete");
 }
 
+/**
+ * Open ground: mown and drilled rows over a slow, broad mottle.
+ *
+ * The plain around the city is hundreds of metres of one material, and at that
+ * size a flat fill is unmistakable — it reads as a snooker table. The mottle
+ * breaks up the area and the rows give the fields a grain, so a hedge line
+ * crossing them looks like it is crossing something. Kept very low contrast:
+ * from the default framing this should register as "land", never as pattern.
+ */
+export function turfGrain(): THREE.CanvasTexture {
+  const size = 256;
+  const [element, ctx] = canvas(size);
+  const rng = new Rng("turf");
+  const image = ctx.createImageData(size, size);
+  for (let i = 0; i < size * size; i++) {
+    const x = i % size;
+    const y = Math.floor(i / size);
+    const broad =
+      0.5 +
+      0.5 *
+        Math.sin((x / size) * Math.PI * 2 + 0.7) *
+        Math.cos((y / size) * Math.PI * 2 * 1.5 - 0.3);
+    const rows = 0.5 + 0.5 * Math.sin((y / size) * Math.PI * 2 * 16);
+    const v = 1 - 0.13 * (rng.next() * 0.3 + broad * 0.52 + rows * 0.18);
+    const o = i * 4;
+    image.data[o] = Math.round(255 * (v - 0.012));
+    image.data[o + 1] = Math.round(255 * v);
+    image.data[o + 2] = Math.round(255 * (v - 0.02));
+    image.data[o + 3] = 255;
+  }
+  ctx.putImageData(image, 0, 0);
+  return finish(element);
+}
+
 /** Warmer, slightly coarser grain for painted render and plaster. */
 export function renderGrain(): THREE.CanvasTexture {
   return speckle(256, 0.075, "render", 1);

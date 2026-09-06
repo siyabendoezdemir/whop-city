@@ -1,3 +1,5 @@
+import { isLiveSource } from "../src/server/snapshotRoute";
+import { apiOrigin, boundAppId, isWhopPlan } from "../src/server/whop-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -114,7 +116,20 @@ describe("the snapshot endpoint", () => {
     expect(response.headers.get("content-type")).toContain("application/json");
 
     const body = await response.json();
-    expect(Object.keys(body).sort()).toEqual(["districts", "freshness", "schema", "seed"]);
+    expect(Object.keys(body).sort()).toEqual([
+      "districts",
+      "freshness",
+      "metrics",
+      "schema",
+      "seed",
+    ]);
+    // Fixtures are invented data with no business behind them, so the game is
+    // fully playable in dev and the figures come through. A production build
+    // has no fixture branch at all — `production-build.spec.ts` proves the
+    // guard compiles it away — and the live path withholds unless the viewer
+    // has been verified as an admin.
+    expect(body.metrics.source).toBe("owner");
+    expect(typeof body.metrics.gold).toBe("number");
   });
 
   it("marks the response private and unstored, never shared", async () => {
@@ -1144,5 +1159,79 @@ describe("timestamps are calendar-strict", () => {
     resetSnapshotCache();
     fetchSpy.mockImplementation(async () => json({ data: [] }));
     expect((await read(LIVE_ENV)).freshness).toBe("live");
+  });
+});
+
+describe("the deployment's bindings are the ones the runtime actually sets", () => {
+  it("reads the public API when no origin is named", () => {
+    // Hosted Whop does not inject WHOP_API_ORIGIN — measured, and written down
+    // in docs/website-auth-spike.md. Requiring it meant every deployed City
+    // failed closed and no business was ever read.
+    expect(apiOrigin({})).toBe("https://api.whop.com");
+    expect(apiOrigin({ WHOP_API_ORIGIN: "" })).toBe("https://api.whop.com");
+  });
+
+  it("still honours an override, and still refuses a bad one", () => {
+    expect(apiOrigin({ WHOP_API_ORIGIN: "https://api.eu.whop.com" })).toBe("https://api.eu.whop.com");
+    for (const bad of [
+      "https://api.whop.com.evil.example",
+      "http://api.whop.com",
+      "https://notwhop.com",
+      "https://user:pass@api.whop.com",
+      "https://api.whop.com/v1",
+      "https://api.whop.com/?x=1",
+      "not a url",
+    ]) {
+      expect(apiOrigin({ WHOP_API_ORIGIN: bad }), bad).toBeNull();
+    }
+  });
+
+  it("finds the app under either name the runtime might use", () => {
+    expect(boundAppId({ WHOP_APP_ID: "app_hosted" })).toBe("app_hosted");
+    expect(boundAppId({ APP_ID: "app_local" })).toBe("app_local");
+    // Hosted wins, so a stale local value cannot point a deployment elsewhere.
+    expect(boundAppId({ WHOP_APP_ID: "app_hosted", APP_ID: "app_local" })).toBe("app_hosted");
+    expect(boundAppId({})).toBeNull();
+    expect(boundAppId({ WHOP_APP_ID: "" })).toBeNull();
+  });
+
+  it("still refuses to go live without a usable seed secret", () => {
+    // The widening is in the origin only. A deployment that can reach the API
+    // but cannot key its layout seed is still not a live source.
+    expect(isLiveSource({ WHOP_APP_ID: "app_1" })).toBe(false);
+    expect(isLiveSource({ WHOP_APP_ID: "app_1", CITY_SEED_SECRET: "short" })).toBe(false);
+    expect(
+      isLiveSource({ WHOP_APP_ID: "app_1", CITY_SEED_SECRET: "vI8IN_Yo_zJMdil3-QzndMH0Xua7PP_TpwxN7DHaYGM" }),
+    ).toBe(true);
+  });
+});
+
+describe("a plan's price, in the shape the live API actually sends", () => {
+  const plan = (over: Record<string, unknown> = {}) => ({
+    id: "plan_1",
+    plan_type: "one_time",
+    visibility: "visible",
+    created_at: "2026-09-03T12:04:29.963Z",
+    initial_price: 0,
+    ...over,
+  });
+
+  it("accepts a plain number, which is what a real business returns", () => {
+    // The validator originally required an { amount, currency } object. Nobody
+    // had ever received one: the first deployment read a real business, every
+    // plan failed this check, and the city fell back to unavailable.
+    expect(isWhopPlan(plan({ initial_price: 0 }))).toBe(true);
+    expect(isWhopPlan(plan({ initial_price: 29.99 }))).toBe(true);
+  });
+
+  it("still accepts the object form, and an absent price", () => {
+    expect(isWhopPlan(plan({ initial_price: { amount: 2999, currency: "usd" } }))).toBe(true);
+    expect(isWhopPlan(plan({ initial_price: null }))).toBe(true);
+  });
+
+  it("rejects a price that is not a price", () => {
+    for (const bad of ["29.99", Number.NaN, Number.POSITIVE_INFINITY, -1, [], true]) {
+      expect(isWhopPlan(plan({ initial_price: bad })), String(bad)).toBe(false);
+    }
   });
 });

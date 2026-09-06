@@ -46,6 +46,15 @@ export class Rng {
     return this.next() < probability;
   }
 
+  /** In place, Fisher-Yates. For picking distinct slots rather than repeats. */
+  shuffle<T>(items: T[]): T[] {
+    for (let i = items.length - 1; i > 0; i--) {
+      const j = Math.floor(this.next() * (i + 1));
+      [items[i], items[j]] = [items[j], items[i]];
+    }
+    return items;
+  }
+
   /** A fresh stream, so adding a prop pass never reshuffles an earlier one. */
   fork(label: string): Rng {
     return new Rng((this.state ^ Rng.hash(label)) >>> 0);

@@ -9,6 +9,10 @@ import { expect, test } from "@playwright/test";
  */
 
 const ALLOWED_ENDPOINT = "/api/city/snapshot";
+const PROFILE_ENDPOINT = "/api/city/profile";
+/** Everything the browser may call. Two documents, two audiences, no third. */
+const LIVE_ENDPOINT = "/api/city/live";
+const ALLOWED_ENDPOINTS = [ALLOWED_ENDPOINT, PROFILE_ENDPOINT, LIVE_ENDPOINT];
 
 /** Everything the projection is forbidden to carry, as it would appear in JSON. */
 const FORBIDDEN_JSON_KEYS = [
@@ -92,18 +96,42 @@ async function loadCity(page: import("@playwright/test").Page, query = "") {
   return { requests, responses };
 }
 
-test("the browser calls exactly one API endpoint, with GET", async ({ page }) => {
+test("the browser calls only its own API endpoints, with GET", async ({ page }) => {
   const { requests } = await loadCity(page);
 
   const api = requests.filter((request) => new URL(request.url).pathname.startsWith("/api/"));
   expect(api.length).toBeGreaterThan(0);
 
   for (const request of api) {
-    expect(new URL(request.url).pathname).toBe(ALLOWED_ENDPOINT);
+    expect(ALLOWED_ENDPOINTS).toContain(new URL(request.url).pathname);
     expect(request.method).toBe("GET");
   }
-  // One reading per load; nothing polls.
-  expect(api).toHaveLength(1);
+  // One snapshot and one profile. The live endpoint polls, but only for a
+  // signed-in owner: a visitor whose figures are all withheld has nothing to
+  // keep up with, and polling for them would be load on the business's API
+  // credential bought with nothing.
+  expect(api.map((request) => new URL(request.url).pathname).sort()).toEqual(
+    [ALLOWED_ENDPOINT, PROFILE_ENDPOINT].sort(),
+  );
+});
+
+test("a visitor is never polled for, however long the page is open", async ({ page }) => {
+  const { requests } = await loadCity(page);
+  // Two poll intervals and change. Nothing on the live endpoint should appear.
+  await page.waitForTimeout(34_000);
+  const live = requests.filter((request) => new URL(request.url).pathname === LIVE_ENDPOINT);
+  expect(live).toEqual([]);
+});
+
+test("a visitor learns nothing at all from the profile endpoint", async ({ page }) => {
+  const { responses } = await loadCity(page);
+
+  const profile = responses.find((response) => response.url.includes(PROFILE_ENDPOINT));
+  expect(profile, "no profile response observed").toBeTruthy();
+
+  // Exactly one field, and it is a "no". A visitor must not be able to tell
+  // whether a session exists, what the business is called, or who runs it.
+  expect(JSON.parse(profile!.body)).toEqual({ signedIn: false });
 });
 
 test("the browser talks only to its own origin", async ({ page }) => {
@@ -126,7 +154,18 @@ test("only the safe projection reaches the client", async ({ page }) => {
   expect(snapshot, "no snapshot response observed").toBeTruthy();
 
   const body = JSON.parse(snapshot!.body);
-  expect(Object.keys(body).sort()).toEqual(["districts", "freshness", "schema", "seed"]);
+  expect(Object.keys(body).sort()).toEqual([
+    "districts",
+    "freshness",
+    "metrics",
+    "schema",
+    "seed",
+  ]);
+  // An unauthenticated caller is not the owner, so every figure is zeroed and
+  // says so. The real ones need a token Whop signed for this app and an admin
+  // check against this very business — see `server/viewer.ts`.
+  expect(body.metrics.source).toBe("withheld");
+  expect(Object.values(body.metrics).filter((v) => typeof v === "number")).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0]);
   expect(body.schema).toBe("whop-city.public.v2");
 
   for (const district of body.districts) {
@@ -193,12 +232,15 @@ test("a caller cannot steer the endpoint anywhere", async ({ request, baseURL })
 
   const traversed = await request.get(`${baseURL}/api/city/../city/snapshot`);
   expect(traversed.status()).toBe(200);
-  expect(Object.keys(await traversed.json()).sort()).toEqual([
+  const normalised = await traversed.json();
+  expect(Object.keys(normalised).sort()).toEqual([
     "districts",
     "freshness",
+    "metrics",
     "schema",
     "seed",
   ]);
+  expect(normalised.metrics.source).toBe("withheld");
 });
 
 // ---------------------------------------------------------------------------

@@ -20,6 +20,15 @@ const FRAMING_CITY = FRAMING_TABLE.city;
  * open rather than studio-lit.
  */
 
+export const AUTHORED_ASPECT = 1440 / 900;
+
+/**
+ * How much taller than authored the frustum may grow on a narrow window.
+ *
+ * Past this the ground plane runs out and the horizon shows its edge.
+ */
+const MAX_VERTICAL_GROWTH = 1.3;
+
 export const VIEW = { width: 1440, height: 900 } as const;
 
 /**
@@ -87,7 +96,27 @@ const SHADOW_FAR = 560;
 /** Three-quarter strategy framing. */
 const CAM_AZIMUTH = THREE.MathUtils.degToRad(45);
 const CAM_ELEVATION = THREE.MathUtils.degToRad(31);
-const CAM_DISTANCE = 220;
+/**
+ * How far back the camera is parked.
+ *
+ * Irrelevant to the projection — an orthographic camera frames the same world
+ * whatever its distance — and entirely about clipping. Ground nearer to the
+ * camera than the near plane is cut, and at this elevation each metre of ground
+ * toward the camera is 0.86 of a metre of depth, so a camera 220 back could
+ * only show 255 metres of ground in front of the focus. Zoomed out over open
+ * country that is not enough: the plain was sliced off in a dead straight line
+ * across the lower frame with sky behind it.
+ *
+ * Pushed back far enough that the fog wall is always reached first. Fog is
+ * measured in the same depth, so it moves with the camera and the composition
+ * is unchanged.
+ */
+const CAM_DISTANCE = 380;
+const CAM_NEAR = 1;
+const CAM_FAR = CAM_DISTANCE + 620;
+/** Haze starts just past the focus and closes 130 metres of depth later. */
+const FOG_NEAR = CAM_DISTANCE + 32;
+const FOG_FAR = CAM_DISTANCE + 130;
 /**
  * The default framing comes from the shared framings table, so the shell and
  * the renderer cannot drift apart on where the city is.
@@ -102,6 +131,8 @@ export type Stage = {
   sun: THREE.DirectionalLight;
   focus: THREE.Vector3;
   resize: (width: number, height: number) => void;
+  /** Push the framing up the screen, for when a sheet covers the lower part. */
+  setBias: (bias: number) => void;
   /** Dolly and zoom to a framing. The view angle never changes. */
   frame: (at: THREE.Vector3, frustumHeight: number) => void;
 };
@@ -192,18 +223,27 @@ export function createStage(mount: HTMLElement, options: StageOptions = {}): Sta
   pmrem.dispose();
 
   // Distance haze. Fog is measured from the camera, and an orthographic camera
-  // parked 220 units back means the city itself already sits at ~200. The near
-  // plane therefore has to start past the city, not past the origin, or the
-  // subject gets hazed along with the horizon.
-  scene.fog = new THREE.Fog(new THREE.Color("#d3e2f0"), 252, 350);
+  // parked well back means the city itself already sits at nearly that depth.
+  // The near plane therefore has to start past the city, not past the origin,
+  // or the subject gets hazed along with the horizon.
+  scene.fog = new THREE.Fog(new THREE.Color("#d3e2f0"), FOG_NEAR, FOG_FAR);
 
   // Aimed at the middle of the composition: the boulevard junction, with the
   // core behind it, the forge to the left and the quarter in the foreground.
   const focus = CITY_FOCUS.clone();
 
   let aspect = VIEW.width / VIEW.height;
+  /** Fraction of the view height the framing is pushed up the screen. */
+  let bias = 0;
   let halfH = CITY_FRUSTUM / 2;
-  const camera = new THREE.OrthographicCamera(-halfH * aspect, halfH * aspect, halfH, -halfH, 1, 700);
+  const camera = new THREE.OrthographicCamera(
+    -halfH * aspect,
+    halfH * aspect,
+    halfH,
+    -halfH,
+    CAM_NEAR,
+    CAM_FAR,
+  );
   placeOnSphere(camera, CAM_AZIMUTH, CAM_ELEVATION, CAM_DISTANCE);
   camera.position.add(focus);
   camera.lookAt(focus);
@@ -251,12 +291,40 @@ export function createStage(mount: HTMLElement, options: StageOptions = {}): Sta
   rim.position.set(-24, 14, -22);
   scene.add(rim);
 
+  /**
+   * Fit the authored composition to whatever shape the window is.
+   *
+   * At the authored aspect and wider, nothing changes: the framing is exactly
+   * what it always was.
+   *
+   * Narrower than that — a phone held upright — the frustum grows vertically
+   * so the window is filled with world instead of black bars, but only up to
+   * a limit, past which the view crops horizontally instead. That is what a
+   * phone showing part of a city is supposed to look like, and it keeps the
+   * subject at a sane size rather than shrinking the whole city to a model.
+   *
+   * `bias` slides the whole window down in camera space, which puts the focus
+   * higher on screen. That is what keeps a selected district visible above a
+   * sheet covering the lower two thirds of a phone.
+   */
   function applyFrustum() {
-    camera.left = -halfH * aspect;
-    camera.right = halfH * aspect;
-    camera.top = halfH;
-    camera.bottom = -halfH;
+    const wide = aspect >= AUTHORED_ASPECT;
+    const grown = Math.min((halfH * AUTHORED_ASPECT) / aspect, halfH * MAX_VERTICAL_GROWTH);
+    const halfHeight = wide ? halfH : grown;
+    const halfWidth = wide ? halfH * aspect : halfHeight * aspect;
+    const shift = bias * 2 * halfHeight;
+
+    camera.left = -halfWidth;
+    camera.right = halfWidth;
+    camera.top = halfHeight - shift;
+    camera.bottom = -halfHeight - shift;
     camera.updateProjectionMatrix();
+  }
+
+  function setBias(next: number) {
+    if (bias === next) return;
+    bias = next;
+    applyFrustum();
   }
 
   function resize(width: number, height: number) {
@@ -281,5 +349,5 @@ export function createStage(mount: HTMLElement, options: StageOptions = {}): Sta
     applyFrustum();
   }
 
-  return { renderer, scene, camera, sun, focus, resize, frame };
+  return { renderer, scene, camera, sun, focus, resize, frame, setBias };
 }

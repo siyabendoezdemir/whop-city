@@ -93,6 +93,16 @@ function toNumber(value: unknown): number {
  * says so, which is the behaviour to prefer while there is no history store to
  * fall back on.
  */
+/** The plan's price, from whichever shape the API returned it in. */
+function initialPriceOf(plan: { initial_price?: unknown }): number {
+  const price = plan.initial_price;
+  if (typeof price === "number") return Number.isFinite(price) ? price : 0;
+  if (price && typeof price === "object" && "amount" in price) {
+    return toNumber((price as { amount?: unknown }).amount);
+  }
+  return 0;
+}
+
 export async function captureSnapshot(env: Env): Promise<Capture> {
   // The business must be resolved first: both reads are scoped by it, and an
   // unscoped product read returns the public marketplace rather than failing.
@@ -141,7 +151,7 @@ export async function captureSnapshot(env: Env): Promise<Capture> {
         id: plan.id,
         planType: plan.plan_type,
         visible: plan.visibility === "visible",
-        priceMinorUnits: Math.round(toNumber(plan.initial_price?.amount) * 100),
+        priceMinorUnits: Math.round(initialPriceOf(plan) * 100),
         createdAt: toEpoch(plan.created_at),
       })),
     },

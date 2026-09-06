@@ -1,0 +1,1549 @@
+/* ==========================================================================
+   Whop City — the game surfaces
+   --------------------------------------------------------------------------
+   Four regions, and they never overlap at any desktop width the game will run
+   at:
+
+     top left      the crest — how grand the city is
+     top centre    the resource bar — what the business has
+     top right     the profile — which Whop this is
+     left, lower   the district rail — where to go
+     bottom right  one contextual panel — a building, or the quest
+     bottom centre the camera
+
+   Every figure on screen is real and comes from the business's own Whop
+   account. Nothing here is a simulated currency and nothing here is decorative
+   chrome pretending to be data.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Crest — top left
+   -------------------------------------------------------------------------- */
+
+.crest {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px 8px 10px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--pill);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--lift);
+}
+
+.crest__shield {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  color: rgba(58, 36, 5, 0.55);
+  background: radial-gradient(120% 120% at 34% 24%, var(--gold-hi), var(--gold) 46%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.5), inset 0 -3px 5px rgba(90, 55, 5, 0.4);
+}
+
+.crest__seal {
+  width: 28px;
+  height: 28px;
+}
+
+.crest__level {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-family: var(--face-narrow);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gold);
+  background: var(--panel);
+  border: 2px solid var(--panel-edge);
+  border-radius: 50%;
+}
+
+.crest__text {
+  display: grid;
+  gap: 3px;
+  min-width: 9.5rem;
+}
+
+/* The name of the Whop. The loudest thing in the corner, on purpose. */
+.crest__whop {
+  max-width: 14rem;
+  font-family: var(--face-narrow);
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+  color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crest__meter {
+  display: block;
+  height: 5px;
+  border-radius: var(--pill);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.crest__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill);
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold));
+  transition: width 400ms ease;
+}
+
+.crest__sub {
+  font-size: 11.5px;
+  line-height: 1.2;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   Resource bar — top centre
+   --------------------------------------------------------------------------
+   A capsule per resource with a jewelled badge proud of its left edge. Fixed
+   widths and no shrinking: letting flex squeeze four pills turns them into
+   ovals with the words wrapping inside.
+   -------------------------------------------------------------------------- */
+
+.res {
+  position: absolute;
+  top: var(--pad);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  gap: 9px;
+}
+
+.res__pill {
+  flex: 0 0 auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 46px;
+  padding: 0 15px 0 28px;
+  border-radius: var(--pill);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 3px 0 var(--panel-edge), 0 8px 18px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+
+.res__badge {
+  position: absolute;
+  left: -13px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.35), inset 0 -3px 5px rgba(0, 0, 0, 0.3);
+}
+
+.res__badge svg {
+  width: 19px;
+  height: 19px;
+}
+
+[data-tone="gold"] .res__badge,
+.res__pill[data-tone="gold"] .res__badge {
+  color: #5a3a05;
+  background: radial-gradient(120% 120% at 34% 24%, #ffeaa8, var(--gold) 48%, var(--gold-deep));
+}
+
+.res__pill[data-tone="green"] .res__badge {
+  color: #06301a;
+  background: radial-gradient(120% 120% at 34% 24%, #c4f7d4, #62d98c 48%, #26884b);
+}
+
+.res__pill[data-tone="violet"] .res__badge {
+  color: #2c0f3d;
+  background: radial-gradient(120% 120% at 34% 24%, #e7c9ff, #b57ae8 48%, #7738b5);
+}
+
+.res__pill[data-tone="blue"] .res__badge {
+  color: #06263f;
+  background: radial-gradient(120% 120% at 34% 24%, #cbe8ff, #6fb3ec 48%, #2a72b4);
+}
+
+.res__figures {
+  display: grid;
+  gap: 0;
+  line-height: 1.12;
+}
+
+.res__value {
+  font-family: var(--face-narrow);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.res__name {
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.res__move {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.res__move[data-move="up"] {
+  color: var(--grow);
+}
+
+.res__move[data-move="down"] {
+  color: var(--bad);
+}
+
+/* Not the owner: the figures are withheld, and the bar says so by being dim
+   rather than by showing plausible noughts. */
+.res[data-source="withheld"],
+.res[data-source="unreadable"] {
+  opacity: 0.6;
+}
+
+/* --------------------------------------------------------------------------
+   Profile — top right
+   -------------------------------------------------------------------------- */
+
+.corner {
+  position: absolute;
+  top: var(--pad);
+  right: var(--pad);
+  z-index: 6;
+}
+
+.chip__root {
+  position: relative;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  max-width: 15rem;
+  padding: 0 12px 0 6px;
+  font: inherit;
+  text-decoration: none;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--pill);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--lift);
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: rgba(255, 194, 71, 0.4);
+}
+
+.chip--in {
+  gap: 8px;
+  padding: 0 16px;
+  font-family: var(--face-narrow);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.chip__seal {
+  width: 20px;
+  height: 20px;
+}
+
+.chip__avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-family: var(--face-narrow);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: radial-gradient(120% 120% at 34% 24%, var(--gold-hi), var(--gold) 48%, var(--gold-deep));
+  border: 2px solid #6d4405;
+}
+
+.chip__text {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.chip__who {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip__where {
+  font-size: 11px;
+  color: var(--ink-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip__chev {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-4);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 17.5rem;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--shadow);
+  animation: menu-in 120ms ease-out;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.menu__head {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.menu__now {
+  margin: 0 0 4px;
+  display: grid;
+  font-family: var(--face-narrow);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.menu__route {
+  font-family: var(--face);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-4);
+}
+
+.menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  text-decoration: none;
+  color: var(--ink-2);
+  border-radius: 8px;
+}
+
+a.menu__item:hover {
+  color: var(--ink);
+  background: rgba(255, 214, 150, 0.09);
+}
+
+.menu__item[data-current="true"] {
+  color: var(--gold);
+}
+
+.menu__item.is-locked {
+  color: var(--ink-3);
+}
+
+.menu__go {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.menu__locked {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: rgba(255, 214, 150, 0.1);
+  border-radius: var(--pill);
+}
+
+.menu__note {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+
+.menu__out {
+  margin-top: 6px;
+  padding-top: 10px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  font-size: 13.5px;
+  text-decoration: none;
+  color: var(--ink-2);
+  border-top: 1px solid rgba(255, 214, 150, 0.12);
+}
+
+.menu__out:hover {
+  color: var(--bad);
+}
+
+/* --------------------------------------------------------------------------
+   While you were away — top centre, under the resource bar
+   -------------------------------------------------------------------------- */
+
+.away {
+  position: absolute;
+  top: calc(var(--pad) + 60px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  width: 21rem;
+  display: grid;
+  gap: 8px;
+  padding: 13px 15px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--shadow);
+  animation: panel-in 200ms ease-out;
+}
+
+.away__head {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.away__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+}
+
+.away__list li {
+  display: grid;
+  grid-template-columns: 20px 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.away__icon {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+
+.away__icon svg {
+  width: 17px;
+  height: 17px;
+}
+
+.away__name {
+  color: var(--ink-2);
+}
+
+.away__delta {
+  font-family: var(--face-narrow);
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.away__list li[data-move="up"] .away__delta {
+  color: var(--grow);
+}
+
+.away__list li[data-move="down"] .away__delta {
+  color: var(--bad);
+}
+
+.away__now {
+  min-width: 3.2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-4);
+}
+
+.away .press--ghost {
+  justify-self: end;
+}
+
+/* --------------------------------------------------------------------------
+   District rail — left, lower half
+   -------------------------------------------------------------------------- */
+
+.rail {
+  position: absolute;
+  left: var(--pad);
+  bottom: var(--pad);
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  width: 17rem;
+}
+
+.rail__go {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 4px 0 var(--panel-edge), 0 8px 18px rgba(0, 0, 0, 0.36);
+  cursor: pointer;
+  transition: transform 90ms ease, border-color 120ms ease;
+}
+
+.rail__go:hover {
+  border-color: rgba(255, 194, 71, 0.42);
+}
+
+.rail__go:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 2px 0 var(--panel-edge);
+}
+
+.rail__go[aria-pressed="true"] {
+  border-color: var(--gold);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 4px 0 #6d4405, 0 0 0 1px rgba(255, 194, 71, 0.3);
+}
+
+.rail__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--ink-3);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.rail__icon svg {
+  width: 23px;
+  height: 23px;
+}
+
+.rail__go[aria-pressed="true"] .rail__icon {
+  color: var(--gold);
+}
+
+.rail__text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.rail__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rail__name {
+  font-family: var(--face-narrow);
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail__built {
+  font-family: var(--face-narrow);
+  font-size: 12px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.rail__pips {
+  display: flex;
+  gap: 2px;
+}
+
+.rail__pips i {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+.rail__pips i[data-on="true"] {
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold-deep));
+  box-shadow: 0 0 4px rgba(255, 194, 71, 0.4);
+}
+
+.rail__reading {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail__reading[data-tone="bad"] {
+  color: var(--bad);
+}
+
+.rail__reading[data-tone="good"] {
+  color: var(--grow);
+}
+
+.rail__bell {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  font-family: var(--face-narrow);
+  font-size: 13px;
+  font-weight: 600;
+  color: #06280f;
+  background: linear-gradient(180deg, #a7f5ba, var(--grow) 45%, var(--grow-deep));
+  border: 2px solid #123f22;
+  border-radius: var(--pill);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  animation: bell-beat 1.9s ease-in-out infinite;
+}
+
+@keyframes bell-beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Ready to build — one line above the panel, and the shortest path to a press
+   -------------------------------------------------------------------------- */
+
+.ready {
+  position: absolute;
+  right: var(--pad);
+  bottom: calc(var(--pad) + 1px);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 22.5rem;
+  min-height: 52px;
+  padding: 0 8px 0 10px;
+  font: inherit;
+  text-align: left;
+  color: #06280f;
+  background: linear-gradient(180deg, #a7f5ba, var(--grow) 45%, var(--grow-deep));
+  border: 2px solid #1c6134;
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 4px 0 #1c6134, 0 10px 24px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  animation: panel-in 180ms ease-out;
+}
+
+.ready:active {
+  transform: translateY(3px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 0 #1c6134;
+}
+
+.ready__n {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-family: var(--face-narrow);
+  font-size: 19px;
+  font-weight: 600;
+  color: #a7f5ba;
+  background: #0d3a1d;
+  border-radius: var(--pill);
+}
+
+.ready__what {
+  flex: 1 1 auto;
+  font-family: var(--face-narrow);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ready__go {
+  padding: 0 14px;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  font-family: var(--face-narrow);
+  font-size: 15px;
+  font-weight: 600;
+  color: #06280f;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: var(--pill);
+}
+
+/* The panel underneath slides up to make room for it. */
+.city:has(.ready) .quest {
+  bottom: calc(var(--pad) + 62px);
+  max-height: calc(100vh - 2 * var(--pad) - 136px);
+}
+
+/* --------------------------------------------------------------------------
+   The contextual panel — bottom right. One at a time, never two.
+   -------------------------------------------------------------------------- */
+
+.quest,
+.card {
+  position: absolute;
+  right: var(--pad);
+  bottom: var(--pad);
+  z-index: 5;
+  width: 22.5rem;
+  max-height: calc(100vh - 2 * var(--pad) - 74px);
+  overflow-y: auto;
+  display: grid;
+  gap: 9px;
+  padding: 15px 17px 15px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--shadow);
+  scrollbar-width: thin;
+  animation: panel-in 160ms ease-out;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ------------------------------------------------------------------ quest */
+
+.quest__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quest__mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--gold);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.quest__mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.quest__where {
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.quest__flag {
+  margin-left: auto;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #33110a;
+  background: var(--bad);
+  border-radius: var(--pill);
+}
+
+.quest__title {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.14;
+  color: var(--ink);
+}
+
+.quest__why {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.quest__standing {
+  margin: 0;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  background: var(--panel-sunk);
+  border-left: 3px solid var(--ink-4);
+  border-radius: 0 8px 8px 0;
+}
+
+.quest__meter {
+  display: grid;
+  gap: 6px;
+}
+
+.quest__bar {
+  height: 14px;
+  border-radius: var(--pill);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.quest__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 45%, var(--gold-deep));
+  transition: width 500ms ease;
+}
+
+/* Two real numbers, not a percentage. "$620 / $1,000 revenue" is a fact
+   somebody can act on; "62%" is arithmetic they have to undo first. */
+.quest__count {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--face-narrow);
+  font-size: 15px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.quest__count strong {
+  font-size: 21px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.quest__count em {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--face);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.press--wide {
+  width: 100%;
+  min-height: 40px;
+  font-size: 15px;
+}
+
+.press--wide svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 140ms ease;
+  transform: rotate(-90deg);
+}
+
+.press--wide svg.is-open {
+  transform: none;
+}
+
+.quest__more {
+  display: grid;
+  gap: 10px;
+  animation: panel-in 140ms ease-out;
+}
+
+.quest__how {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 7px;
+}
+
+.quest__how li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 9px;
+  align-items: start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.quest__how li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-family: var(--face-narrow);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold);
+  background: var(--panel-sunk);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* ------------------------------------------------------------- building */
+
+.card__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 11px;
+  align-items: start;
+}
+
+.card__badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  font-family: var(--face-narrow);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: radial-gradient(120% 120% at 34% 24%, var(--gold-hi), var(--gold) 48%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  border-radius: 11px;
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.45);
+}
+
+.card[data-level="0"] .card__badge {
+  color: #7b6c58;
+  background: linear-gradient(180deg, #4a4132, #2c2519);
+  border-color: #1d1810;
+  box-shadow: none;
+}
+
+.card__title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.card__name {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.card__role {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-3);
+}
+
+.card__close {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink-4);
+  background: var(--panel-sunk);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.card__close:hover {
+  color: var(--ink);
+}
+
+.card__pips {
+  display: flex;
+  gap: 4px;
+}
+
+.card__pips i {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.card__pips i[data-on="true"] {
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold-deep));
+}
+
+.card__pips i[data-ready="true"] {
+  background: linear-gradient(180deg, #a7f5ba, var(--grow-deep));
+  animation: bell-beat 1.9s ease-in-out infinite;
+}
+
+.card__body {
+  display: grid;
+  gap: 11px;
+}
+
+.req {
+  display: grid;
+  gap: 7px;
+  padding: 11px 13px;
+  background: var(--panel-sunk);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.req__line {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.req__icon {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--gold);
+}
+
+.req__icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.req__count {
+  font-family: var(--face-narrow);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.req__of {
+  font-family: var(--face-narrow);
+  font-size: 17px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.req__unit {
+  flex: 1 1 100%;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.req__bar {
+  display: block;
+  height: 10px;
+  border-radius: var(--pill);
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.req__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 45%, var(--gold-deep));
+  transition: width 450ms ease;
+}
+
+.card[data-state="ready"] .req__fill {
+  background: linear-gradient(180deg, #a7f5ba, var(--grow) 45%, var(--grow-deep));
+}
+
+.req__short {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.req__short strong {
+  color: var(--gold);
+}
+
+.req__short--done {
+  padding: 11px 13px;
+  color: var(--ink-3);
+  background: var(--panel-sunk);
+  border-radius: 10px;
+}
+
+.card .press {
+  width: 100%;
+}
+
+.card__foot {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-4);
+}
+
+/* --------------------------------------------------------------------------
+   Narrower desktops
+   --------------------------------------------------------------------------
+   Below the desktop gate the game does not run at all, so this only has to
+   cover laptops. Everything shrinks toward the edges rather than reflowing.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 1240px) {
+  .quest,
+  .card {
+    width: 20rem;
+  }
+
+  .rail {
+    width: 15.5rem;
+  }
+
+  .res__pill {
+    padding: 0 12px 0 26px;
+  }
+
+  .res__value {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 1080px) {
+  :root {
+    --pad: 12px;
+  }
+
+  .crest__text {
+    display: none;
+  }
+
+  .crest {
+    padding: 8px;
+  }
+
+  .chip__text {
+    display: none;
+  }
+
+  .chip {
+    padding: 0 8px;
+  }
+}
+
+/* Short laptops: the panel would otherwise reach the resource bar. */
+@media (max-height: 720px) {
+  .quest,
+  .card {
+    max-height: calc(100vh - 2 * var(--pad) - 66px);
+  }
+
+  .quest__title {
+    font-size: 20px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Live
+
+   The business does not stop while the city is open, and until now the city
+   behaved as though it did. Two surfaces: cards that throw themselves at you
+   when a sale lands, and a roll of the last day behind a tab.
+
+   The cards fall directly under the resource bar, because the figure they
+   just moved is the one immediately above them and that is the whole point of
+   showing them. The tab stays in the top-right corner under the profile and
+   never moves — a control that shifts because something arrived is a control
+   you cannot aim at.
+   -------------------------------------------------------------------------- */
+
+.pops {
+  position: absolute;
+  top: calc(var(--pad) + 58px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+}
+
+.pop {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 208px;
+  padding: 9px 14px 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--radius);
+  color: var(--gold-ink);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 58%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  box-shadow: 0 4px 0 #6d4405, 0 12px 26px rgba(0, 0, 0, 0.45);
+  animation: pop-in 260ms cubic-bezier(0.18, 1.3, 0.4, 1);
+}
+
+.pop[data-kind="renewal"] {
+  color: #062615;
+  background: linear-gradient(180deg, #a9f0bd, var(--grow) 58%, var(--grow-deep));
+  border-color: #125c2e;
+  box-shadow: 0 4px 0 #125c2e, 0 12px 26px rgba(0, 0, 0, 0.45);
+}
+
+.pop__mark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.32);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.pop__mark svg {
+  width: 18px;
+  height: 18px;
+}
+
+.pop__body {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.pop__figure {
+  font-family: var(--face-narrow);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.pop__what {
+  font-size: 11.5px;
+  font-weight: 600;
+  opacity: 0.72;
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------- the roll */
+
+.feed {
+  position: absolute;
+  top: calc(var(--pad) + 62px);
+  right: var(--pad);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.feed__tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 13px;
+  cursor: pointer;
+  border-radius: var(--pill);
+  font-family: var(--face-narrow);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.feed__tab:hover {
+  color: var(--ink);
+}
+
+.feed__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-4);
+}
+
+/* Breathing, not blinking: it says "reading", not "alarm". */
+.feed__dot[data-live] {
+  background: var(--grow);
+  box-shadow: 0 0 0 0 rgba(116, 221, 143, 0.6);
+  animation: feed-pulse 2.6s ease-out infinite;
+}
+
+@keyframes feed-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(116, 221, 143, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(116, 221, 143, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(116, 221, 143, 0);
+  }
+}
+
+.feed__count {
+  display: grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: var(--pill);
+  font-size: 11px;
+  color: var(--gold-ink);
+  background: var(--gold);
+}
+
+.feed__roll {
+  width: 292px;
+  max-height: min(46vh, 420px);
+  overflow-y: auto;
+  /* The list runs past the bottom edge when there is more to see. Fading it
+     says so; a flat cut through a row reads as a rendering fault. */
+  mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  padding: 6px;
+  border-radius: var(--radius);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--shadow);
+}
+
+.feed__quiet {
+  margin: 0;
+  padding: 14px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-3);
+}
+
+.feed__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed__row {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 8px;
+  border-radius: 9px;
+}
+
+.feed__row + .feed__row {
+  border-top: 1px solid rgba(255, 214, 150, 0.07);
+}
+
+.feed__mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--gold);
+  background: rgba(255, 194, 71, 0.12);
+}
+
+.feed__row[data-kind="member"] .feed__mark {
+  color: var(--grow);
+  background: rgba(116, 221, 143, 0.12);
+}
+
+.feed__row[data-kind="visitors"] .feed__mark {
+  color: var(--calm);
+  background: rgba(127, 182, 232, 0.12);
+}
+
+.feed__mark svg {
+  width: 15px;
+  height: 15px;
+}
+
+.feed__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.feed__head {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.feed__sub {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.feed__when {
+  font-size: 11px;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+
+/* A figure that just moved. One beat, then it is simply the number again. */
+.res__pill[data-bump] {
+  animation: res-bump 620ms cubic-bezier(0.2, 1.2, 0.3, 1);
+}
+
+@keyframes res-bump {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.res__gain {
+  position: absolute;
+  top: -6px;
+  right: 10px;
+  font-family: var(--face-narrow);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--grow);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
+  pointer-events: none;
+  animation: res-gain 1500ms ease-out forwards;
+}
+
+@keyframes res-gain {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  22% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+}
