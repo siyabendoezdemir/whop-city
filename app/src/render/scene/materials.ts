@@ -109,7 +109,17 @@ export const M = {
   // render — the roofs are meant to be slate, not silver.
   roofZinc: standard("#949fad", 0.72, 0.12),
   roofZincWorn: standard("#7d838d", 0.88, 0.08),
-  roofFelt: standard("#5c5a57", 0.95),
+  /**
+   * Built-up felt, for the flat decks between the plant on them.
+   *
+   * Real felt is nearly black, and on a building seen from the side that is
+   * fine because you never see it. This camera looks down at thirty-one
+   * degrees, which makes the deck the largest single surface on every
+   * flat-roofed block in the city, and at #5c5a57 each one finished in a hole.
+   * Lifted to the colour of weathered mineral chippings, which is what a deck
+   * that has been rained on for ten years actually looks like from above.
+   */
+  roofFelt: standard("#6e6a64", 0.95),
   /**
    * Profiled sheeting, for the big industrial decks.
    *
@@ -122,7 +132,23 @@ export const M = {
   fascia: standard("#f6f1e6", 0.8),
 
   // --------------------------------------------------------------- metal
-  steel: standard("#8d949d", 0.5, 0.6),
+  /**
+   * Structural and fabricated steel: frames, gantries, stairs, handrails.
+   *
+   * This was authored as a metal — sixty per cent metalness at half roughness —
+   * and a metal has almost no diffuse term, so what it shows is whatever it
+   * reflects. A column standing in the open reflects the horizon and the ground
+   * back at a camera looking down at it, and both of those are dark. Every
+   * piece of steel in the city that was not lying against a pale wall came out
+   * near-black: the Offer Forge's portal frames read as a burnt fence, the
+   * plant-deck props as hairs drawn over the building, the venue's fire escape
+   * as a ladder floating in front of nothing.
+   *
+   * Real structural steel is painted or galvanised, and neither behaves like a
+   * mirror. Mostly diffuse, with enough sheen left to catch the sun on a top
+   * flange.
+   */
+  steel: standard("#98a0aa", 0.62, 0.16),
   steelPainted: standard("#e0e4e8", 0.6, 0.25),
   steelRust: standard("#8a5236", 0.92, 0.15),
   ironDark: standard("#3c4148", 0.7, 0.4),

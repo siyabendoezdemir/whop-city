@@ -473,12 +473,18 @@ export function roofOf(
   d: number,
   h: number,
   rng: Rng,
+  /**
+   * Which way a sawtooth's glazing looks, in the mass's own X.
+   *
+   * Ignored by every other roof. See the sawtooth branch for why a roof needs
+   * to be told where the camera is.
+   */
+  light: "right" | "left" = "right",
 ): void {
   if (kind === "parapet") {
     parapetDeck(b, skin, w, d, h, 0.66);
   } else if (kind === "pitched") {
-    b.add(skin.roof, wedge(w + 0.5, 1.9, d + 0.5), [0, h + 0.95, 0]);
-    b.add(M.fascia, box(w + 0.62, 0.2, 0.2), [0, h + 0.1, d / 2 + 0.3]);
+    pitchedRoof(b, skin, w, d, h, rng);
   } else if (kind === "stepped") {
     parapetDeck(b, skin, w, d, h, 0.5);
     const upper = 2.2;
@@ -494,6 +500,22 @@ export function roofOf(
     terraceDeck(b, skin, w, d, h, rng);
   } else {
     // Sawtooth, the maker signature.
+    //
+    // Which way the teeth rise is not a stylistic choice here, it is the
+    // difference between a roof and a fence. The stage never orbits: it sits
+    // to the +X +Z of what it looks at, thirty-one degrees up. A slope that
+    // climbs toward +X has its sheeted face turned up and away, and the dot
+    // product with the view works out at six per cent — the largest plane on
+    // an Offer Forge plot, presented to the player almost exactly edge-on.
+    // What was left in the frame was the glazed face of every tooth and the
+    // shed's own wall colour showing between them, so all three works read as
+    // banks of dark blue louvres over a teal box.
+    //
+    // Turned the other way the pale sheet lies flat into frame and the north
+    // light is a dark line along the top of each tooth, which is a factory
+    // roof seen from the air. Callers that know how their parcel is turned
+    // say which way; the default is the old sense.
+    const s = light === "left" ? -1 : 1;
     const bays = Math.max(3, Math.round(w / 3));
     const bayW = w / bays;
     const rise = 2.2;
@@ -509,31 +531,116 @@ export function roofOf(
     const deck = skin.roof === M.roofZincWorn ? M.roofZincWorn : M.roofSheet;
     const glazedH = rise * 0.62;
     const mullions = Math.max(3, Math.round(d / 1.9));
+    const glazeY = h + rise - glazedH / 2 - 0.14;
     for (let i = 0; i < bays; i++) {
       const xa = -w / 2 + i * bayW;
       const xb = xa + bayW;
       const len = Math.hypot(bayW, rise);
-      b.add(deck, box(len, 0.16, d), [(xa + xb) / 2, h + rise / 2, 0], [0, 0, Math.atan2(rise, bayW)]);
+      b.add(deck, box(len, 0.16, d), [(s * (xa + xb)) / 2, h + rise / 2, 0], [0, 0, s * Math.atan2(rise, bayW)]);
+      // Ribs across the slope. Sheeting is profiled, and once the slope is the
+      // face the player is given, an unbroken four-metre panel of one grey is
+      // the thing that reads as unfinished.
+      for (let r = 1; r < 4; r++) {
+        const t = r / 4;
+        b.add(
+          M.roofZinc,
+          box(0.1, 0.07, d - 0.3),
+          [s * (xa + bayW * t), h + rise * t + 0.11, 0],
+          [0, 0, s * Math.atan2(rise, bayW)],
+        );
+      }
       // Spandrel below the glazing, so the tooth has a solid base rather than
       // running glass down to the gutter.
-      b.add(skin.body, box(0.2, rise - glazedH, d - 0.2), [xb - 0.06, h + (rise - glazedH) / 2, 0]);
-      b.add(M.ironDark, box(0.14, glazedH + 0.16, d - 0.36), [xb - 0.05, h + rise - glazedH / 2 - 0.14, 0]);
-      b.add(lights, box(0.11, glazedH, d - 0.5), [xb - 0.02, h + rise - glazedH / 2 - 0.14, 0]);
+      b.add(skin.body, box(0.2, rise - glazedH, d - 0.2), [s * (xb - 0.06), h + (rise - glazedH) / 2, 0]);
+      b.add(M.ironDark, box(0.14, glazedH + 0.16, d - 0.36), [s * (xb - 0.05), glazeY, 0]);
+      b.add(lights, box(0.11, glazedH, d - 0.5), [s * (xb - 0.02), glazeY, 0]);
       for (let m = 1; m < mullions; m++) {
-        b.add(M.steelPainted, box(0.15, glazedH, 0.08), [xb - 0.02, h + rise - glazedH / 2 - 0.14, -d / 2 + (d / mullions) * m]);
+        b.add(M.steelPainted, box(0.15, glazedH, 0.08), [s * (xb - 0.02), glazeY, -d / 2 + (d / mullions) * m]);
       }
+      // Verge upstand closing each tooth at both ends of the run. Mirroring
+      // reverses the winding, so the points go round the other way to keep the
+      // extruded face pointing out.
+      const corners: Array<[number, number]> = [
+        [xa, h],
+        [xb - 0.1, h + rise],
+        [xb - 0.1, h],
+      ];
+      const outline = s > 0 ? corners : corners.map(([px, py]) => [-px, py] as [number, number]).reverse();
       for (const z of [-d / 2, d / 2]) {
         const shape = new THREE.Shape();
-        shape.moveTo(xa, h);
-        shape.lineTo(xb - 0.1, h + rise);
-        shape.lineTo(xb - 0.1, h);
+        outline.forEach(([px, py], k) => (k === 0 ? shape.moveTo(px, py) : shape.lineTo(px, py)));
         shape.closePath();
         const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.2, bevelEnabled: false });
         geo.translate(0, 0, z - 0.1);
         b.add(skin.body, geo);
       }
-      b.add(M.aluminium, box(0.24, 0.16, d), [xa, h + 0.04, 0]);
+      b.add(M.aluminium, box(0.24, 0.16, d), [s * xa, h + 0.04, 0]);
     }
+    // Eaves gutter along both long sides, so the roof lands on the wall instead
+    // of stopping in mid-air.
+    for (const z of [-1, 1]) {
+      b.add(M.aluminium, box(w + 0.3, 0.22, 0.26), [0, h + 0.02, (z * (d + 0.24)) / 2]);
+    }
+  }
+}
+
+/**
+ * A pitch, with the things that stop it being a plane.
+ *
+ * The Creator Quarter's low bays get one of these, and it is the largest
+ * surface on a two- or three-storey building at this camera: nine metres by
+ * eight of one colour, which was exactly what it was. A roof is read from its
+ * edges and its interruptions — the ridge, the verge, the gutter it drains
+ * into, and whatever comes through it — so those are what this draws.
+ */
+function pitchedRoof(b: PartsBuilder, skin: Skin, w: number, d: number, h: number, rng: Rng): void {
+  const rise = 1.9;
+  b.add(skin.roof, wedge(w + 0.5, rise, d + 0.5), [0, h + rise / 2, 0]);
+  // Ridge capping along the high edge, and a gable wall up each side.
+  b.add(M.roofZincWorn, box(w + 0.7, 0.22, 0.42), [0, h + rise + 0.02, -(d + 0.5) / 2 + 0.2]);
+  // A party wall, not a barge board.
+  //
+  // These bays stand in a terrace, and a terrace puts a pitch between two
+  // party walls. A hundred-and-eighty-millimetre board laid on the verge is
+  // the detail for a house standing on its own, and next to a bay with a flat
+  // deck on it what that produced was a pale stick climbing diagonally out of
+  // the neighbour's roof with nothing under it — the single most model-like
+  // thing on the plot, and the first one the eye found. A wall carrying a
+  // coping is the correct detail either way, and it reads as the edge of a
+  // building whatever is on the other side of it.
+  const rake = Math.atan2(rise, d + 0.5);
+  for (const sx of [-1, 1]) {
+    const px = (sx * (w + 0.62)) / 2;
+    b.add(skin.body, box(0.34, 0.66, d + 0.62), [px, h + rise / 2 + 0.22, 0], [rake, 0, 0]);
+    b.add(M.fascia, box(0.46, 0.16, d + 0.74), [px, h + rise / 2 + 0.61, 0], [rake, 0, 0]);
+  }
+  // Gutter and fascia at the low edge.
+  b.add(M.fascia, box(w + 0.62, 0.2, 0.2), [0, h + 0.1, d / 2 + 0.3]);
+  b.add(M.aluminium, box(w + 0.5, 0.16, 0.2), [0, h + 0.06, d / 2 + 0.42]);
+  /** The slope's surface, `t` of the way down from the ridge. */
+  const at = (t: number) => h + rise * (1 - t);
+  const fall = -Math.atan2(rise, d + 0.5);
+  // Two rooflights, set in a dark kerb and lying in the pitch rather than on
+  // it. A workshop floor under a roof this size is lit from above or not at all.
+  for (const ox of [-w * 0.22, w * 0.22]) {
+    const t = 0.42;
+    const pz = -(d + 0.5) / 2 + (d + 0.5) * t;
+    b.add(M.ironDark, box(w * 0.2, 0.14, d * 0.2), [ox, at(t) + 0.08, pz], [fall, 0, 0]);
+    b.add(skin.glass === M.glassDim ? M.glassDim : M.glassRoof, box(w * 0.15, 0.09, d * 0.15), [ox, at(t) + 0.16, pz], [fall, 0, 0]);
+  }
+  // A stack or a vent, whichever the dice give, off to one side of the ridge.
+  const cx = w * (rng.chance(0.5) ? -0.3 : 0.3);
+  if (rng.chance(0.55)) {
+    const stackH = 1.7;
+    b.add(M.brickDark, box(1.0, stackH, 0.9), [cx, at(0.16) + stackH / 2 - 0.2, -(d + 0.5) / 2 + (d + 0.5) * 0.16]);
+    b.add(M.fascia, box(1.16, 0.18, 1.06), [cx, at(0.16) + stackH - 0.2, -(d + 0.5) / 2 + (d + 0.5) * 0.16]);
+    for (const ox of [-0.22, 0.22]) {
+      b.add(M.ironDark, post(0.13, 0.4, 6), [cx + ox, at(0.16) + stackH, -(d + 0.5) / 2 + (d + 0.5) * 0.16]);
+    }
+  } else {
+    b.add(M.roofZincWorn, box(1.5, 0.5, 0.9), [cx, at(0.2) + 0.32, -(d + 0.5) / 2 + (d + 0.5) * 0.2]);
+    b.add(M.steel, post(0.14, 0.8, 6), [cx, at(0.2) + 0.85, -(d + 0.5) / 2 + (d + 0.5) * 0.2]);
+    b.add(M.ironDark, post(0.28, 0.16, 6), [cx, at(0.2) + 1.3, -(d + 0.5) / 2 + (d + 0.5) * 0.2]);
   }
 }
 

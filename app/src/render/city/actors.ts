@@ -238,10 +238,16 @@ export function makeForklift(from: Vec3, to: Vec3, yaw: number): Rig {
 /**
  * A vent plume.
  *
- * Six soft blobs rising, expanding and fading on a loop. Reads as a working
- * extract fan without a particle system.
+ * Soft blobs rising, expanding and fading on a loop. Reads as a working extract
+ * fan without a particle system.
+ *
+ * Ten rather than six. A plume is one thing, and six blobs spaced far enough
+ * apart to be individually visible are six things: what the Offer Forge's
+ * chimneys were actually throwing was a diagonal line of white balls. The count
+ * costs nothing — they are instances of one geometry, in one draw call — and it
+ * is the only thing that closes the gaps.
  */
-const PUFF_COUNT = 6;
+const PUFF_COUNT = 10;
 
 /**
  * One shared material for every plume in the scene.
@@ -253,7 +259,10 @@ const PUFF_COUNT = 6;
 const PUFF_MATERIAL = new THREE.MeshStandardMaterial({
   color: "#ffffff",
   transparent: true,
-  opacity: 0.66,
+  // Thin enough that a single puff is vapour rather than a snowball, and that
+  // density has to be built by overlapping several of them. At two-thirds a
+  // lone blob on the sky reads as a solid object with a hard silhouette.
+  opacity: 0.34,
   roughness: 1,
   depthWrite: false,
   // Instance colour supplies the per-puff fade; there is no vertex colour on a
@@ -286,16 +295,19 @@ export function makeSteamVent(origin: Vec3, scale = 1): Rig {
         // The column snakes as it rises. Evenly spaced puffs on a straight line
         // produce a plume whose overall shape never changes, which reads as a
         // static grey blob however fast the individual puffs are moving.
-        const wobble = Math.sin(t * 0.8 + i * 1.1 + life * 2.4) * 0.7 * scale;
-        // Six puffs over five and a half metres left a metre of clear air
-        // between each one, so the plume read as a row of separate white balls
-        // climbing a ladder. Same puffs over three and a half metres overlap,
-        // which is the whole difference between beads and steam.
-        position.set(life * 1.6 * scale + wobble, life * 3.6 * scale, life * 0.7 * scale + wobble * 0.5);
-        // Fade by size, not by colour. One shared material cannot hold six
+        // Drift is proportional to age rather than constant, so the column
+        // leaves the stack vertically and only leans once it is clear of it.
+        // A plume that starts at forty-five degrees looks like it is being
+        // blown out of a hole in the roof beside the chimney.
+        const wobble = Math.sin(t * 0.8 + i * 1.1 + life * 2.4) * 0.45 * scale * life;
+        // Ten puffs over three metres, each about a metre and a half across at
+        // mid-life: three or four of them cover any point on the column, which
+        // is the whole difference between beads and steam.
+        position.set(life * life * 1.5 * scale + wobble, life * 3.0 * scale, life * life * 0.6 * scale + wobble * 0.5);
+        // Fade by size, not by colour. One shared material cannot hold ten
         // opacities, and dimming instance colour instead just turns the steam
         // grey — which is exactly what it looked like.
-        scaling.setScalar(Math.sin(life * Math.PI) ** 0.7 * (0.55 + life * 1.35));
+        scaling.setScalar(Math.sin(life * Math.PI) ** 0.55 * (0.5 + life * 1.15));
         matrix.compose(position, quaternion, scaling);
         puffs.setMatrixAt(i, matrix);
       }

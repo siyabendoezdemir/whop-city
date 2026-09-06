@@ -483,6 +483,10 @@ export function buildOfferForge(ctx: Ctx): void {
   // exactly the same height for the last three rungs of the ladder. The player
   // paid twice for a building that did not change.
   const seenFaces = facesInView(worldYaw(ctx));
+  // A sawtooth shows the player either its sheeting or its glass, never both,
+  // and which one depends on how the parcel is turned. Point the glazing at
+  // whichever flank is off camera.
+  const northLight = seenFaces.includes("right") ? "left" : "right";
   const suStoreys = Math.min(storeys, ctx.level + 1, 6);
   const suW = Math.min(parcel.width * 0.44, 9.0 + suStoreys * 1.4);
   // Capped at what is left between the frontage and the shed's front wall,
@@ -605,7 +609,7 @@ export function buildOfferForge(ctx: Ctx): void {
     local.add(skin.body, bevelBox(cladW, eave, wsD, 0.08), [cladX, y + eave / 2, wsCZ]);
     const cladInner = new PartsBuilder();
     shedCladding(cladInner, skin, cladW, wsD, eave, state);
-    roofOf(cladInner, skin, "sawtooth", cladW, wsD, eave, rng);
+    roofOf(cladInner, skin, "sawtooth", cladW, wsD, eave, rng, northLight);
     const cladGroup = cladInner.build("clad");
     cladGroup.position.set(cladX, y, wsCZ);
     cladGroup.updateMatrixWorld(true);
@@ -721,7 +725,7 @@ export function buildOfferForge(ctx: Ctx): void {
     local.add(skin.body, bevelBox(wsW, eave, wsD, 0.08), [wsCX, y + eave / 2, wsCZ]);
     const shedInner = new PartsBuilder();
     shedCladding(shedInner, skin, wsW, wsD, eave, state);
-    roofOf(shedInner, skin, "sawtooth", wsW, wsD, eave, rng);
+    roofOf(shedInner, skin, "sawtooth", wsW, wsD, eave, rng, northLight);
     const sawGroup = shedInner.build("saw");
     sawGroup.position.set(wsCX, y, wsCZ);
     sawGroup.updateMatrixWorld(true);
@@ -739,7 +743,15 @@ export function buildOfferForge(ctx: Ctx): void {
     }
     local.add(M.concreteDark, box(1.5, 0.95, 5.0), [wsX1 + 0.72, y + 0.48, doorZ]);
     local.add(M.hazard, box(1.55, 0.09, 0.22), [wsX1 + 0.72, y + 0.98, doorZ - 2.4]);
+    // Dock canopy. It was a tilted slab hanging two and a half metres off the
+    // wall on nothing at all, which at this camera is a sheet of roofing
+    // floating over the yard; a canopy is held up by the brackets under it.
     local.add(skin.roof, box(2.6, 0.14, 5.6), [wsX1 + 1.4, y + 5.2, doorZ], [0, 0, -0.2]);
+    local.add(M.steel, box(2.7, 0.14, 0.16), [wsX1 + 1.4, y + 5.06, doorZ], [0, 0, -0.2]);
+    for (const oz of [-2.5, 0, 2.5]) {
+      local.add(M.steel, box(2.4, 0.12, 0.12), [wsX1 + 1.3, y + 5.0, doorZ + oz], [0, 0, -0.2]);
+      local.add(M.steel, box(2.3, 0.1, 0.1), [wsX1 + 1.2, y + 4.4, doorZ + oz], [0, 0, 0.5]);
+    }
     // Glazed frontage to the plaza.
     local.add(M.ironDark, box(wsW * 0.5, 3.4, 0.24), [wsCX, y + 1.95, wsCZ + wsD / 2 + 0.02]);
     local.add(skin.glass, box(wsW * 0.46, 3.0, 0.08), [wsCX, y + 1.95, wsCZ + wsD / 2 + 0.1]);
@@ -809,16 +821,27 @@ export function buildOfferForge(ctx: Ctx): void {
       // A plant deck cantilevered off the alley eaves, with the ducts running
       // down the wall. Capacity, bolted to the outside of the building, which
       // is exactly how a works acquires it.
-      const dz = backZ - 1.5;
+      //
+      // Cantilevered means cantilevered. The first version carried the deck on
+      // four ninety-millimetre posts standing on the ground eleven metres
+      // below, which is not how anything is built and, at ninety millimetres
+      // against a pale wall, read as four hairs drawn down the front of the
+      // building. Raking struts back into the wall instead, and one boxed
+      // riser taking the ducts down where a riser actually goes.
+      const dz = backZ - 1.25;
       const dw = Math.min(wsW * 0.46, 10.0);
       const dx = wsCX + wsW / 2 - dw / 2 - 0.6;
       const dy = y + eave - 1.2;
       local.add(M.ironDark, box(dw, 0.22, 2.6), [dx, dy, dz]);
       for (let i = 0; i <= 3; i++) {
-        local.add(M.steel, box(0.16, 0.16, 2.2), [dx - dw / 2 + (dw / 3) * i, dy + 0.5, dz], [0.5, 0, 0]);
-        local.add(M.steel, post(0.09, dy - y, 5), [dx - dw / 2 + (dw / 3) * i, (dy - y) / 2 + y, dz - 1.15]);
+        const bx = dx - dw / 2 + (dw / 3) * i;
+        // Bearer across the deck, and a knee brace from its nose back to the
+        // wall a metre and a half below.
+        local.add(M.steel, box(0.18, 0.2, 2.5), [bx, dy - 0.16, dz]);
+        local.add(M.steel, box(0.16, 0.16, 2.4), [bx, dy - 0.95, dz - 0.35], [-0.72, 0, 0]);
+        local.add(M.ironDark, box(0.34, 0.5, 0.28), [bx, dy - 1.66, dz + 1.2]);
       }
-      local.add(M.steel, box(dw, 0.06, 0.06), [dx, dy + 1.05, dz - 1.2]);
+      local.add(M.steel, box(dw, 0.08, 0.08), [dx, dy + 1.05, dz - 1.2]);
       for (const ox of [-dw * 0.26, dw * 0.26]) {
         local.add(M.aluminium, bevelBox(2.6, 1.5, 2.0, 0.08), [dx + ox, dy + 0.86, dz]);
         local.add(M.steel, box(2.2, 0.08, 1.6), [dx + ox, dy + 1.65, dz]);
@@ -826,6 +849,13 @@ export function buildOfferForge(ctx: Ctx): void {
         local.add(M.aluminium, post(0.42, 1.9, 8), [dx + ox, dy + 0.7, dz + 1.3], [Math.PI / 2, 0, 0]);
       }
       local.add(M.steelPainted, box(dw + 0.5, 0.3, 0.3), [dx, dy - 0.3, dz - 1.2]);
+      // Boxed riser down the wall under the deck, with banding, so the plant
+      // is connected to the building it serves.
+      const rx = dx + dw * 0.26;
+      local.add(M.steelPainted, box(1.5, dy - y - 1.4, 0.7), [rx, y + (dy - y - 1.4) / 2, backZ + 0.35]);
+      for (let i = 1; i * 3.0 < dy - y - 1.4; i++) {
+        local.add(M.ironDark, box(1.66, 0.16, 0.8), [rx, y + i * 3.0, backZ + 0.35]);
+      }
     }
     if (ctx.level >= 5) {
       // The flue: banded brick through the alley eaves, with a flashed collar
@@ -837,7 +867,10 @@ export function buildOfferForge(ctx: Ctx): void {
       for (let i = 1; i <= 4; i++) {
         local.add(M.brickDark, post(1.18, 0.46, 12), [fx, y + (fh / 5) * i, fz]);
       }
-      local.add(M.roofZinc, post(1.5, 0.4, 12), [fx, y + eave + 1.4, fz]);
+      // Flashing where the flue goes through the roof. It sat a metre and a
+      // half above the eave at half a metre proud of the brick, which put a
+      // grey ring in mid-air beside the chimney rather than a collar on it.
+      local.add(M.roofZincWorn, post(1.34, 0.34, 12), [fx, y + eave + 0.55, fz]);
       local.add(M.steel, post(1.22, 0.7, 12), [fx, y + fh + 0.25, fz]);
       ctx.rigs.push(makeSteamVent(toWorld(ctx, [fx, y + fh + 0.9, fz]), 1.1));
       // Two silos, tight against the back wall and grouped with the flue.
@@ -970,15 +1003,57 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       localProp(kit, matrix, Prop.bench, [bx, y + 0.1, bz], rng.range(0, 6));
     }
     // Bandstand: octagonal-ish deck, posts, conical roof.
+    //
+    // A cone on eight sticks over a drum is the shape of a bandstand and,
+    // rendered in one flat grey, the read of a mushroom. What a bandstand
+    // actually has is trim: a skirt of steps, a valance between the posts, an
+    // eaves band under the roof and a finial on top. Those are what make it
+    // read as a small building rather than an item of garden furniture.
     const sx = gx + parcel.width * 0.14;
     const sz = z0 + 5;
-    local.add(M.timberPale, new THREE.CylinderGeometry(3.0, 3.2, 0.5, 8), [sx, y + 0.35, sz]);
+    local.add(M.concreteDark, new THREE.CylinderGeometry(3.5, 3.7, 0.24, 8), [sx, y + 0.12, sz]);
+    local.add(M.timberPale, new THREE.CylinderGeometry(3.0, 3.2, 0.5, 8), [sx, y + 0.45, sz]);
     for (let i = 0; i < 8; i++) {
       const a = (i / 8) * Math.PI * 2;
-      local.add(M.timber, post(0.11, 3.0, 6), [sx + Math.cos(a) * 2.6, y + 2.1, sz + Math.sin(a) * 2.6]);
+      const px = sx + Math.cos(a) * 2.6;
+      const pz = sz + Math.sin(a) * 2.6;
+      local.add(M.timber, post(0.13, 3.0, 6), [px, y + 2.2, pz]);
+      // Balustrade panel and a bracket at the head of each bay, set on the
+      // chord between this post and the next.
+      const b = ((i + 0.5) / 8) * Math.PI * 2;
+      const bx = sx + Math.cos(b) * 2.6;
+      const bz = sz + Math.sin(b) * 2.6;
+      local.add(M.timberDark, box(2.05, 0.7, 0.12), [bx, y + 1.35, bz], [0, -b, 0]);
+      local.add(M.timberPale, box(2.05, 0.12, 0.2), [bx, y + 1.76, bz], [0, -b, 0]);
+      local.add(M.timberPale, box(2.05, 0.26, 0.14), [bx, y + 3.5, bz], [0, -b, 0]);
     }
-    local.add(M.roofZinc, new THREE.ConeGeometry(3.5, 1.6, 8), [sx, y + 4.4, sz]);
-    local.add(M.accent, post(0.09, 1.0, 5), [sx, y + 5.5, sz]);
+    local.add(M.fascia, new THREE.CylinderGeometry(3.5, 3.5, 0.26, 8), [sx, y + 3.75, sz]);
+    // Steeper than the camera, and ribbed.
+    //
+    // The cone was 1.6 over a 3.4 radius — twenty-five degrees, under the
+    // thirty-one the stage looks down at — so its whole surface was turned up
+    // into the lens as one unbroken pale octagon seven metres across. That is
+    // not a roof from up here, it is a parasol, and the eaves ring under it
+    // was the stalk. Forty degrees turns the near facets away and puts the far
+    // ones in shade, and a roll along each hip splits what is left into eight
+    // panels instead of one plate.
+    const coneR = 3.3;
+    const coneH = 2.8;
+    const eaves = y + 3.88;
+    local.add(M.roofZincWorn, new THREE.ConeGeometry(coneR, coneH, 8), [sx, eaves + coneH / 2, sz]);
+    const slant = Math.hypot(coneR, coneH);
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      local.add(
+        M.roofZinc,
+        box(slant, 0.1, 0.16),
+        [sx + Math.cos(a) * (coneR / 2), eaves + coneH / 2 + 0.06, sz + Math.sin(a) * (coneR / 2)],
+        [0, -a, -Math.atan2(coneH, coneR)],
+      );
+    }
+    local.add(M.roofZinc, new THREE.ConeGeometry(0.85, 0.7, 8), [sx, eaves + coneH + 0.24, sz]);
+    local.add(M.ironDark, post(0.12, 0.8, 6), [sx, eaves + coneH + 0.9, sz]);
+    local.add(M.accent, new THREE.SphereGeometry(0.26, 6, 4), [sx, eaves + coneH + 1.42, sz]);
     if (state === "healthy") {
       stand(ctx, person(rng, "stand"), [sx - 1.2, y + 0.6, sz + 1], 2.0);
       stand(ctx, person(rng, "lean"), [gx - 2.6, y + 0.1, 2.6], 1.2);
@@ -1112,6 +1187,29 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       }
       local.add(M.brickDark, box(unitW * 0.3, 1.3, 0.18), [cx + unitW * 0.22, y + 2.3, face - 0.04]);
       local.add(M.glass, box(unitW * 0.26, 1.1, 0.07), [cx + unitW * 0.22, y + 2.3, face + 0.02]);
+      // The back of the range, which on these parcels is one of the two walls
+      // the camera has. It was bare: a run of five-metre cream panels along the
+      // whole rear boundary, and on the park plot the biggest single thing in
+      // the middle distance. A workshop back has a high window and a pipe on it.
+      const backFace = mewsZ - mewsD / 2 - 0.02;
+      local.add(M.brickDark, box(unitW * 0.34, 0.95, 0.16), [cx, y + h - 1.3, backFace + 0.04]);
+      local.add(M.glassDim, box(unitW * 0.28, 0.75, 0.07), [cx, y + h - 1.3, backFace - 0.02]);
+      local.add(M.ironDark, post(0.1, h - 0.4, 5), [cx + unitW * 0.3, y + (h - 0.4) / 2, backFace - 0.08]);
+      local.add(M.ironDark, box(0.32, 0.22, 0.3), [cx + unitW * 0.3, y + h - 0.35, backFace - 0.08]);
+      // Party wall upstand between units, so the range reads as a row rather
+      // than one long shed with lines drawn on it.
+      if (i > 0) {
+        local.add(M.brickDark, box(0.28, h + 0.75, mewsD + 0.5), [cx - unitW / 2, y + (h + 0.75) / 2, mewsZ]);
+        local.add(M.fascia, box(0.42, 0.18, mewsD + 0.62), [cx - unitW / 2, y + h + 0.78, mewsZ]);
+      }
+    }
+    // The exposed end of the run: a verge board down the roof line, the plinth
+    // returned round the corner, and a downpipe.
+    {
+      const endH = 4.6;
+      local.add(M.fascia, box(0.22, 0.26, mewsD + 0.8), [runX0 - 0.1, y + endH * 0.72, mewsZ], [-0.17, 0, 0]);
+      local.add(M.ironDark, post(0.1, 3.6, 5), [runX0 - 0.1, y + 1.8, mewsZ + mewsD * 0.34]);
+      local.add(M.concreteDark, box(0.5, 0.44, mewsD + 0.24), [runX0 - 0.05, y + 0.22, mewsZ]);
     }
 
     // The shared yard: setts, planting, bikes, a little seating.
@@ -1146,7 +1244,6 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     // lot would stand over the terrace beside it and break the skyline read.
     const vh = Math.max(4.6, Math.min(storeys * storeyH * 0.72, 11));
     const flyH = vh * 0.42;
-    const flyTop = y + vh + 1.2 + flyH;
     const vw = 14;
     const vd = 12;
     local.add(M.brickDark, bevelBox(vw, vh, vd, 0.12), [vx, y + vh / 2, vz]);
@@ -1161,22 +1258,65 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     const pitch = Math.atan2(rise, roofD);
     /** The slope's surface, at a distance `dz` in front of the ridge. */
     const onSlope = (dz: number) => y + vh + rise - (dz / roofD) * rise;
-    for (const dz of [roofD * 0.56, roofD * 0.82]) {
-      for (const ox of [-4.0, 0, 4.0]) {
-        const pz = vz - roofD / 2 + dz;
-        local.add(M.ironDark, box(2.9, 0.14, 1.9), [vx + ox, onSlope(dz) + 0.06, pz], [pitch, 0, 0]);
-        local.add(
-          state === "struggling" ? M.glassDim : M.glassRoof,
-          box(2.6, 0.1, 1.6),
-          [vx + ox, onSlope(dz) + 0.16, pz],
-          [pitch, 0, 0],
-        );
-      }
+    // Daylight in a raised lantern rather than glazing lying in the slope.
+    //
+    // Flush rooflights have been tried twice on this roof and neither worked,
+    // for the same reason both times: the slope is presented to the camera at
+    // a grazing angle, so anything lying in it is foreshortened to a stripe.
+    // Six small panels were six dashes; two long runs were two dark bars laid
+    // across the zinc, which is worse, because a bar is a thing and a dash is
+    // only a mark. A lantern stands up out of the roof. Its glazing is
+    // vertical, so it reads as glass; its cheeks catch the sun and its box
+    // casts a shadow, so the roof reads as having something on it.
+    //
+    // Small, and beside the stage house rather than in front of it. The
+    // previous one was ten metres wide with an eleven-metre cap on top, on a
+    // roof fourteen metres across, sharing a centre line with a stage house
+    // six metres square: two pale slabs and a brick box stacked up the same
+    // screen column, which from the street was a pile of trays rather than
+    // anything built. The stage house takes the left half of the roof, so the
+    // lantern goes in the clear strip on the right, at a size that reads as
+    // something standing on a roof instead of a second roof.
+    const lanX = vx + 4.1;
+    const lanW = 4.4;
+    const lanD = 2.6;
+    const lanZ = vz + 1.4;
+    const lanY = onSlope(lanZ - (vz - roofD / 2));
+    local.add(M.brickDark, box(lanW + 0.5, 0.6, lanD + 0.5), [lanX, lanY + 0.18, lanZ], [pitch, 0, 0]);
+    local.add(M.plaster, box(lanW, 1.3, lanD), [lanX, lanY + 1.05, lanZ]);
+    for (const sz of [-1, 1]) {
+      local.add(M.ironDark, box(lanW - 0.3, 1.0, 0.2), [lanX, lanY + 1.1, lanZ + (sz * lanD) / 2]);
+      local.add(
+        state === "struggling" ? M.glassDim : M.glass,
+        box(lanW - 0.6, 0.8, 0.1),
+        [lanX, lanY + 1.1, lanZ + (sz * (lanD + 0.16)) / 2],
+      );
     }
-    // Ridge ventilator, and the gutter the pitch drains into.
-    local.add(M.roofZincWorn, box(vw - 1.0, 0.7, 1.5), [vx, y + vh + rise + 0.25, vz - roofD / 2 + 1.4]);
-    local.add(M.ironDark, box(vw - 1.4, 0.42, 1.62), [vx, y + vh + rise + 0.25, vz - roofD / 2 + 1.4]);
-    local.add(M.roofZinc, wedge(vw - 0.4, 0.5, 1.9), [vx, y + vh + rise + 0.82, vz - roofD / 2 + 1.4]);
+    for (let i = 1; i < 4; i++) {
+      local.add(M.steelPainted, box(0.14, 0.9, lanD + 0.24), [lanX - lanW / 2 + (lanW / 4) * i, lanY + 1.1, lanZ]);
+    }
+    // A cap with a real pitch on it. A half-metre rise over four metres is a
+    // plate, and a plate is what the last one read as.
+    local.add(M.roofZincWorn, wedge(lanW + 0.6, 0.8, lanD + 0.6), [lanX, lanY + 2.05, lanZ]);
+    local.add(M.fascia, box(lanW + 0.7, 0.12, lanD + 0.7), [lanX, lanY + 1.71, lanZ]);
+    // Standing seams down the fall, which is what stops the sheeting between
+    // the rooflights reading as a painted plane.
+    for (let i = -3; i <= 3; i++) {
+      local.add(M.roofZincWorn, box(0.12, 0.08, roofD - 0.4), [vx + i * 1.9, y + vh + rise / 2 + 0.07, vz], [pitch, 0, 0]);
+    }
+    // Extract cowls, on the open strip below the stage house.
+    for (const ox of [-4.4, -1.2]) {
+      const dz = roofD * 0.93;
+      local.add(M.steelPainted, post(0.42, 0.8, 8), [vx + ox, onSlope(dz) + 0.4, vz - roofD / 2 + dz]);
+      local.add(M.ironDark, post(0.56, 0.24, 8), [vx + ox, onSlope(dz) + 0.9, vz - roofD / 2 + dz]);
+    }
+    // Ridge ventilator, and the gutter the pitch drains into. Seated on the
+    // slope it stands on rather than at ridge height, which left a strip of
+    // daylight under it the length of the building.
+    const ventY = onSlope(1.4);
+    local.add(M.roofZincWorn, box(vw - 1.0, 0.7, 1.5), [vx, ventY + 0.24, vz - roofD / 2 + 1.4]);
+    local.add(M.ironDark, box(vw - 1.4, 0.42, 1.62), [vx, ventY + 0.24, vz - roofD / 2 + 1.4]);
+    local.add(M.roofZinc, wedge(vw - 0.4, 0.5, 1.9), [vx, ventY + 0.82, vz - roofD / 2 + 1.4]);
     local.add(M.fascia, box(vw + 0.9, 0.3, 0.34), [vx, y + vh - 0.12, vz + roofD / 2]);
 
     // An auditorium has no windows, which is exactly why the two elevations the
@@ -1212,12 +1352,48 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       inner.add(M.plaster, box(faceW + 0.5, 0.3, 0.3), [0, vh - 0.55, across / 2 + 0.16]);
       inner.add(M.concreteDark, box(faceW + 0.4, 0.7, 0.5), [0, 0.35, across / 2 + 0.14]);
       // Escape stair on one bay, so the mass has something in front of it.
+      //
+      // The first one was two hundred-millimetre posts and three landings
+      // hanging a metre and a half off the wall, with no flights between the
+      // landings, nothing tying it to the brick and nothing under it: at this
+      // camera, a black ladder floating in the air beside the hall. What makes
+      // a fire escape read is the diagonal — the flight — and the fact that it
+      // is bolted to something.
       if (!flank) {
         const sx = faceW * 0.34;
-        for (const ox of [-1.1, 1.1]) inner.add(M.ironDark, post(0.1, vh - 0.6, 5), [sx + ox, (vh - 0.6) / 2, across / 2 + 1.5]);
-        for (let f = 1; f * 3.2 < vh - 1.2; f++) {
-          inner.add(M.ironDark, box(2.4, 0.12, 1.5), [sx, f * 3.2, across / 2 + 1.5]);
-          inner.add(M.ironDark, box(2.4, 0.06, 0.06), [sx, f * 3.2 + 0.5, across / 2 + 2.2]);
+        const out = across / 2 + 1.35;
+        const landW = 2.6;
+        const rise = 3.2;
+        const legs: Array<[number, number]> = [
+          [sx - landW / 2, out + 0.55],
+          [sx + landW / 2, out + 0.55],
+        ];
+        for (const [lx, lz] of legs) {
+          inner.add(M.steel, box(0.2, vh - 0.6, 0.2), [lx, (vh - 0.6) / 2, lz]);
+          inner.add(M.concreteDark, box(0.6, 0.3, 0.6), [lx, 0.15, lz]);
+        }
+        for (let f = 1; f * rise < vh - 1.0; f++) {
+          const ly = f * rise;
+          // Landing, and the walkway back through the wall to a door.
+          inner.add(M.steel, box(landW, 0.16, 1.5), [sx, ly, out]);
+          inner.add(M.ironDark, box(1.1, 0.14, 1.4), [sx, ly - 0.02, across / 2 + 0.5]);
+          inner.add(M.ironDark, box(1.3, 2.1, 0.16), [sx, ly + 1.05, across / 2 + 0.04]);
+          // Flight down to the landing below, on a raking stringer with treads.
+          const runZ = 2.4;
+          const flightAngle = Math.atan2(rise, runZ);
+          const flightLen = Math.hypot(rise, runZ);
+          for (const ox of [-landW / 2 + 0.1, landW / 2 - 0.1]) {
+            inner.add(M.steel, box(0.14, 0.26, flightLen), [sx + ox, ly - rise / 2, out + 0.75 + runZ / 2], [flightAngle, 0, 0]);
+          }
+          for (let s = 1; s < 8; s++) {
+            const t = s / 8;
+            inner.add(M.ironDark, box(landW - 0.3, 0.07, 0.26), [sx, ly - rise * t + 0.1, out + 0.75 + runZ * t]);
+          }
+          // Guarding: a top rail along the landing and up the flight.
+          inner.add(M.steel, box(landW, 0.07, 0.07), [sx, ly + 1.05, out + 0.72]);
+          for (const ox of [-landW / 2, landW / 2]) {
+            inner.add(M.steel, box(0.07, 0.07, flightLen), [sx + ox, ly + 1.05 - rise / 2, out + 0.75 + runZ / 2], [flightAngle, 0, 0]);
+          }
         }
       }
       const group = inner.build("venue-face");
@@ -1244,25 +1420,63 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     // the brick they stand on.
     const fbx = vx - 2;
     const fbz = vz - 2;
-    const fbY = y + vh + 1.2;
+    // Below the lowest point of the pitch it stands in. The base was taken
+    // from the ridge, and the roof falls a metre and a quarter across the
+    // tower's own footprint, so the downhill wall finished a hand's breadth
+    // clear of the sheeting with daylight under it.
+    const fbY = y + vh + 0.5;
     local.add(M.brickDark, bevelBox(6.5, flyH, 6.5, 0.1), [fbx, fbY + flyH / 2, fbz]);
     for (let i = 1; i <= 2; i++) {
       local.add(M.brick, box(6.8, 0.3, 6.8), [fbx, fbY + (flyH / 3) * i, fbz]);
     }
     // Smoke-vent louvres high on the flanks.
-    for (let i = 0; i < 3; i++) {
-      const lx = fbx - 2.0 + i * 2.0;
-      local.add(M.ironDark, box(1.4, 1.1, 6.72), [lx, fbY + flyH - 1.0, fbz]);
-      local.add(M.steelPainted, box(1.16, 0.9, 6.76), [lx, fbY + flyH - 1.0, fbz]);
-      local.add(M.ironDark, box(6.72, 1.1, 1.4), [fbx, fbY + flyH - 1.0, fbz - 2.0 + i * 2.0]);
-      local.add(M.steelPainted, box(6.76, 0.9, 1.16), [fbx, fbY + flyH - 1.0, fbz - 2.0 + i * 2.0]);
+    //
+    // These were boxes as wide as the tower in the palest metal in the palette,
+    // pushed straight through it: three of them each way, crossing at the top,
+    // so a stage house six metres square finished in a white plate wider than
+    // itself. From the street the venue looked like it had a takeaway carton on
+    // the roof. A louvre is a hole in a wall with blades in it — recessed, dark
+    // behind, and narrower than the thing it is set into.
+    const louvreY = fbY + flyH - 1.5;
+    const bandW = 4.2;
+    const bandH = 1.5;
+    for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const nx = ax * 3.2;
+      const nz = az * 3.2;
+      local.add(M.ironDark, box(ax ? 0.26 : bandW, bandH, az ? 0.26 : bandW), [fbx + nx, louvreY, fbz + nz]);
+      for (let i = 0; i < 3; i++) {
+        local.add(
+          M.steelPainted,
+          box(ax ? 0.28 : bandW - 0.5, 0.13, az ? 0.28 : bandW - 0.5),
+          [fbx + nx + ax * 0.09, louvreY - bandH / 2 + 0.34 + i * 0.42, fbz + nz + az * 0.09],
+          [az ? -az * 0.5 : 0, 0, ax ? ax * 0.5 : 0],
+        );
+      }
     }
     local.add(M.kerb, box(6.9, 0.28, 6.9), [fbx, fbY + flyH + 0.14, fbz]);
     local.add(M.roofZinc, wedge(6.9, 1.5, 6.9), [fbx, fbY + flyH + 0.28, fbz]);
-    local.add(M.roofZincWorn, box(1.5, 0.5, 6.4), [fbx, fbY + flyH + 1.6, fbz]);
-    local.add(M.steel, post(0.1, 3.0, 5), [vx - 4.4, flyTop + 1.4, vz - 4.2]);
-    local.add(M.steel, post(0.1, 3.0, 5), [vx + 0.4, flyTop + 1.4, vz - 4.2]);
-    local.add(M.ironDark, box(5.2, 0.12, 0.12), [fbx, flyTop + 2.8, vz - 4.2]);
+    // Capping along the high edge of that pitch. What was here before was a
+    // one-and-a-half by six plate at a height a metre and a half over a
+    // wedge whose apex is at one, laid across the fall rather than along the
+    // ridge: a grey plank hanging in the air above the stage house, and the
+    // first thing the eye found on the plot.
+    local.add(M.roofZincWorn, box(7.0, 0.26, 0.5), [fbx, fbY + flyH + 0.98, fbz - 3.32]);
+    // Aerial mast at one corner of the stage house.
+    //
+    // What stood here before was two three-metre posts and a five-metre
+    // crossbar, hung at a height taken from the top of the tower and a position
+    // taken from the hall below it. Neither post landed on anything: from the
+    // street it was a goalpost lying across the roof at an angle, and it was
+    // the first thing the eye found on the whole plot. One mast, standing on
+    // the parapet it is bolted to, does the job a silhouette needs.
+    const mastX = fbx + 2.6;
+    const mastZ = fbz + 2.6;
+    local.add(M.ironDark, box(0.7, 0.4, 0.7), [mastX, fbY + flyH + 0.3, mastZ]);
+    local.add(M.steel, post(0.12, 4.2, 6), [mastX, fbY + flyH + 2.4, mastZ]);
+    for (let i = 0; i < 2; i++) {
+      local.add(M.steel, box(1.5, 0.08, 0.08), [mastX, fbY + flyH + 3.0 + i * 0.9, mastZ]);
+    }
+    local.add(state === "healthy" ? M.accent : M.signDead, post(0.16, 0.34, 6), [mastX, fbY + flyH + 4.6, mastZ]);
     if (state === "healthy") {
       for (let i = 0; i < 4; i++) {
         stand(ctx, person(rng, rng.pick(["stand", "lean", "point"] as const)), [vx - 3 + i * 2, y, vz + 9.2], rng.range(1, 5));
