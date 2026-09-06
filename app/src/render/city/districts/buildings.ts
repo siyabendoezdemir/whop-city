@@ -321,7 +321,12 @@ export function authoredBlock(
   b.add(skin.body, bevelBox(w, h, d, 0.1), [0, h / 2, 0]);
   facadeFrame(b, skin, w, d, h, bays, groundH);
 
-  if (options.glazedBands) {
+  // Punched openings are four boxes per window, on three faces, per storey.
+  // That is the right grammar for a four-storey street block and the wrong one
+  // for a seventeen-storey tower: it is a thousand boxes for one building, and
+  // a tower has a curtain wall in real life anyway. Above six storeys the
+  // glazing runs in bands, which is cheaper and more honest at once.
+  if (options.glazedBands || options.storeys >= 6) {
     for (let s = 1; s < options.storeys; s++) {
       glazingBand(b, skin, s * storeyH + storeyH * 0.5, w, d, storeyH * 0.62, bays);
     }

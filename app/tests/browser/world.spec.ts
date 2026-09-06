@@ -20,6 +20,10 @@ type Info = {
 const BUDGET = { drawCalls: 220, triangles: 250_000 };
 
 async function open(page: import("@playwright/test").Page, scenario?: string) {
+  // Reduced motion, which is how the product itself skips the founding sweep.
+  // Without it these would sample a city that is still going up, and a world
+  // measured halfway through being built is not a world.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const params = new URLSearchParams({ capture: "1", ss: "1" });
   if (scenario) params.set("scenario", scenario);
   await page.goto(`/?${params}`, { waitUntil: "load" });
@@ -48,6 +52,9 @@ async function worldFingerprint(page: import("@playwright/test").Page): Promise<
   });
 }
 
+/** Vertices in the built scene, out of the fingerprint. */
+const vertexCount = (fingerprint: string) => Number(fingerprint.split(":")[1]);
+
 test("each projection state builds a different world", async ({ page }) => {
   const seen = new Map<string, { fingerprint: string; info: Info }>();
 
@@ -62,10 +69,16 @@ test("each projection state builds a different world", async ({ page }) => {
     fingerprints.length,
   );
 
-  // And the difference is real geometry, not a rounding artefact.
-  const thriving = seen.get("thriving")!.info;
-  const struggling = seen.get("struggling")!.info;
-  expect(thriving.triangles).toBeGreaterThan(struggling.triangles * 1.2);
+  // And the difference is real geometry, not a rounding artefact. Vertices
+  // rather than triangles, because a taller building is not reliably more
+  // triangles: past six storeys the glazing runs in bands instead of hundreds
+  // of punched openings, so a bigger city can be a cheaper one.
+  expect(vertexCount(seen.get("thriving")!.fingerprint)).toBeGreaterThan(
+    vertexCount(seen.get("struggling")!.fingerprint) * 1.15,
+  );
+  expect(vertexCount(seen.get("struggling")!.fingerprint)).toBeGreaterThan(
+    vertexCount(seen.get("unavailable")!.fingerprint) * 1.15,
+  );
 });
 
 /**

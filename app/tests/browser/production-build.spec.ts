@@ -103,14 +103,33 @@ test("the rendered city is the unavailable one, and still safe", async ({ page }
   expect(info.parcels).toBeGreaterThan(0);
   expect(info.drawCalls).toBeGreaterThan(0);
 
-  // Nobody has proved they run this business, so every figure reads zero and
-  // the interface says why rather than pretending the business is empty.
-  await expect(page.locator(".public-note")).toContainText("public view");
+  // Nobody has proved they run this business, so no figure is shown at all.
+  // A dash rather than a nought, deliberately: a nought is a claim about the
+  // business and this is a statement about the reading.
   for (const resource of ["gold", "citizens", "traffic", "recurring"]) {
-    await expect(page.locator(`[data-testid="res-${resource}"]`)).toHaveText(/^\$?0$/);
+    await expect(page.locator(`[data-testid="res-${resource}"]`)).toHaveText("—");
   }
+  await expect(page.locator(".res")).toHaveAttribute("data-source", /withheld|unreadable/);
 
-  // With nothing earned there is nothing to claim: no upgrade is on offer.
-  await expect(page.locator(".ready")).toHaveCount(0);
-  await expect(page.locator(".nudge")).toBeVisible();
+  // The corner offers a sign-in rather than claiming to know who this is.
+  await expect(page.locator('[data-action="signin"]')).toBeVisible();
+  await expect(page.locator('[data-action="profile"]')).toHaveCount(0);
+
+  // With nothing earned there is nothing to build: the city is bare ground and
+  // says so, and no bubbles are on offer.
+  await expect(page.locator('[data-testid="nudge"]')).toBeVisible();
+  await expect(page.locator('[data-testid="building-card"]')).toHaveCount(0);
+});
+
+test("the profile endpoint tells a visitor nothing", async ({ request, baseURL }) => {
+  const response = await request.get(`${baseURL}/api/city/profile`);
+  expect(response.status()).toBe(200);
+  // Not the fixture owner, and not the business name either: the fixture
+  // branch has to be gone from a deployable build like everything else.
+  expect(await response.json()).toEqual({ signedIn: false });
+
+  const body = await response.text();
+  for (const trace of ["Fixture Owner", "Fixture Whop", "biz_"]) {
+    expect(body).not.toContain(trace);
+  }
 });

@@ -93,7 +93,11 @@ export function BuildingCard({ view, onUpgrade, onClose }: Props) {
           onClick={onUpgrade}
         >
           {state === "ready" ? <UpMark className="press__mark" /> : null}
-          {maxed ? "Fully built" : ready > 0 ? `Build level ${level + 1}` : `Locked until level ${level + 1}`}
+          {maxed
+            ? "Fully built"
+            : ready > 0
+              ? `Build level ${level + 1}`
+              : `Level ${level + 1} at ${money(building.resource, need!)}`}
         </button>
       </div>
 

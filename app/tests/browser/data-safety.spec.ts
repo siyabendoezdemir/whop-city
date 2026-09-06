@@ -9,6 +9,9 @@ import { expect, test } from "@playwright/test";
  */
 
 const ALLOWED_ENDPOINT = "/api/city/snapshot";
+const PROFILE_ENDPOINT = "/api/city/profile";
+/** Everything the browser may call. Two documents, two audiences, no third. */
+const ALLOWED_ENDPOINTS = [ALLOWED_ENDPOINT, PROFILE_ENDPOINT];
 
 /** Everything the projection is forbidden to carry, as it would appear in JSON. */
 const FORBIDDEN_JSON_KEYS = [
@@ -92,18 +95,29 @@ async function loadCity(page: import("@playwright/test").Page, query = "") {
   return { requests, responses };
 }
 
-test("the browser calls exactly one API endpoint, with GET", async ({ page }) => {
+test("the browser calls only its two API endpoints, with GET", async ({ page }) => {
   const { requests } = await loadCity(page);
 
   const api = requests.filter((request) => new URL(request.url).pathname.startsWith("/api/"));
   expect(api.length).toBeGreaterThan(0);
 
   for (const request of api) {
-    expect(new URL(request.url).pathname).toBe(ALLOWED_ENDPOINT);
+    expect(ALLOWED_ENDPOINTS).toContain(new URL(request.url).pathname);
     expect(request.method).toBe("GET");
   }
-  // One reading per load; nothing polls.
-  expect(api).toHaveLength(1);
+  // One reading of each per load; nothing polls.
+  expect(api).toHaveLength(2);
+});
+
+test("a visitor learns nothing at all from the profile endpoint", async ({ page }) => {
+  const { responses } = await loadCity(page);
+
+  const profile = responses.find((response) => response.url.includes(PROFILE_ENDPOINT));
+  expect(profile, "no profile response observed").toBeTruthy();
+
+  // Exactly one field, and it is a "no". A visitor must not be able to tell
+  // whether a session exists, what the business is called, or who runs it.
+  expect(JSON.parse(profile!.body)).toEqual({ signedIn: false });
 });
 
 test("the browser talks only to its own origin", async ({ page }) => {

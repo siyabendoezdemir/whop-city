@@ -3,6 +3,7 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react
 import { DISTRICT_IDS, parseProjection, type DistrictId, type PublicCityProjection } from "../city/projection";
 import { BUILDINGS, MAX_LEVEL, buildingById, buildingsIn, nextTier } from "../game/buildings";
 import {
+  changesSince,
   claim,
   cityTier,
   districtTally,
@@ -14,6 +15,7 @@ import {
   totalLevels,
   viewAll,
   viewOf,
+  type Change,
   type CityState,
 } from "../game/city";
 import { cityQuest, questFor, readingFor } from "../game/quests";
@@ -24,6 +26,7 @@ import { DistrictRail, type RailEntry } from "./DistrictRail";
 import { ProfileChip, type Profile } from "./Profile";
 import { QuestCard } from "./QuestCard";
 import { ResourceBar } from "./ResourceBar";
+import { WhileAway } from "./WhileAway";
 import { Seal } from "./Glyphs";
 
 const CityCanvas = lazy(() =>
@@ -98,6 +101,15 @@ export function CityShell() {
    * Null once it has played, and null from the start on a return visit.
    */
   const [rising, setRising] = useState<number | null>(null);
+  /**
+   * What the business did while nobody was looking.
+   *
+   * Captured at load, before `markSeen` moves the baseline forward, because
+   * the whole value of it is that it is the difference between two visits. It
+   * is the reason to come back: the city is a record of a month's work and
+   * this is the line that says what the last few days added to it.
+   */
+  const [away, setAway] = useState<Change[] | null>(null);
 
   /** What came back from the sign-in round trip, if anything. */
   const authNote = useMemo(() => {
@@ -153,6 +165,10 @@ export function CityShell() {
         const saved = loadCity(next.seed);
         setCity(saved ?? newCity(next.seed, Date.now(), next.metrics));
         if (!saved && next.metrics.source === "owner" && !prefersStill()) setRising(0);
+        if (saved) {
+          const moved = changesSince(saved, next.metrics).filter((change) => change.from !== change.to);
+          if (moved.length > 0) setAway(moved);
+        }
       })
       .catch(() => alive && setLoad({ status: "failed" }));
 
@@ -355,6 +371,8 @@ export function CityShell() {
       <div className="corner">
         <ProfileChip profile={profile} />
       </div>
+
+      {away && rising === null ? <WhileAway changes={away} onDismiss={() => setAway(null)} /> : null}
 
       {/* ------------------------------------------------------ left rail */}
       <DistrictRail entries={rail} active={district} onPick={goToDistrict} />

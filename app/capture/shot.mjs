@@ -15,7 +15,14 @@ const out = process.env.CITY_OUT ?? "artifacts";
 await mkdir(out, { recursive: true });
 
 const browser = await chromium.launch({ args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+const page = await browser.newPage({
+  viewport: { width: Number(process.env.CITY_W ?? 1440), height: Number(process.env.CITY_H ?? 900) },
+  deviceScaleFactor: 1,
+  // The founding sweep is the one thing on the page that takes its time on
+  // purpose. Asking for reduced motion is the product's own documented way to
+  // skip it, so a still capture uses that rather than a capture-only flag.
+  reducedMotion: process.env.CITY_STILL ? "reduce" : "no-preference",
+});
 
 const problems = [];
 page.on("pageerror", (error) => problems.push(`pageerror: ${error.message}`));

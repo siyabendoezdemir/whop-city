@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { DistrictId, PublicCityProjection } from "../city/projection";
 import { buildLots, buildTerrain, type Lots, type Terrain } from "../render/city/city";
 import { createWorks, type MarkerKind, type Works } from "../render/city/works";
+import { plotSite } from "../game/plots";
 import { applySurfaceDetail } from "../render/scene/materials";
 import { SUPERSAMPLE_DEFAULT, createStage } from "../render/scene/stage";
 import { FRAMING_ORDER, framingFor, type FramingKey } from "./framings";
@@ -225,14 +226,23 @@ export function CityCanvas({
     // inverted: the hand-written "up" was the negative of the camera's, so
     // dragging down pulled the city up.
     stage.camera.updateMatrixWorld();
-    const groundRight = new THREE.Vector3()
-      .setFromMatrixColumn(stage.camera.matrixWorld, 0)
-      .setY(0)
-      .normalize();
-    const groundUp = new THREE.Vector3()
-      .setFromMatrixColumn(stage.camera.matrixWorld, 1)
-      .setY(0)
-      .normalize();
+    const camRight = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 0).setY(0);
+    const camUp = new THREE.Vector3().setFromMatrixColumn(stage.camera.matrixWorld, 1).setY(0);
+
+    /**
+     * How far the ground has to move to move the picture by one unit.
+     *
+     * The camera looks down at the ground, so a metre travelled north is not a
+     * metre up the screen — it is `sin(elevation)` of one, about a half at this
+     * angle. Ignoring that made a vertical drag move the world at half the
+     * speed of the hand while a horizontal drag tracked it exactly, which is
+     * the "sluggish, fighting me" feeling that has nothing to do with speed
+     * settings: the ground was simply not staying under the cursor.
+     */
+    const perRight = 1 / Math.max(0.2, camRight.length());
+    const perUp = 1 / Math.max(0.2, camUp.length());
+    const groundRight = camRight.clone().normalize();
+    const groundUp = camUp.clone().normalize();
 
     /** Keep the city on screen: you may roam the promontory, not the void. */
     const clampFocus = (focus: THREE.Vector3) => {
@@ -260,8 +270,8 @@ export function CityCanvas({
       const before = want.focus.clone();
       // Grab, not push: the ground under the cursor stays under the cursor, so
       // the camera moves opposite to the hand on both axes.
-      want.focus.addScaledVector(groundRight, -dxPixels * perPixel);
-      want.focus.addScaledVector(groundUp, dyPixels * perPixel);
+      want.focus.addScaledVector(groundRight, -dxPixels * perPixel * perRight);
+      want.focus.addScaledVector(groundUp, dyPixels * perPixel * perUp);
       clampFocus(want.focus);
       // Direct, not eased: the ground has to stay under the cursor. Easing here
       // is what made dragging feel like pulling the city on a rubber band.
@@ -462,6 +472,17 @@ export function CityCanvas({
     const originalBackground = stage.scene.background;
     const originalFog = stage.scene.fog;
 
+    /** World point to CSS pixels on the canvas. Null in, null out. */
+    const project = (world: THREE.Vector3 | null) => {
+      if (!world) return null;
+      const rect = stage.renderer.domElement.getBoundingClientRect();
+      const at = world.clone().project(stage.camera);
+      return {
+        x: rect.left + ((at.x + 1) / 2) * rect.width,
+        y: rect.top + ((1 - at.y) / 2) * rect.height,
+      };
+    };
+
     const renderAt = (focus: THREE.Vector3, height: number, t: number) => {
       clock = t;
       stage.frame(focus, height);
@@ -522,16 +543,25 @@ export function CityCanvas({
         /**
          * Where a district's marker is on screen, in CSS pixels.
          *
-        /** Where a plot is on screen, in CSS pixels. For tests and captures. */
-        plotPoint: (plotId: string) => {
-          const world = worksRef.current?.anchor(plotId);
-          if (!world) return null;
-          const rect = stage.renderer.domElement.getBoundingClientRect();
-          world.project(stage.camera);
-          return {
-            x: rect.left + ((world.x + 1) / 2) * rect.width,
-            y: rect.top + ((1 - world.y) / 2) * rect.height,
-          };
+        /**
+         * Where a plot's marker floats, on screen, in CSS pixels.
+         *
+         * Rides the measured roofline, so a building growing a storey moves
+         * this up the screen. That is what makes it a usable assertion for
+         * "the building actually got taller".
+         */
+        plotPoint: (plotId: string) => project(worksRef.current?.anchor(plotId) ?? null),
+
+        /**
+         * Where a plot's ground sits on screen. What to click to select it.
+         *
+         * Separate from `plotPoint` because they diverge by most of a tower on
+         * a grown plot, and a click aimed at the roof of one building lands on
+         * the ground of the one behind it.
+         */
+        plotGround: (plotId: string) => {
+          const site = plotSite(plotId);
+          return project(new THREE.Vector3(site.x, 1, site.z));
         },
 
         shadowRig: () => {

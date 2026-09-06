@@ -31,8 +31,8 @@ export type CityHooks = {
     right: [number, number, number];
     up: [number, number, number];
   }>;
-  markerPoint: (districtId: string) => { x: number; y: number } | null;
   plotPoint: (plotId: string) => { x: number; y: number } | null;
+  plotGround: (plotId: string) => { x: number; y: number } | null;
   shadowRig: () => number[];
   silhouette: (on: boolean) => void;
   info: () => CityInfo;

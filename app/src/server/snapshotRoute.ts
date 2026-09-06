@@ -30,7 +30,7 @@ import { DEFAULT_SCENARIO, resolveScenario } from "./scenarios";
 import { toPublicProjection, type Audience } from "./project";
 import { readStats } from "./stats";
 import { viewerFor } from "./viewer";
-import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
+import { ANONYMOUS_SEED, deriveLayoutSeed, fixtureSeed, isUsableSeedSecret } from "./seed";
 import { captureSnapshot } from "./snapshot";
 import { withSingleFlight } from "./snapshotCache";
 import { apiOrigin, boundAppId, type Env } from "./whop-client";
@@ -142,7 +142,10 @@ async function buildProjection(
     const picked = resolveScenario(scenario);
     return toPublicProjection(
       fixtureSnapshot(picked, now),
-      ANONYMOUS_SEED,
+      // A seed of its own per scenario: the browser keys the saved city on it,
+      // and one shared seed meant every fixture business inherited the last
+      // one's city.
+      fixtureSeed(picked),
       now,
       "owner",
       fixtureStats(picked),
