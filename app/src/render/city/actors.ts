@@ -263,7 +263,11 @@ const PUFF_MATERIAL = new THREE.MeshStandardMaterial({
 
 export function makeSteamVent(origin: Vec3, scale = 1): Rig {
   const group = new THREE.Group();
-  const puffs = new THREE.InstancedMesh(blob(0.85 * scale, 1), PUFF_MATERIAL, PUFF_COUNT);
+  // A puff peaked at 0.85 × scale × 2.5 in radius, so the flue on a top-level
+  // Forge plot — which asks for scale 1.5 — was throwing six-metre white
+  // spheres. Beside a one-metre chimney pot that is not steam, it is cotton
+  // wool, and it was the first thing the eye found on the whole district.
+  const puffs = new THREE.InstancedMesh(blob(0.5 * scale, 1), PUFF_MATERIAL, PUFF_COUNT);
   puffs.castShadow = false;
   puffs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   group.add(puffs);
@@ -282,12 +286,12 @@ export function makeSteamVent(origin: Vec3, scale = 1): Rig {
         // The column snakes as it rises. Evenly spaced puffs on a straight line
         // produce a plume whose overall shape never changes, which reads as a
         // static grey blob however fast the individual puffs are moving.
-        const wobble = Math.sin(t * 0.8 + i * 1.1 + life * 2.4) * 0.9 * scale;
-        position.set(life * 2.4 * scale + wobble, life * 7.0 * scale, life * 1.1 * scale + wobble * 0.5);
+        const wobble = Math.sin(t * 0.8 + i * 1.1 + life * 2.4) * 0.7 * scale;
+        position.set(life * 2.0 * scale + wobble, life * 5.6 * scale, life * 0.9 * scale + wobble * 0.5);
         // Fade by size, not by colour. One shared material cannot hold six
         // opacities, and dimming instance colour instead just turns the steam
         // grey — which is exactly what it looked like.
-        scaling.setScalar(Math.sin(life * Math.PI) ** 0.7 * (0.6 + life * 1.9));
+        scaling.setScalar(Math.sin(life * Math.PI) ** 0.7 * (0.55 + life * 1.35));
         matrix.compose(position, quaternion, scaling);
         puffs.setMatrixAt(i, matrix);
       }
@@ -343,7 +347,15 @@ export function makeVan(dock: Vec3, approach: Vec3, yaw: number): Rig {
   };
 }
 
-/** Fabric that lifts in the breeze: awning edges, banners, site netting. */
+/**
+ * Fabric that lifts in the breeze: awning edges, banners, site netting.
+ *
+ * Strung, not hinged. This was one rigid slab swinging through twenty degrees
+ * on two axes, which for the nine-metre banner over the Forge plaza meant a
+ * scarlet plank pivoting in mid-air above the pergola — in a still frame the
+ * single most model-like thing on the plot. It hangs in segments now, sagging
+ * toward the middle off a line, and the breeze only ripples it.
+ */
 export function makeBanner(
   position: Vec3,
   width: number,
@@ -352,14 +364,25 @@ export function makeBanner(
   phase = 0,
 ): Rig {
   const b = new PartsBuilder();
-  b.add(material, box(width, height, 0.05), [0, -height / 2, 0]);
+  const spans = Math.max(3, Math.min(6, Math.round(width / 2)));
+  const spanW = width / spans;
+  const sag = Math.min(0.5, width * 0.045);
+  b.add(M.ironDark, box(width + 0.3, 0.05, 0.05), [0, 0.02, 0]);
+  for (let i = 0; i < spans; i++) {
+    const t = (i + 0.5) / spans - 0.5;
+    // A catenary, near enough: the drop grows toward the middle of the run and
+    // each panel tilts along the curve it is hanging on.
+    const drop = sag * (1 - 4 * t * t);
+    const tilt = Math.atan2(sag * 8 * t, width);
+    b.add(material, box(spanW + 0.04, height, 0.05), [t * width, -height / 2 - drop, 0], [0, 0, tilt]);
+  }
   const group = b.buildSingle("banner", ACTOR_SURFACE, true, false);
   group.position.set(...position);
   return {
     group,
     update: (t) => {
-      group.rotation.x = Math.sin(t * 2.3 + phase) * 0.34;
-      group.rotation.z = Math.sin(t * 1.7 + phase * 1.7) * 0.14;
+      group.rotation.x = Math.sin(t * 2.1 + phase) * 0.07;
+      group.rotation.z = Math.sin(t * 1.5 + phase * 1.7) * 0.025;
     },
   };
 }

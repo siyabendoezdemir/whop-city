@@ -49,19 +49,31 @@ function trianglesOf(geometry: THREE.BufferGeometry): Array<[THREE.Vector3, THRE
  * A blank elevation is one where nothing — no reveal, cill, mullion, pilaster
  * or shopfront — breaks the plane of the body. Counting outward-facing
  * triangles beyond that plane is what distinguishes "the wall is there" from
- * "there is something on the wall": a bare face still has its string course and
- * cornice, which wrap the whole building, and those are a dozen triangles.
+ * "there is something on the wall".
+ *
+ * Measured between the plinth and the eaves, because the parapet and the
+ * string course wrap all four sides whatever the camera can see, and a
+ * threshold that has to sit above those is a threshold measuring the roof.
  */
-function reliefOn(block: THREE.BufferGeometry, outward: THREE.Vector3, w: number, d: number): number {
+function reliefOn(
+  block: THREE.BufferGeometry,
+  outward: THREE.Vector3,
+  w: number,
+  d: number,
+  wallTop: number,
+): number {
   const half = Math.abs(outward.x) > 0.5 ? w / 2 : d / 2;
   let proud = 0;
   for (const [centre, normal] of trianglesOf(block)) {
     if (normal.dot(outward) < 0.9) continue;
     // Above the plinth, below the parapet, and standing off the wall.
-    if (centre.dot(outward) > half + 0.02 && centre.y > 1.0) proud++;
+    if (centre.dot(outward) > half + 0.02 && centre.y > 1.1 && centre.y < wallTop) proud++;
   }
   return proud;
 }
+
+/** Floor-to-floor used by `authoredBlock` when a caller does not say. */
+const STOREY = 3.1;
 
 function blockFor(seen: readonly Face[], w: number, d: number, storeys: number): THREE.BufferGeometry {
   const builder = new PartsBuilder();
@@ -134,8 +146,10 @@ describe("an authored block", () => {
       for (const storeys of [3, 8]) {
         const block = blockFor(seen, 12, 9, storeys);
         for (const face of seen) {
-          expect(reliefOn(block, OUTWARD[face], 12, 9), `${face} at yaw ${yaw}, ${storeys} storeys`)
-            .toBeGreaterThan(40);
+          expect(
+            reliefOn(block, OUTWARD[face], 12, 9, storeys * STOREY - 0.6),
+            `${face} at yaw ${yaw}, ${storeys} storeys`,
+          ).toBeGreaterThan(40);
         }
       }
     }
@@ -145,8 +159,10 @@ describe("an authored block", () => {
     const seen = facesInView(0);
     const block = blockFor(seen, 12, 9, 4);
     for (const face of OUTWARD_KEYS.filter((f) => !seen.includes(f))) {
-      // Only the string course and cornice, which wrap the building anyway.
-      expect(reliefOn(block, OUTWARD[face], 12, 9), face).toBeLessThan(20);
+      // Only the string course, which wraps the building anyway. Anything more
+      // than that is either detail nobody will look at or, as it was, a window
+      // cill on the return wall hanging past the corner of the building.
+      expect(reliefOn(block, OUTWARD[face], 12, 9, 4 * STOREY - 0.6), face).toBeLessThan(6);
     }
     const four = blockFor(["front", "back", "left", "right"], 12, 9, 4);
     const count = (g: THREE.BufferGeometry) => (g.attributes.position as THREE.BufferAttribute).count;
