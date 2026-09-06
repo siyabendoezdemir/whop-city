@@ -125,9 +125,14 @@ function facadeFrame(
   groundH: number,
   seen: Faces,
   heavy = false,
+  y0 = 0,
+  plinth = true,
 ): void {
-  b.add(skin.base, box(w + 0.18, groundH * 0.28, d + 0.18), [0, groundH * 0.14, 0]);
-  b.add(skin.trim, box(w + 0.22, 0.12, d + 0.22), [0, groundH * 0.28 + 0.06, 0]);
+  if (plinth) {
+    b.add(skin.base, box(w + 0.18, groundH * 0.28, d + 0.18), [0, y0 + groundH * 0.14, 0]);
+    b.add(skin.trim, box(w + 0.22, 0.12, d + 0.22), [0, y0 + groundH * 0.28 + 0.06, 0]);
+    b.add(skin.trim, box(w + 0.2, 0.22, d + 0.2), [0, y0 + groundH, 0]);
+  }
   const pierW = heavy ? 0.62 : 0.26;
   const proud = heavy ? 0.2 : 0.02;
   const material = heavy ? skin.body : skin.trim;
@@ -138,7 +143,7 @@ function facadeFrame(
       for (let i = 0; i <= count; i++) {
         t.add(material, box(pierW, h - 0.4, 0.2 + proud), [
           -faceW / 2 + (faceW / count) * i,
-          h / 2,
+          y0 + h / 2,
           across / 2 + proud / 2,
         ]);
       }
@@ -149,11 +154,10 @@ function facadeFrame(
     // the tower loses its edges, which from this camera is the whole silhouette.
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
-        b.add(skin.body, box(1.0, h - 0.3, 1.0), [(sx * w) / 2, h / 2, (sz * d) / 2]);
+        b.add(skin.body, box(1.0, h - 0.3, 1.0), [(sx * w) / 2, y0 + h / 2, (sz * d) / 2]);
       }
     }
   }
-  b.add(skin.trim, box(w + 0.2, 0.22, d + 0.2), [0, groundH, 0]);
 }
 
 /** A window bay: reveal, glazing, mullion, transom, cill. */
@@ -492,13 +496,17 @@ export function roofOf(
     // roof stopped reading as a roof and the district stopped reading as a
     // works. Cool glass, over a spandrel, with mullions at a bay and a half.
     const lights = skin.glass === M.glassDim ? M.glassDim : M.glass;
+    // Galvanised sheet, not slate. This is the biggest plane on a Forge plot
+    // by a wide margin, and in the palette's roofing colour the shed read as a
+    // dark chevroned mass with a pale building somewhere under it.
+    const deck = skin.roof === M.roofZincWorn ? M.roofZincWorn : M.roofSheet;
     const glazedH = rise * 0.62;
     const mullions = Math.max(3, Math.round(d / 1.9));
     for (let i = 0; i < bays; i++) {
       const xa = -w / 2 + i * bayW;
       const xb = xa + bayW;
       const len = Math.hypot(bayW, rise);
-      b.add(skin.roof, box(len, 0.16, d), [(xa + xb) / 2, h + rise / 2, 0], [0, 0, Math.atan2(rise, bayW)]);
+      b.add(deck, box(len, 0.16, d), [(xa + xb) / 2, h + rise / 2, 0], [0, 0, Math.atan2(rise, bayW)]);
       // Spandrel below the glazing, so the tooth has a solid base rather than
       // running glass down to the gutter.
       b.add(skin.body, box(0.2, rise - glazedH, d - 0.2), [xb - 0.06, h + (rise - glazedH) / 2, 0]);
@@ -540,6 +548,7 @@ function punchedFacade(
   groundH: number,
   storeys: number,
   skipGround: boolean,
+  y0 = 0,
 ): void {
   const bayW = faceW / bays;
   const skip = skipGround ? 1 : 0;
@@ -548,7 +557,7 @@ function punchedFacade(
       const y = groundH + (s - skip) * storeyH + storeyH * 0.5;
       if (y + 1 > h) break;
       for (let i = 0; i < bays; i++) {
-        windowBay(t, skin, -faceW / 2 + bayW * (i + 0.5), y, across / 2 + 0.02, bayW * 0.56, storeyH * 0.58);
+        windowBay(t, skin, -faceW / 2 + bayW * (i + 0.5), y0 + y, across / 2 + 0.02, bayW * 0.56, storeyH * 0.58);
       }
     }
   });
@@ -647,10 +656,14 @@ export function roofscape(
   }
 
   const wanted = Math.min(slots.length, 2 + Math.floor((w * d) / 34));
-  // Weighted toward the things a roof is mostly made of. A dish is a landmark,
-  // not a fitting, and cycling one in every fourth slot put four black discs on
-  // sticks over every block in the city.
-  const kinds = ["plant", "tank", "vent", "plant", "vent", "dish"] as const;
+  // Weighted toward the things a roof is mostly made of.
+  //
+  // No dish. A satellite dish is a disc, this camera looks down at it from
+  // thirty-one degrees, and painting it light enough to see against a dark
+  // deck turned every one into a white golf ball on a stick — there were four
+  // of them visible in one frame of the Forge. It stays in `roofClutter`,
+  // where it goes on one roof in five rather than one slot in six.
+  const kinds = ["plant", "tank", "vent", "plant", "vent", "tank"] as const;
   for (let i = 0; i < wanted; i++) {
     const [x, z] = slots[i];
     const kind = i === 0 ? "stair" : kinds[(i + Math.floor(w)) % kinds.length];
@@ -817,6 +830,89 @@ export function roofClutter(
   }
 }
 
+/** One prism in a stacked mass. */
+type Stage = { storeys: number; w: number; d: number };
+
+/**
+ * How tall a mass is stacked.
+ *
+ * Under about nine floors a commercial block is one prism, and should be: a
+ * street block with a cornice on it is exactly right and anything cleverer is
+ * noise.
+ *
+ * Above that a single prism is a slab. The Commerce Core ladder finishes at
+ * seventeen floors, and at that height the perimeter blocks were sixty metres
+ * of one extruded rectangle each — four of them round one crossroads, all the
+ * same footprint, all rising dead straight out of the pavement and stopping
+ * flat. The player's reward for the last two rungs was the same building
+ * again, taller, and the district read as a set of coloured bars rather than
+ * as downtown.
+ *
+ * Real towers of this size step. Stepping is also what gives the last rungs
+ * something to say: level four gains a shoulder and level five gains a second
+ * one, so the silhouette changes rather than just the height.
+ */
+function stagesOf(storeys: number, w: number, d: number): Stage[] {
+  if (storeys < 9) return [{ storeys, w, d }];
+  // A setback you cannot see is not worth the geometry. Two metres is about
+  // one storey's worth of depth at this camera, which is enough to throw a
+  // shadow across the shoulder and read from the far side of the district.
+  const step = Math.min(2.2, Math.min(w, d) * 0.15);
+  if (storeys < 14) {
+    const lower = Math.round(storeys * 0.62);
+    return [
+      { storeys: lower, w, d },
+      { storeys: storeys - lower, w: w - step * 2, d: d - step * 2 },
+    ];
+  }
+  const lower = Math.round(storeys * 0.44);
+  const middle = Math.round(storeys * 0.33);
+  return [
+    { storeys: lower, w, d },
+    { storeys: middle, w: w - step * 2, d: d - step * 2 },
+    { storeys: storeys - lower - middle, w: w - step * 3.6, d: d - step * 3.6 },
+  ];
+}
+
+/**
+ * The ring of roof left over where one stage steps in behind another.
+ *
+ * This is the whole point of a setback from directly above: a shoulder is a
+ * terrace, and a terrace with a rail, a duct run and a couple of units on it
+ * is what stops the step reading as a modelling accident.
+ */
+function shoulderDeck(
+  b: PartsBuilder,
+  skin: Skin,
+  w: number,
+  d: number,
+  upper: Stage,
+  y: number,
+): void {
+  b.add(M.roofFelt, box(w - 0.3, 0.14, d - 0.3), [0, y + 0.07, 0]);
+  // Parapet round the outside of the ring.
+  for (const [sx, sz, px, pz] of [
+    [w, 0.3, 0, (d - 0.3) / 2],
+    [w, 0.3, 0, -(d - 0.3) / 2],
+    [0.3, d, (w - 0.3) / 2, 0],
+    [0.3, d, -(w - 0.3) / 2, 0],
+  ] as const) {
+    b.add(skin.trim, box(sx, 0.8, sz), [px, y + 0.4, pz]);
+    b.add(M.fascia, box(sx + 0.12, 0.14, sz + 0.12), [px, y + 0.87, pz]);
+  }
+  // Plant on the widest side of the ring, and the handrail round the walkway.
+  const shelf = (w - upper.w) / 2;
+  if (shelf > 1.4) {
+    const px = (w - shelf) / 2;
+    b.add(M.ironDark, box(shelf - 0.5, 0.12, d * 0.42), [px, y + 0.2, 0]);
+    for (const oz of [-d * 0.16, d * 0.16]) {
+      b.add(M.steelPainted, bevelBox(shelf - 0.9, 0.72, 1.5, 0.06), [px, y + 0.55, oz]);
+      b.add(M.aluminium, box(shelf - 1.2, 0.05, 1.2), [px, y + 0.94, oz]);
+    }
+    b.add(M.aluminium, post(0.26, d * 0.5, 6), [-px, y + 0.7, 0], [Math.PI / 2, 0, 0]);
+  }
+}
+
 /**
  * A generic authored block. Districts call this with different proportions,
  * skins, roofs and bay counts, which is where their character comes from.
@@ -837,7 +933,15 @@ export function authoredBlock(
     /** Elevations that front a street and may carry retail at grade. */
     retail?: Faces;
     state: StateName;
-    glazedBands?: boolean;
+    /**
+     * Curtain wall instead of punched openings.
+     *
+     * `auto` bands above six floors, which is the right default downtown and
+     * wrong everywhere else: the Creator Quarter tops out at eight, so its
+     * whole top rung was turning a fine-grain brick terrace into a glass
+     * office block — the one thing the district exists not to be.
+     */
+    banding?: "auto" | "always" | "never";
     rng: Rng;
   },
 ): number {
@@ -856,25 +960,66 @@ export function authoredBlock(
   // seventeen-storey tower: it is a thousand boxes for one building, and a
   // tower has a curtain wall in real life anyway. Above six storeys the glazing
   // runs in bands, which is cheaper and more honest at once.
-  const banded = options.glazedBands || options.storeys >= 6;
+  const banding = options.banding ?? "auto";
+  const banded = banding === "always" || (banding === "auto" && options.storeys >= 6);
 
-  b.add(skin.body, bevelBox(w, h, d, 0.1), [0, h / 2, 0]);
-  facadeFrame(b, skin, w, d, h, bays, groundH, seen, banded);
+  const stages = stagesOf(options.storeys, w, d);
+  let base = 0;
+  for (const [index, stage] of stages.entries()) {
+    const first = index === 0;
+    const last = index === stages.length - 1;
+    const stageH = stage.storeys * storeyH;
+    // Only the bottom of the building stands on the street, so only the bottom
+    // of the building gets a plinth or a raised ground floor.
+    const stageGround = first ? groundH : 0;
 
-  if (banded) {
-    for (let s = 1; s < options.storeys; s++) {
-      glazingBand(b, skin, s * storeyH + storeyH * 0.5, w, d, storeyH * 0.5, bays);
+    b.add(skin.body, bevelBox(stage.w, stageH, stage.d, 0.1), [0, base + stageH / 2, 0]);
+    facadeFrame(b, skin, stage.w, stage.d, stageH, bays, stageGround, seen, banded, base, first);
+
+    if (banded) {
+      for (let s = first ? 1 : 0; s < stage.storeys; s++) {
+        glazingBand(b, skin, base + s * storeyH + storeyH * 0.5, stage.w, stage.d, storeyH * 0.5, bays);
+      }
+    } else {
+      for (const face of seen) {
+        const [faceW, across] = faceSpan(face, stage.w, stage.d);
+        const faceBays = Math.max(
+          2,
+          Math.round(bays * (faceW / w) * (face === "front" || face === "back" ? 1 : 0.8)),
+        );
+        punchedFacade(
+          b,
+          skin,
+          face,
+          faceW,
+          across,
+          stageH,
+          faceBays,
+          storeyH,
+          stageGround,
+          stage.storeys,
+          first && retail.includes(face),
+          base,
+        );
+      }
     }
+
+    base += stageH;
+    if (last) break;
+    // A cornice at the head of the stage, then the shoulder behind it. Without
+    // the cornice the upper prism looks like it has been pushed down into the
+    // lower one rather than set back off it.
+    b.add(skin.trim, box(stage.w + 0.7, 0.5, stage.d + 0.7), [0, base - 0.25, 0]);
+    b.add(M.fascia, box(stage.w + 0.9, 0.16, stage.d + 0.9), [0, base + 0.02, 0]);
+    shoulderDeck(b, skin, stage.w, stage.d, stages[index + 1], base + 0.1);
+  }
+
+  const crest = stages[stages.length - 1];
+  if (banded) {
     // A cornice, and the parapet the roof sits behind. A banded tower that just
     // stops at its top course reads as a column that has been sawn off.
-    b.add(skin.trim, box(w + 0.7, 0.5, d + 0.7), [0, h - 0.25, 0]);
-    b.add(M.fascia, box(w + 0.9, 0.16, d + 0.9), [0, h + 0.02, 0]);
-  } else {
-    for (const face of seen) {
-      const [faceW, across] = faceSpan(face, w, d);
-      const faceBays = Math.max(2, Math.round(bays * (faceW / w) * (face === "front" || face === "back" ? 1 : 0.8)));
-      punchedFacade(b, skin, face, faceW, across, h, faceBays, storeyH, groundH, options.storeys, retail.includes(face));
-    }
+    b.add(skin.trim, box(crest.w + 0.7, 0.5, crest.d + 0.7), [0, h - 0.25, 0]);
+    b.add(M.fascia, box(crest.w + 0.9, 0.16, crest.d + 0.9), [0, h + 0.02, 0]);
   }
 
   // Ground floor: the shop window where there is a street, a way in and some
@@ -893,12 +1038,12 @@ export function authoredBlock(
     shopfront(b, skin, w, d / 2 + 0.02, state);
   }
 
-  roofOf(b, skin, roof, w, d, h, rng);
+  roofOf(b, skin, roof, crest.w, crest.d, h, rng);
   // A flat top is a facade at this camera angle. The pitched and sawtooth roofs
   // are already an authored shape; the flat ones need something standing on
   // them or the building ends in a blank rectangle.
-  if (roof === "parapet" || roof === "stepped") roofscape(b, skin, w, d, h, rng, state);
-  else if (options.clutter) roofClutter(b, options.clutter, w, d, h);
+  if (roof === "parapet" || roof === "stepped") roofscape(b, skin, crest.w, crest.d, h, rng, state);
+  else if (options.clutter) roofClutter(b, options.clutter, crest.w, crest.d, h);
 
   return h;
 }

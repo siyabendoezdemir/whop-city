@@ -373,7 +373,7 @@ export function buildCommerceCore(ctx: Ctx): void {
       seen,
       retail: ["front", "back"],
       state,
-      glazedBands: slotStoreys >= 5 && rng.chance(0.7),
+      banding: slotStoreys >= 5 && rng.chance(0.7) ? "always" : "auto",
       rng,
     });
     const group = inner.build("core-block");
@@ -475,8 +475,15 @@ export function buildOfferForge(ctx: Ctx): void {
   // A works grows the way a mill grew: the block takes more frontage and more
   // depth as it takes floors, and stops at six. Everything above that is the
   // flue's job.
+  // One floor per rung, capped at six.
+  //
+  // Capping on the district's storey count alone meant the cap bit at level
+  // three and never let go: levels three, four and five all built a five-floor
+  // block, and since the shed's eave is capped too, the whole plot stood at
+  // exactly the same height for the last three rungs of the ladder. The player
+  // paid twice for a building that did not change.
   const seenFaces = facesInView(worldYaw(ctx));
-  const suStoreys = Math.min(storeys, 5);
+  const suStoreys = Math.min(storeys, ctx.level + 1, 6);
   const suW = Math.min(parcel.width * 0.44, 9.0 + suStoreys * 1.4);
   // Capped at what is left between the frontage and the shed's front wall,
   // which on a twenty-metre parcel is about seven metres.
@@ -790,21 +797,26 @@ export function buildOfferForge(ctx: Ctx): void {
       }
       local.add(M.roofZinc, post(1.5, 0.4, 12), [fx, y + eave + 1.4, fz]);
       local.add(M.steel, post(1.22, 0.7, 12), [fx, y + fh + 0.25, fz]);
-      ctx.rigs.push(makeSteamVent(toWorld(ctx, [fx, y + fh + 0.9, fz]), 1.5));
-      // Two silos against the back wall, fed by a covered conveyor. Painted,
-      // not polished: a metalness-0.7 cylinder under a sky gradient reflects
-      // the ground and comes out very nearly black, which is what turned these
-      // into a pair of dark smudges against the shed.
-      for (const ox of [-2.6, 0.2]) {
-        const sx = wsCX - wsW / 2 + 12.0 + ox;
-        local.add(M.steelPainted, post(1.15, 6.4, 12), [sx, y + 3.4, backZ - 2.6]);
-        local.add(M.aluminium, new THREE.ConeGeometry(1.2, 1.1, 12), [sx, y + 7.15, backZ - 2.6]);
-        local.add(M.steelPainted, new THREE.ConeGeometry(1.05, 1.3, 12), [sx, y + 0.55, backZ - 2.6], [Math.PI, 0, 0]);
+      ctx.rigs.push(makeSteamVent(toWorld(ctx, [fx, y + fh + 0.9, fz]), 1.1));
+      // Two silos, tight against the back wall and grouped with the flue.
+      //
+      // They used to stand two and a half metres clear of the building, on the
+      // same centre line as the flue, which put a pair of six-metre white
+      // cylinders directly in front of the only part of the shed the camera
+      // can see. Plant belongs against the wall it serves, and reading as one
+      // cluster with the chimney is what makes it plant rather than three
+      // unrelated objects arguing over the middle of the plot.
+      for (const ox of [-4.7, -2.6]) {
+        const sx = fx + ox;
+        local.add(M.steelPainted, post(0.95, 5.4, 12), [sx, y + 2.9, backZ - 0.85]);
+        local.add(M.aluminium, new THREE.ConeGeometry(1.0, 0.9, 12), [sx, y + 6.0, backZ - 0.85]);
+        local.add(M.steelPainted, new THREE.ConeGeometry(0.88, 1.1, 12), [sx, y + 0.5, backZ - 0.85], [Math.PI, 0, 0]);
         for (let i = 0; i < 3; i++) {
-          local.add(M.steel, post(0.09, 1.4, 5), [sx + (i - 1) * 0.9, y + 0.7, backZ - 3.6]);
+          local.add(M.steel, post(0.08, 1.2, 5), [sx + (i - 1) * 0.75, y + 0.6, backZ - 1.7]);
         }
       }
-      local.add(M.steelPainted, box(7.0, 0.9, 1.0), [wsCX - wsW / 2 + 10.6, y + 8.4, backZ - 2.6], [0, 0, 0.14]);
+      // Covered conveyor from the silo heads into the flue's base.
+      local.add(M.steelPainted, box(5.2, 0.8, 0.9), [fx - 3.6, y + 6.6, backZ - 0.85], [0, 0, 0.1]);
     }
   }
 
@@ -884,16 +896,30 @@ export function buildCreatorQuarter(ctx: Ctx): void {
 
   local.add(M.plaster, box(parcel.width - 1, 0.06, parcel.depth - 1), [0, y + 0.03, 0]);
 
+  // Where the built frontage starts on the park plot.
+  //
+  // Fixed at 62% of the width, the run left for building was under nine metres
+  // — one bay. At the top of the ladder that bay is eight floors, so the plot
+  // finished as a single twenty-four-metre shaft nine metres wide standing in
+  // a garden: the least building-like thing in the city, on the plot the
+  // player looks at first because it is nearest the camera.
+  //
+  // The terrace takes a little more of the green as it grows, which is what
+  // happens to a park with a successful street on it, and gets a block rather
+  // than a chimney out of the same floor area.
+  const parkFront = 0.62 - Math.min(0.14, Math.max(0, storeys - 3) * 0.028);
+
   // ------------------------------------------------------------ the park
   if (parcel.id === "creator-park") {
     // Half the plot is public green: lawn, path, trees, seating, a bandstand.
-    const gx = x0 + parcel.width * 0.32;
-    local.add(M.grass, box(parcel.width * 0.6, 0.1, parcel.depth - 3), [gx, y + 0.05, 0]);
-    local.add(M.sidewalk, box(parcel.width * 0.6, 0.06, 2.2), [gx, y + 0.1, -2]);
-    local.add(M.sidewalk, box(2.2, 0.06, parcel.depth - 4), [gx + 3, y + 0.1, 0]);
+    const lawnW = parcel.width * (parkFront - 0.02);
+    const gx = x0 + lawnW / 2;
+    local.add(M.grass, box(lawnW, 0.1, parcel.depth - 3), [gx, y + 0.05, 0]);
+    local.add(M.sidewalk, box(lawnW, 0.06, 2.2), [gx, y + 0.1, -2]);
+    local.add(M.sidewalk, box(2.2, 0.06, parcel.depth - 4), [gx + lawnW * 0.22, y + 0.1, 0]);
     for (let i = 0; i < 7; i++) {
       localProp(kit, matrix, (k, p, yw) => Prop.tree(k, p, yw, rng.range(0.95, 1.35)), [
-        rng.range(x0 + 2, gx + parcel.width * 0.26),
+        rng.range(x0 + 2, x0 + lawnW - 2),
         y + 0.1,
         rng.range(z0 + 2, z1 - 3),
       ], rng.range(0, 6));
@@ -921,7 +947,7 @@ export function buildCreatorQuarter(ctx: Ctx): void {
   // ------------------------------------------------- fine-grain live/work
   // Narrow bays, each its own skin, parapet height and roof. This grain is what
   // separates the quarter from the warehouses and the office blocks.
-  const startX = parcel.id === "creator-park" ? x0 + parcel.width * 0.62 : x0 + 1;
+  const startX = parcel.id === "creator-park" ? x0 + parcel.width * parkFront : x0 + 1;
   const runW = x1 - 1 - startX;
   // Bay width grows with the plot's height. Six and a half metres is the right
   // grain for a two-storey live/work terrace and completely wrong for a
@@ -929,7 +955,12 @@ export function buildCreatorQuarter(ctx: Ctx): void {
   // the run is only fourteen metres because half the plot is lawn — the top of
   // the ladder was a pair of lone towers standing in a garden.
   const grain = 6.5 + Math.max(0, storeys - 3) * 2.2;
-  const bayCount = Math.max(1, Math.round(runW / grain));
+  // Never below two where there is frontage for two. Growing the grain alone
+  // meant a twenty-two-metre run went from two bays at level four to one at
+  // level five: the Quarter's whole identity is a fine-grain terrace, and
+  // finishing the ladder by merging the terrace into a single block throws it
+  // away exactly where the player is looking hardest.
+  const bayCount = Math.max(runW > 15 ? 2 : 1, Math.round(runW / grain));
   const bayW = runW / bayCount;
   // A terrace: shop below and workshop above on the street, garden elevation
   // onto the mews yard behind, party walls to left and right.
@@ -943,10 +974,13 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     // grain instead of one long parapet line.
     const bayStoreys = i === 0 ? storeys : Math.max(1, storeys - rng.int(0, Math.min(2, storeys - 1)));
     const inner = new PartsBuilder();
+    // Depth grows a little with height. A bay that is seven metres wide and
+    // eleven deep is a house at two storeys and a fin at eight.
+    const bayD = parcel.depth * (0.42 + Math.max(0, storeys - 4) * 0.018);
     const h = authoredBlock(inner, {
       skin,
       w: bayW - 0.5,
-      d: parcel.depth * 0.42,
+      d: bayD,
       storeys: bayStoreys,
       storeyH,
       bays: 2,
@@ -960,18 +994,23 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       seen: seen.filter((face) => face === "front" || face === "back" || i === 0 || i === bayCount - 1),
       retail: ["front"],
       state,
+      // Brick and windows, all the way up. A live/work bay is a warehouse
+      // conversion, not a curtain wall, however many floors the business has
+      // earned it.
+      banding: "never",
       rng,
     });
     // Balcony on the upper floor — live/work signature.
     if (bayStoreys > 2 && state !== "struggling") {
-      inner.add(M.timberPale, slab(bayW - 2.0, 0.12, 1.1, 0.03), [0, h - 3.0, parcel.depth * 0.21 + 0.55]);
-      inner.add(M.ironDark, box(bayW - 2.0, 0.06, 0.06), [0, h - 2.05, parcel.depth * 0.21 + 1.05]);
+      const front = bayD / 2;
+      inner.add(M.timberPale, slab(bayW - 2.0, 0.12, 1.1, 0.03), [0, h - 3.0, front + 0.55]);
+      inner.add(M.ironDark, box(bayW - 2.0, 0.06, 0.06), [0, h - 2.05, front + 1.05]);
       for (let r = 0; r <= 5; r++) {
-        inner.add(M.ironDark, post(0.028, 0.9, 4), [-(bayW - 2.0) / 2 + ((bayW - 2.0) / 5) * r, h - 2.5, parcel.depth * 0.21 + 1.05]);
+        inner.add(M.ironDark, post(0.028, 0.9, 4), [-(bayW - 2.0) / 2 + ((bayW - 2.0) / 5) * r, h - 2.5, front + 1.05]);
       }
     }
     const group = inner.build("creator-bay");
-    group.position.set(cx, y, z1 - parcel.depth * 0.24);
+    group.position.set(cx, y, z1 - 1.2 - bayD / 2);
     group.updateMatrixWorld(true);
     group.traverse((c) => {
       if (c instanceof THREE.Mesh) local.add(c.material as THREE.Material, c.geometry.clone().applyMatrix4(c.matrixWorld));
@@ -985,7 +1024,7 @@ export function buildCreatorQuarter(ctx: Ctx): void {
   if (parcel.id !== "creator-venue") {
     const mewsZ = z0 + parcel.depth * 0.15;
     const mewsD = parcel.depth * 0.26;
-    const runX0 = parcel.id === "creator-park" ? x0 + parcel.width * 0.58 : x0 + 1.5;
+    const runX0 = parcel.id === "creator-park" ? x0 + parcel.width * parkFront - 0.5 : x0 + 1.5;
     const runX1 = x1 - 1.5;
     const units = Math.max(2, Math.round((runX1 - runX0) / 6));
     const unitW = (runX1 - runX0) / units;
@@ -1001,14 +1040,24 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       // above as a white sticker floating off the tiles.
       const fall = -0.17;
       local.add(M.roofZinc, box(unitW - 0.1, 0.16, mewsD + 0.7), [cx, y + h + 0.42, mewsZ], [fall, 0, 0]);
+      // Two rooflights in a dark kerb, rather than one warm panel.
+      //
+      // These used to be lit glass — emissive, at three-quarter strength, and
+      // facing straight up into a camera that looks straight down. A dozen of
+      // them across the quarter's mews ranges read as luminous yellow stickers
+      // stuck to the tiles, and they were the brightest thing in a district
+      // whose subject is the terrace in front of them.
       const lightZ = mewsD * 0.16;
-      local.add(
-        M.glassLit,
-        box(unitW * 0.42, 0.08, mewsD * 0.34),
-        [cx, y + h + 0.52 - Math.tan(fall) * lightZ, mewsZ + lightZ],
-        [fall, 0, 0],
-      );
-      local.add(M.aluminium, box(unitW * 0.46, 0.1, 0.12), [cx, y + h + 0.56 - Math.tan(fall) * lightZ, mewsZ + lightZ], [fall, 0, 0]);
+      const lightY = y + h + 0.5 - Math.tan(fall) * lightZ;
+      for (const ox of [-unitW * 0.19, unitW * 0.19]) {
+        local.add(M.ironDark, box(unitW * 0.3, 0.12, mewsD * 0.3), [cx + ox, lightY, mewsZ + lightZ], [fall, 0, 0]);
+        local.add(
+          state === "struggling" ? M.glassDim : M.glass,
+          box(unitW * 0.25, 0.08, mewsD * 0.25),
+          [cx + ox, lightY + 0.08, mewsZ + lightZ],
+          [fall, 0, 0],
+        );
+      }
       // Workshop door and a window onto the yard.
       const face = mewsZ + mewsD / 2 + 0.02;
       if (state === "struggling") {
@@ -1058,7 +1107,33 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     const vd = 12;
     local.add(M.brickDark, bevelBox(vw, vh, vd, 0.12), [vx, y + vh / 2, vz]);
     local.add(M.concreteDark, box(vw + 0.4, 0.8, vd + 0.4), [vx, y + 0.4, vz]);
-    local.add(M.roofZinc, wedge(vw + 0.6, 2.4, vd + 0.6), [vx, y + vh + 1.2, vz]);
+    // Monopitch, falling toward the entrance. Fourteen metres by twelve of
+    // unbroken zinc, seen from above at thirty-five degrees, is the single
+    // largest flat colour on the plot — larger than either elevation under it.
+    // A hall roof carries daylight and a ridge vent, and both of them read.
+    const rise = 2.4;
+    const roofD = vd + 0.6;
+    local.add(M.roofZinc, wedge(vw + 0.6, rise, roofD), [vx, y + vh + rise / 2, vz]);
+    const pitch = Math.atan2(rise, roofD);
+    /** The slope's surface, at a distance `dz` in front of the ridge. */
+    const onSlope = (dz: number) => y + vh + rise - (dz / roofD) * rise;
+    for (const dz of [roofD * 0.56, roofD * 0.82]) {
+      for (const ox of [-4.0, 0, 4.0]) {
+        const pz = vz - roofD / 2 + dz;
+        local.add(M.ironDark, box(2.9, 0.14, 1.9), [vx + ox, onSlope(dz) + 0.06, pz], [pitch, 0, 0]);
+        local.add(
+          state === "struggling" ? M.glassDim : M.glass,
+          box(2.6, 0.1, 1.6),
+          [vx + ox, onSlope(dz) + 0.16, pz],
+          [pitch, 0, 0],
+        );
+      }
+    }
+    // Ridge ventilator, and the gutter the pitch drains into.
+    local.add(M.roofZincWorn, box(vw - 1.0, 0.7, 1.5), [vx, y + vh + rise + 0.25, vz - roofD / 2 + 1.4]);
+    local.add(M.ironDark, box(vw - 1.4, 0.42, 1.62), [vx, y + vh + rise + 0.25, vz - roofD / 2 + 1.4]);
+    local.add(M.roofZinc, wedge(vw - 0.4, 0.5, 1.9), [vx, y + vh + rise + 0.82, vz - roofD / 2 + 1.4]);
+    local.add(M.fascia, box(vw + 0.9, 0.3, 0.34), [vx, y + vh - 0.12, vz + roofD / 2]);
 
     // An auditorium has no windows, which is exactly why the two elevations the
     // camera can see were reading as an unmodelled block: fourteen metres of

@@ -287,7 +287,11 @@ export function makeSteamVent(origin: Vec3, scale = 1): Rig {
         // produce a plume whose overall shape never changes, which reads as a
         // static grey blob however fast the individual puffs are moving.
         const wobble = Math.sin(t * 0.8 + i * 1.1 + life * 2.4) * 0.7 * scale;
-        position.set(life * 2.0 * scale + wobble, life * 5.6 * scale, life * 0.9 * scale + wobble * 0.5);
+        // Six puffs over five and a half metres left a metre of clear air
+        // between each one, so the plume read as a row of separate white balls
+        // climbing a ladder. Same puffs over three and a half metres overlap,
+        // which is the whole difference between beads and steam.
+        position.set(life * 1.6 * scale + wobble, life * 3.6 * scale, life * 0.7 * scale + wobble * 0.5);
         // Fade by size, not by colour. One shared material cannot hold six
         // opacities, and dimming instance colour instead just turns the steam
         // grey — which is exactly what it looked like.

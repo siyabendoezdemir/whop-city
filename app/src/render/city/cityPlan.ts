@@ -552,14 +552,21 @@ function vehicleGeometry(kind: VehicleKind, paint: THREE.Material): THREE.Group 
     b.add(M.tyre, new THREE.CylinderGeometry(r, r, 0.22, 10), [ox, r, oz], [0, 0, Math.PI / 2]);
 
   if (kind === "bus") {
-    b.add(paint, bevelBox(2.5, 2.5, 10.5, 0.22), [0, 1.65, 0]);
-    b.add(M.glassDim, box(2.54, 1.0, 8.4), [0, 2.25, -0.4]);
-    b.add(M.glassDim, box(2.2, 1.2, 0.1), [0, 2.2, 5.2]);
-    b.add(M.plaster, box(2.56, 0.34, 10.4), [0, 0.72, 0]);
-    b.add(M.roofZinc, box(2.3, 0.16, 10.0), [0, 2.95, 0]);
+    // Nine and a half metres, not ten and a half. These streets are six to ten
+    // metres of carriageway; a full-length coach on them is the size of the
+    // shops it drives past.
+    b.add(paint, bevelBox(2.5, 2.5, 9.4, 0.22), [0, 1.65, 0]);
+    b.add(M.glassDim, box(2.54, 1.0, 7.4), [0, 2.25, -0.4]);
+    b.add(M.glassDim, box(2.2, 1.2, 0.1), [0, 2.2, 4.65]);
+    b.add(M.plaster, box(2.56, 0.34, 9.3), [0, 0.72, 0]);
+    // Skirt down to axle height. Looking down at thirty-five degrees you see
+    // under a vehicle, and half a metre of daylight between a bus and its own
+    // shadow reads as a bus hovering over the road.
+    b.add(M.ironDark, box(2.42, 0.44, 9.0), [0, 0.44, 0]);
+    b.add(M.roofZinc, box(2.3, 0.16, 8.9), [0, 2.95, 0]);
     b.add(M.aluminium, bevelBox(1.2, 0.3, 2.0, 0.06), [0.4, 3.1, -2.4]);
-    b.add(M.signLit, box(1.5, 0.3, 0.08), [0, 2.75, 5.26]);
-    for (const oz of [-3.6, 3.4]) {
+    b.add(M.signLit, box(1.5, 0.3, 0.08), [0, 2.75, 4.71]);
+    for (const oz of [-3.2, 3.0]) {
       wheel(-1.16, oz, 0.42);
       wheel(1.16, oz, 0.42);
     }
@@ -780,7 +787,8 @@ export function buildTraffic(seed: number): Rig[] {
   }
   if (routes.length === 0) return rigs;
 
-  const position = new THREE.Vector3();
+  const front = new THREE.Vector3();
+  const rear = new THREE.Vector3();
   for (const [index, path] of routes.entries()) {
     // Long circuits carry more traffic than short ones, as they would.
     const count = Math.max(1, Math.min(4, Math.round(path.length / 150)));
@@ -789,12 +797,26 @@ export function buildTraffic(seed: number): Rig[] {
       const group = vehicleGeometry(kind, rng.pick(PAINTS));
       const speed = rng.range(6.5, 9.5) * (kind === "bus" || kind === "truck" ? 0.8 : 1);
       const start = path.length * ((i + rng.range(0.02, 0.3)) / count) + index * 11;
+      // Half the wheelbase. A vehicle used to be put at one point on its lane
+      // and turned to that point's tangent, which is fine on a straight and
+      // wrong on a corner: a junction turn is a seven-metre arc, and a rigid
+      // body laid along the tangent at the middle of an arc has both its ends
+      // swung wide of it. On a nine-metre bus that is two metres of overhang at
+      // each end, and what the player saw was a coach parked diagonally across
+      // the footway at every crossroads in the city.
+      //
+      // Spanning two samples half a wheelbase apart puts the axles on the line
+      // the vehicle is driving and lets the middle cut in, which is what a long
+      // vehicle actually does.
+      const half = AXLES[kind] / 2;
       rigs.push({
         group,
         update: (t: number) => {
-          const heading = sample(path, start + t * speed, position);
-          group.position.copy(position);
-          group.rotation.y = heading;
+          const at = start + t * speed;
+          sample(path, at + half, front);
+          sample(path, at - half, rear);
+          group.position.addVectors(front, rear).multiplyScalar(0.5);
+          group.rotation.y = Math.atan2(front.x - rear.x, front.z - rear.z);
         },
       });
     }
@@ -802,6 +824,15 @@ export function buildTraffic(seed: number): Rig[] {
 
   return rigs;
 }
+
+/** Axle-to-axle, per body. Only used to sit a vehicle on the lane it is on. */
+const AXLES: Record<VehicleKind, number> = {
+  car: 3.0,
+  hatch: 2.4,
+  pickup: 3.0,
+  bus: 7.0,
+  truck: 5.4,
+};
 
 function reverse(circuit: Circuit): Circuit {
   return { points: [...circuit.points].reverse(), legs: [...circuit.legs].reverse() };
@@ -1088,20 +1119,56 @@ export function buildSurroundings(seed: number): THREE.Group {
     // brings its own forecourt. Without it a nine-storey office grows straight
     // out of a meadow.
     b.add(M.sidewalk, box(blk.w + 7, 0.2, blk.d + 7), [blk.x, base - 0.06, blk.z]);
-    b.add(rng.pick(bodies), box(blk.w, blk.h, blk.d), [blk.x, base + blk.h / 2, blk.z]);
-    b.add(M.fascia, box(blk.w + 0.3, 0.34, blk.d + 0.3), [blk.x, base + blk.h + 0.08, blk.z]);
-    // A dark deck sitting proud of the parapet. Without it the lit top face of
-    // every box reads as a white slab and the massing glares.
-    b.add(M.gravel, box(blk.w - 0.25, 0.24, blk.d - 0.25), [blk.x, base + blk.h + 0.2, blk.z]);
+    const body = rng.pick(bodies);
+    b.add(body, box(blk.w, blk.h, blk.d), [blk.x, base + blk.h / 2, blk.z]);
     b.add(M.concreteDark, box(blk.w + 0.15, 0.75, blk.d + 0.15), [blk.x, base + 0.37, blk.z]);
+
+    // The low rows are the ones the ring road runs in front of, which puts them
+    // in the near foreground of the default framing. They used to be finished
+    // exactly like the far-bank towers — a flat gravel deck behind a white
+    // parapet — and at four metres tall, twenty metres from the camera, that
+    // reads as a cardboard box with a lid. A shallow pitch and a ridge is both
+    // cheaper than a parapet and the correct building.
+    const low = blk.h < 8;
+    if (low) {
+      // Pitched, and not all the same pitch. A row of these runs the whole
+      // width of the near foreground, so one roof shape repeated eight times
+      // along the bottom of the frame is a tiling pattern rather than a
+      // street.
+      const slate = rng.pick([M.roofZinc, M.roofZincWorn, M.roofSheet]);
+      const turn = rng.chance(0.5) ? Math.PI : 0;
+      if (rng.chance(0.72)) {
+        b.add(slate, wedge(blk.w + 0.7, 1.5, blk.d + 0.7), [blk.x, base + blk.h + 0.75, blk.z], [0, turn, 0]);
+        b.add(M.fascia, box(blk.w + 0.8, 0.22, 0.24), [
+          blk.x,
+          base + blk.h + 0.06,
+          blk.z + (turn ? -1 : 1) * ((blk.d + 0.7) / 2),
+        ]);
+      } else {
+        b.add(M.fascia, box(blk.w + 0.4, 0.3, blk.d + 0.4), [blk.x, base + blk.h + 0.1, blk.z]);
+        b.add(M.gravel, box(blk.w - 0.3, 0.22, blk.d - 0.3), [blk.x, base + blk.h + 0.2, blk.z]);
+        b.add(slate, box(blk.w * 0.3, 0.7, blk.d * 0.4), [blk.x + blk.w * 0.24, base + blk.h + 0.55, blk.z]);
+      }
+    } else {
+      b.add(M.fascia, box(blk.w + 0.3, 0.34, blk.d + 0.3), [blk.x, base + blk.h + 0.08, blk.z]);
+      // A dark deck sitting proud of the parapet. Without it the lit top face
+      // of every box reads as a white slab and the massing glares.
+      b.add(M.gravel, box(blk.w - 0.25, 0.24, blk.d - 0.25), [blk.x, base + blk.h + 0.2, blk.z]);
+    }
+
+    // Storey lines. Two boxes per floor serve all four elevations, and the
+    // spandrel behind them is what stops pale glass on a pale body reading as
+    // a smudge — the same fix the authored blocks needed.
     const floors = Math.max(1, Math.floor((blk.h - 1.6) / 2.7));
     for (let f = 0; f < floors; f++) {
       const y = base + 2.0 + f * 2.7;
       if (y > base + blk.h - 0.9) break;
+      b.add(M.ironDark, box(blk.w * 0.84, 1.34, blk.d + 0.02), [blk.x, y, blk.z]);
+      b.add(M.ironDark, box(blk.w + 0.02, 1.34, blk.d * 0.84), [blk.x, y, blk.z]);
       b.add(M.glassDim, box(blk.w * 0.8, 1.1, blk.d + 0.06), [blk.x, y, blk.z]);
       b.add(M.glassDim, box(blk.w + 0.06, 1.1, blk.d * 0.8), [blk.x, y, blk.z]);
     }
-    if (rng.chance(0.5)) {
+    if (!low && rng.chance(0.6)) {
       const rw = blk.w * rng.range(0.22, 0.4);
       const rh = rng.range(0.9, 2.4);
       b.add(M.aluminium, box(rw, rh, blk.d * 0.3), [

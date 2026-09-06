@@ -92,9 +92,30 @@ export const M = {
   plaster: standard("#e6ddcd", 0.88),
 
   // ------------------------------------------------------------- roofing
-  roofZinc: standard("#6c7683", 0.62, 0.35),
-  roofZincWorn: standard("#5d646d", 0.85, 0.2),
-  roofFelt: standard("#4c4a48", 0.95),
+  //
+  // The camera looks down at thirty-one degrees, which makes roofs somewhere
+  // near half of everything on screen — more than that over the sheds and the
+  // mews, where the pitch is the building. They were the darkest surfaces in
+  // the palette and carried enough metalness to mirror the sky, so a zinc
+  // pitch came out a near-black navy and every shed, hall and mews range in
+  // the city read as a hole with walls round it.
+  //
+  // Lifted about fifteen per cent in value and taken most of the way off
+  // metal. Still clearly the cool half of the palette against warm brick and
+  // render — the roofs are meant to be slate, not silver — but now inside the
+  // range the rest of the city occupies rather than under it.
+  roofZinc: standard("#828d9b", 0.72, 0.14),
+  roofZincWorn: standard("#6f757e", 0.88, 0.1),
+  roofFelt: standard("#5c5a57", 0.95),
+  /**
+   * Profiled sheeting, for the big industrial decks.
+   *
+   * A sawtooth over a fourteen-metre shed is the largest single plane on the
+   * Offer Forge, and putting slate on it made the whole district read as
+   * derelict. Factory roofs are pale galvanised sheet, which is also what
+   * keeps the sawtooth's own glazing legible against it.
+   */
+  roofSheet: standard("#9ba1a6", 0.8, 0.06),
   fascia: standard("#f6f1e6", 0.8),
 
   // --------------------------------------------------------------- metal
@@ -245,6 +266,7 @@ export function applySurfaceDetail(): void {
   // Roofs and metalwork.
   assign(M.roofZinc, ribs);
   assign(M.roofZincWorn, ribs);
+  assign(M.roofSheet, ribs);
   assign(M.roofFelt, grain);
   assign(M.shutter, ribs);
 
