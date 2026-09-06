@@ -2,15 +2,22 @@
  * The city, as a set of buildings you level up with your real business.
  *
  * There is no invented currency here and there is no simulated economy. A
- * building's next level costs a **real Whop number** — five customers, three
- * products, an affiliate programme at twenty percent — and the only way to pay
- * it is to actually go and grow the business. That is the whole game: the city
- * is the scoreboard and your Whop account is the controller.
+ * building's next level costs a **real Whop number** — a thousand in revenue,
+ * fifty members, two hundred visitors — and the only way to pay it is to
+ * actually go and grow the business. That is the whole game: the city is the
+ * scoreboard and your Whop account is the controller.
  *
- * Eligibility is real and cannot be faked. Claiming an unlocked level is a
- * click, kept in this browser, so the moment of upgrading is yours to take
- * when you want it — the satisfying part of Clash of Clans is pressing the
- * button, not being told it happened.
+ * One resource per district, which is the rule that makes the skyline readable
+ * from the water:
+ *
+ *   **Commerce Core** rises with revenue. Downtown is money.
+ *   **Offer Forge** rises with recurring revenue. The forge makes the thing
+ *   that pays again next month.
+ *   **Creator Quarter** rises with people — the members who live there and the
+ *   visitors who walk through.
+ *
+ * So a business with good revenue and no recurring gets a downtown and an
+ * empty forge, and can see that from the wide shot without reading a word.
  */
 
 import type { CityMetrics } from "../city/projection";
@@ -22,36 +29,32 @@ export type Resource = (typeof RESOURCES)[number];
 
 export const RESOURCE: Record<
   Resource,
-  { name: string; one: string; many: string; prefix?: string; tone: string; blurb: string }
+  { name: string; unit: string; prefix?: string; tone: string; blurb: string }
 > = {
   gold: {
     name: "Gold",
-    one: "in revenue",
-    many: "in revenue",
+    unit: "in revenue this month",
     prefix: "$",
     tone: "gold",
     blurb: "Everything the business took this month.",
   },
   citizens: {
     name: "Citizens",
-    one: "member",
-    many: "members",
+    unit: "paying members",
     tone: "green",
     blurb: "People paying you right now. They live here.",
   },
   traffic: {
     name: "Footfall",
-    one: "visitor",
-    many: "visitors",
+    unit: "visitors today",
     tone: "violet",
     blurb: "People who came through today.",
   },
   recurring: {
     name: "Reserve",
-    one: "a month",
-    many: "a month",
+    unit: "a month, recurring",
     prefix: "$",
-    tone: "dark",
+    tone: "blue",
     blurb: "The part that comes back on its own every month.",
   },
 };
@@ -70,88 +73,81 @@ export type Building = {
    *
    * Five rungs. The first is deliberately within reach of a business that has
    * just opened, so the city starts moving on day one, and the last is a real
-   * milestone rather than a formality.
+   * milestone rather than a formality. Plots inside one district are staggered
+   * so they do not all light up on the same afternoon.
    */
   readonly ladder: readonly [number, number, number, number, number];
 };
 
-/**
- * Eleven buildings on the eleven authored parcels.
- *
- * Spread across all four resources on purpose: a business that only drives
- * traffic still watches most of its city stand still, which is the nudge. The
- * ladders are absolute figures rather than counts of objects, so they mean the
- * same thing to a newsletter, a coaching programme and a software product.
- */
 export const BUILDINGS: readonly Building[] = [
-  // ---------------------------------------------------- Commerce Core
+  // ------------------------------------- Commerce Core — revenue, this month
   {
     id: "core-landmark",
     district: "commerce-core",
     name: "The Treasury",
-    role: "Rises with everything the business takes.",
+    role: "The tower downtown. It is as tall as the month was good.",
     resource: "gold",
-    ladder: [1, 100, 1_000, 10_000, 100_000],
+    ladder: [100, 1_000, 5_000, 25_000, 100_000],
   },
   {
     id: "core-north",
     district: "commerce-core",
     name: "Grand Exchange",
-    role: "One floor for every hundred a month you can count on.",
-    resource: "recurring",
-    ladder: [1, 100, 1_000, 10_000, 50_000],
+    role: "Trading floors, one per order of magnitude.",
+    resource: "gold",
+    ladder: [250, 2_000, 10_000, 50_000, 200_000],
   },
   {
     id: "core-east",
     district: "commerce-core",
     name: "Merchant Row",
-    role: "Shopfronts fill as the members do.",
-    resource: "citizens",
-    ladder: [1, 10, 100, 1_000, 10_000],
+    role: "The first block to go up when money starts arriving.",
+    resource: "gold",
+    ladder: [50, 500, 2_500, 12_000, 50_000],
   },
   {
     id: "core-southeast",
     district: "commerce-core",
     name: "Counting House",
-    role: "Keeps the books, and grows with them.",
+    role: "The last block to go up. It only opens for a serious month.",
     resource: "gold",
-    ladder: [50, 500, 5_000, 50_000, 250_000],
+    ladder: [500, 4_000, 20_000, 80_000, 300_000],
   },
 
-  // ------------------------------------------------------ Offer Forge
+  // ------------------------------- Offer Forge — recurring revenue, per month
   {
     id: "forge-hero",
     district: "offer-forge",
     name: "The Mint",
-    role: "Where recurring money is struck.",
+    role: "Where money that comes back on its own is struck.",
     resource: "recurring",
-    ladder: [10, 250, 2_500, 25_000, 100_000],
+    ladder: [50, 500, 2_500, 10_000, 50_000],
   },
   {
     id: "forge-north",
     district: "offer-forge",
-    name: "Foundry",
-    role: "Runs hotter the more comes through the gates.",
-    resource: "traffic",
-    ladder: [5, 50, 500, 5_000, 25_000],
+    name: "The Foundry",
+    role: "Runs hotter the more of the book renews itself.",
+    resource: "recurring",
+    ladder: [150, 1_200, 6_000, 25_000, 100_000],
   },
   {
     id: "forge-south",
     district: "offer-forge",
     name: "The Vault",
-    role: "As deep as the book is big.",
-    resource: "gold",
-    ladder: [500, 5_000, 25_000, 100_000, 1_000_000],
+    role: "Opens the day something first renews without you.",
+    resource: "recurring",
+    ladder: [25, 250, 1_200, 6_000, 30_000],
   },
 
-  // -------------------------------------------------- Creator Quarter
+  // ------------------------------------- Creator Quarter — the people
   {
     id: "creator-park",
     district: "creator-quarter",
     name: "The Gates",
-    role: "Widen for every visitor who walks through.",
+    role: "Widen for every visitor who walks through today.",
     resource: "traffic",
-    ladder: [1, 25, 250, 2_500, 20_000],
+    ladder: [25, 150, 750, 3_000, 15_000],
   },
   {
     id: "creator-terrace",
@@ -159,23 +155,23 @@ export const BUILDINGS: readonly Building[] = [
     name: "Signal Tower",
     role: "Reaches further the more people find you.",
     resource: "traffic",
-    ladder: [10, 100, 1_000, 10_000, 50_000],
+    ladder: [60, 400, 2_000, 8_000, 40_000],
   },
   {
     id: "creator-venue",
     district: "creator-quarter",
-    name: "Amphitheatre",
-    role: "Fills up as the crowd does.",
+    name: "The Amphitheatre",
+    role: "Fills up as the membership does.",
     resource: "citizens",
-    ladder: [5, 50, 500, 5_000, 25_000],
+    ladder: [5, 50, 250, 1_000, 5_000],
   },
   {
     id: "creator-struggling",
     district: "creator-quarter",
-    name: "The Quarter",
-    role: "A home for everyone who stayed.",
+    name: "The Terraces",
+    role: "Homes for everyone who stayed.",
     resource: "citizens",
-    ladder: [25, 250, 2_500, 20_000, 100_000],
+    ladder: [15, 120, 600, 2_500, 12_000],
   },
 ];
 
@@ -249,7 +245,7 @@ export type Tier = {
  * bigger number.
  */
 export const TIERS: readonly Tier[] = [
-  { level: 1, name: "Landing", at: 0, blurb: "A few buildings and a lot of empty ground." },
+  { level: 1, name: "Landing", at: 0, blurb: "Empty ground and a good view." },
   { level: 2, name: "Township", at: 6, blurb: "Streets with something on them." },
   { level: 3, name: "Borough", at: 14, blurb: "Mid-rise, and busy with it." },
   { level: 4, name: "Downtown", at: 26, blurb: "Towers going up on every block." },

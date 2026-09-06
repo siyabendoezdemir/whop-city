@@ -1,5 +1,5 @@
 import type { CityMetrics } from "../city/projection";
-import { NO_STATS, type BusinessStats } from "./stats";
+import { NO_STATS, statsReadable, type BusinessStats } from "./stats";
 
 /**
  * The privacy boundary.
@@ -214,6 +214,10 @@ export type Audience = "public" | "owner";
  * whether the read worked, not the numbers.
  */
 function metricsFor(stats: BusinessStats): CityMetrics {
+  // A read that answered nothing is not a business with nothing in it. Saying
+  // so is what stops an owner staring at four noughts and concluding the game
+  // is broken when the truth is that Whop refused the question.
+  if (!statsReadable(stats)) return { ...ZERO_METRICS, source: "unreadable" };
   const whole = (value: number | null | undefined) => Math.max(0, Math.round(value ?? 0));
   return {
     gold: whole(stats.revenue?.now),

@@ -29,7 +29,7 @@ import { fixtureSnapshot, fixtureStats } from "./fixtures";
 import { DEFAULT_SCENARIO, resolveScenario } from "./scenarios";
 import { toPublicProjection, type Audience } from "./project";
 import { readStats } from "./stats";
-import { audienceFor } from "./viewer";
+import { viewerFor } from "./viewer";
 import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
 import { captureSnapshot } from "./snapshot";
 import { withSingleFlight } from "./snapshotCache";
@@ -124,6 +124,7 @@ async function buildProjection(
   env: Env,
   scenario: string | null,
   audience: Audience = "public",
+  viewing: string | null = null,
 ): Promise<PublicCityProjection> {
   const source = resolveSource(env);
 
@@ -169,8 +170,9 @@ async function buildProjection(
   // The stats read is what the game runs on, and it is separate from the
   // snapshot on purpose: a business with no products still has traffic, and a
   // stats node that will not answer should cost that one figure rather than
-  // the whole city. It is only performed for a viewer entitled to the numbers.
-  const stats = audience === "owner" ? await readStats(env) : undefined;
+  // the whole city. It is only performed for a viewer entitled to the numbers,
+  // and it names the business rather than letting the credential pick one.
+  const stats = audience === "owner" ? await readStats(env, viewing ?? accountId) : undefined;
   return toPublicProjection(capture.snapshot, seed, now, audience, stats);
 }
 
@@ -189,13 +191,15 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
 
     // Who is asking decides whether the figures cross. Public unless Whop
     // vouches for an admin of this very business.
-    const audience = await audienceFor(request, env);
+    const viewer = await viewerFor(request, env);
+    const audience = viewer.audience;
 
     const projection = await withSingleFlight(
-      // The audience is part of the key: an owner's city and a visitor's city
-      // are different documents and must never share a cache entry.
-      `${deploymentKey(env, source)}|${scenario ?? ""}|${audience}`,
-      () => buildProjection(env, scenario, audience),
+      // The audience and the business being read are both part of the key: an
+      // owner's city and a visitor's city are different documents, and so are
+      // two owners' cities, and none of them may share a cache entry.
+      `${deploymentKey(env, source)}|${scenario ?? ""}|${audience}|${viewer.viewing ?? ""}`,
+      () => buildProjection(env, scenario, audience, viewer.viewing),
       // An unavailable city is a failure with a face on it. Keeping it for the
       // window would pin a transient upstream problem in place; the next
       // request retries, while callers already waiting share this attempt.

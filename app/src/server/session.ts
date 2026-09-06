@@ -19,13 +19,47 @@ const COOKIE = "city_session";
 /** Long enough to play, short enough that admin rights are rechecked often. */
 const LIFETIME_MS = 60 * 60 * 1000;
 
+/** One of the signed-in user's businesses, as the profile menu needs it. */
+export type Shop = { readonly id: string; readonly name: string };
+
 export type Session = {
   readonly userId: string;
   /** The business they were an admin of. Must match the deployment's own. */
   readonly accountId: string;
+  /**
+   * What to call the player. Read once at sign-in from the `profile` scope so
+   * the interface can greet somebody by name instead of showing them a
+   * "Sign out" link and calling that a profile.
+   */
+  readonly name?: string;
+  /**
+   * The businesses this user runs, as Whop listed them at sign-in.
+   *
+   * Somebody with several Whops needs to know which one the city is about,
+   * and be able to say. Names and ids only, capped, and never served to
+   * anyone but the signed-in user themselves.
+   */
+  readonly shops?: readonly Shop[];
+  /**
+   * Which of them the city is currently depicting.
+   *
+   * Defaults to the deployment's own business, which is the only one a hosted
+   * Website's credential is guaranteed to be able to read.
+   */
+  readonly viewing?: string;
   readonly issuedAt: number;
   readonly expiresAt: number;
 };
+
+/** Keeps the cookie small and bounded whatever Whop returns. */
+export const MAX_SHOPS = 8;
+
+export function trimShops(shops: readonly Shop[]): Shop[] {
+  return shops
+    .filter((shop) => typeof shop.id === "string" && shop.id.length > 0)
+    .slice(0, MAX_SHOPS)
+    .map((shop) => ({ id: shop.id, name: String(shop.name ?? "").slice(0, 48) || shop.id }));
+}
 
 const encoder = new TextEncoder();
 
@@ -64,9 +98,18 @@ export async function mintSession(
   userId: string,
   accountId: string,
   secret: string,
+  extra: { name?: string; shops?: readonly Shop[]; viewing?: string } = {},
   now = Date.now(),
 ): Promise<string> {
-  const session: Session = { userId, accountId, issuedAt: now, expiresAt: now + LIFETIME_MS };
+  const session: Session = {
+    userId,
+    accountId,
+    issuedAt: now,
+    expiresAt: now + LIFETIME_MS,
+    ...(extra.name ? { name: extra.name.slice(0, 48) } : {}),
+    ...(extra.shops && extra.shops.length > 0 ? { shops: trimShops(extra.shops) } : {}),
+    ...(extra.viewing ? { viewing: extra.viewing } : {}),
+  };
   const body = base64url(encoder.encode(JSON.stringify(session)));
   const signature = base64url(await crypto.subtle.sign("HMAC", await key(secret), encoder.encode(body)));
   return `${body}.${signature}`;
@@ -109,6 +152,21 @@ export async function readSession(
   } catch {
     return null;
   }
+}
+
+/**
+ * Which business this session is looking at.
+ *
+ * Always one the session itself listed, and otherwise the deployment's own.
+ * A caller cannot name a business: the id has to have come back from Whop on
+ * this user's own sign-in, or it is not honoured.
+ */
+export function viewingOf(session: Session): string {
+  if (!session.viewing) return session.accountId;
+  if (session.viewing === session.accountId) return session.accountId;
+  return session.shops?.some((shop) => shop.id === session.viewing)
+    ? session.viewing
+    : session.accountId;
 }
 
 export function sessionCookie(value: string, maxAgeSeconds: number): string {

@@ -402,6 +402,33 @@ export async function readProductDetail(
 }
 
 /**
+ * GET /api/v1/companies/{id}
+ *
+ * What the business is called, so the interface can say which Whop the city is
+ * reading instead of leaving somebody with several of them to guess. A name
+ * and a public route, nothing else: no balance, no owner, no contact details,
+ * and never anything from this response reaches the public projection — it is
+ * served only on the owner's own gated endpoint.
+ */
+export async function readAccountName(
+  env: Env,
+  accountId: string,
+): Promise<Read<{ name: string; route: string | null }>> {
+  const read = await readJson<unknown>(env, `/api/v1/companies/${encodeURIComponent(accountId)}`);
+  if (!read.ok) return FAILED;
+  const body = read.data;
+  if (!isObject(body)) return FAILED;
+
+  // The field has been seen as both `title` and `name` depending on surface.
+  const name = [body.title, body.name].find(isNonEmptyString);
+  if (!name) return FAILED;
+  return {
+    ok: true,
+    data: { name: name.slice(0, 60), route: isNonEmptyString(body.route) ? body.route : null },
+  };
+}
+
+/**
  * GET /api/v1/apps/{id}
  *
  * Used only to learn which business the deployment belongs to. A Blueprint

@@ -63,16 +63,28 @@ export function parcelMatrix(parcel: Parcel): THREE.Matrix4 {
   );
 }
 
-/** Bakes a locally-authored builder into a world-space one. */
-export function emitLocal(target: PartsBuilder, local: PartsBuilder, matrix: THREE.Matrix4): void {
+/**
+ * Bakes a locally-authored builder into a world-space one.
+ *
+ * Returns the highest point of what was emitted. That number is not decoration:
+ * the attention marker that floats over a plot is placed from it, so the marker
+ * clears the actual roof rather than a height somebody predicted. Predicting it
+ * is what made markers sit inside chimneys and behind fly towers.
+ */
+export function emitLocal(target: PartsBuilder, local: PartsBuilder, matrix: THREE.Matrix4): number {
   const group = local.build("local");
   group.applyMatrix4(matrix);
   group.updateMatrixWorld(true);
+  let top = Number.NEGATIVE_INFINITY;
   group.traverse((child) => {
     if (child instanceof THREE.Mesh) {
-      target.add(child.material as THREE.Material, child.geometry.clone().applyMatrix4(child.matrixWorld));
+      const placed = child.geometry.clone().applyMatrix4(child.matrixWorld);
+      placed.computeBoundingBox();
+      if (placed.boundingBox) top = Math.max(top, placed.boundingBox.max.y);
+      target.add(child.material as THREE.Material, placed);
     }
   });
+  return Number.isFinite(top) ? top : 0;
 }
 
 /** Places an instanced prop given in parcel-local coordinates. */

@@ -1,18 +1,25 @@
 /**
  * Where the game meets the world.
  *
- * The authored parcel layout is the board. Each parcel is a plot the player
- * develops, and a plot's level is drawn using the states the city renderer
- * already knows how to build — so the game shows up in the approved
- * architecture rather than in a new set of models bolted on beside it.
+ * The authored parcel layout is the board. Each parcel is a plot, and a plot's
+ * **level** is the one number the renderer needs: it decides whether there is
+ * anything standing there at all and, if there is, how tall it is.
  *
- * The ladder, and why each rung looks the way it does:
+ * The ladder, and what it looks like from the street:
  *
- *   0          bare ground, exactly as an undeveloped parcel looks today
- *   derelict   standing, desaturated, shutters down and signs dead
- *   1          scaffolding: something going up
- *   2          finished and lit
- *   3          finished, lit, and crowned — the works layer adds the landmark
+ *   0   vacant ground — hoarding, gravel, weeds, a board saying what could go
+ *       here. A brand new city is entirely this, which is the point: the
+ *       skyline is something the business builds, not something it is handed.
+ *   1   a small building, still part-scaffolded
+ *   2   finished, low-rise
+ *   3   mid-rise
+ *   4   high-rise
+ *   5   a tower with a crown on it
+ *
+ * Heights live here rather than in the renderer because two other things need
+ * to agree with them: the attention marker that floats over a building has to
+ * clear its roof, and the camera has to know how much air a district occupies.
+ * One table, three readers, no drift.
  */
 
 import type { StateName } from "../render/city/districts/buildings";
@@ -46,13 +53,68 @@ export function plotSite(parcelId: string): { x: number; z: number; width: numbe
   return { x: parcel.centre.x, z: parcel.centre.z, width: parcel.width, depth: parcel.depth };
 }
 
+// ---------------------------------------------------------------------------
+// Massing
+// ---------------------------------------------------------------------------
+
 /**
- * A building's level, as the renderer draws it.
+ * Storeys per level, per district.
  *
- * Level nought is bare ground, level one is scaffolding going up, and from two
- * the building is finished and lit. Above that the works layer keeps growing
- * the tower, which is where the skyline comes from — the architecture below it
- * is the approved city and is not touched.
+ * Three different curves on purpose. Downtown is where the skyline comes from,
+ * so Commerce Core climbs hardest; the Forge is a working district of sheds
+ * and stacks and stays broad; the Quarter is in the foreground, so it is held
+ * low or it would stand in front of everything behind it. Grown all the way,
+ * the three read as a city with a downtown rather than as eleven towers.
+ */
+const STOREYS: Record<DistrictId, readonly number[]> = {
+  "commerce-core": [0, 3, 5, 8, 12, 17],
+  "offer-forge": [0, 2, 3, 5, 7, 10],
+  "creator-quarter": [0, 2, 3, 4, 6, 8],
+};
+
+/** Floor-to-floor, per district. Commercial floors are taller than live/work. */
+export const STOREY_HEIGHT: Record<DistrictId, number> = {
+  "commerce-core": 3.4,
+  "offer-forge": 3.2,
+  "creator-quarter": 3.0,
+};
+
+/** How many storeys stand on this plot at this level. Zero means vacant. */
+export function storeysFor(parcelId: string, level: number): number {
+  const ladder = STOREYS[districtOfPlot(parcelId)];
+  return ladder[Math.max(0, Math.min(ladder.length - 1, Math.round(level)))];
+}
+
+/** The top of the main mass, in world units above the parcel's ground. */
+export function massHeight(parcelId: string, level: number): number {
+  return storeysFor(parcelId, level) * STOREY_HEIGHT[districtOfPlot(parcelId)];
+}
+
+/**
+ * How much roof sits on top of the mass.
+ *
+ * Parapets, plant, a pitched cap, and on a finished plot the crown. Generous
+ * rather than exact: this is what a floating marker clears, and a marker that
+ * clips through a roof is worse than one that sits slightly high.
+ */
+function roofAllowance(level: number): number {
+  if (level <= 0) return 0;
+  return level >= 5 ? 11 : 3.2;
+}
+
+/** Everything below a floating marker: mass, roof, and a little air. */
+export function skylineTop(parcelId: string, level: number): number {
+  const parcel = PARCELS.find((entry) => entry.id === parcelId);
+  const ground = parcel?.level ?? 0;
+  if (level <= 0) return ground + 2.2;
+  return ground + massHeight(parcelId, level) + roofAllowance(level);
+}
+
+/**
+ * A building's level, as the renderer draws its skin.
+ *
+ * Level nought is bare ground; level one is a site with the frame still going
+ * up; from two the building is finished and lit.
  */
 export function stateOfLevel(level: number): StateName {
   if (level <= 0) return "dormant";
@@ -60,7 +122,14 @@ export function stateOfLevel(level: number): StateName {
   return "healthy";
 }
 
-/** The whole board as the renderer wants it. */
+/** Every plot's level, defaulted, in the shape the renderer wants. */
+export function levelsOf(levels: Readonly<Record<string, number>>): Record<string, number> {
+  const plan: Record<string, number> = {};
+  for (const parcel of PARCELS) plan[parcel.id] = Math.max(0, Math.round(levels[parcel.id] ?? 0));
+  return plan;
+}
+
+/** The whole board as states, for anything that still speaks that language. */
 export function levelPlan(levels: Readonly<Record<string, number>>): Record<string, StateName> {
   const plan: Record<string, StateName> = {};
   for (const parcel of PARCELS) plan[parcel.id] = stateOfLevel(levels[parcel.id] ?? 0);

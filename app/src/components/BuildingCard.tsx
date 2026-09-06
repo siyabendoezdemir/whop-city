@@ -1,14 +1,18 @@
 import { MAX_LEVEL, RESOURCE, money } from "../game/buildings";
 import type { BuildingView } from "../game/city";
-import { ResourceIcon } from "./ResourceBar";
+import { ResourceIcon, UpMark } from "./Icons";
 
 /**
  * One building, and the button.
  *
  * The requirement is the loudest thing on it, because the requirement is the
- * game: *this needs five customers, you have three*. The bar fills as the
- * business grows, and when it is full the button turns green and asks to be
- * pressed. Nothing upgrades itself — pressing it is the point.
+ * game: *this needs a thousand in revenue, you have six hundred*. The bar
+ * fills as the business grows, and when it is full the button turns green and
+ * asks to be pressed. Nothing upgrades itself — pressing it is the point.
+ *
+ * The row of level pips at the top is the whole ladder at a glance, so a
+ * player can see they are three of five into a building without doing
+ * arithmetic on two numbers.
  */
 
 type Props = {
@@ -17,18 +21,13 @@ type Props = {
   onClose: () => void;
 };
 
-function plural(n: number, resource: BuildingView["building"]["resource"]) {
-  const words = RESOURCE[resource];
-  return n === 1 ? words.one : words.many;
-}
-
 export function BuildingCard({ view, onUpgrade, onClose }: Props) {
   const { building, level, need, has, short: shortfall, progress, maxed, ready } = view;
   const words = RESOURCE[building.resource];
   const state = maxed ? "maxed" : ready > 0 ? "ready" : "waiting";
 
   return (
-    <aside className="card" data-building={building.id} data-level={level} data-state={state}>
+    <aside className="card" data-building={building.id} data-level={level} data-state={state} data-testid="building-card">
       <header className="card__head">
         <span className="card__badge" data-level={level} aria-label={`Level ${level}`}>
           {level}
@@ -42,17 +41,21 @@ export function BuildingCard({ view, onUpgrade, onClose }: Props) {
         </button>
       </header>
 
+      <span className="card__pips" aria-hidden="true">
+        {Array.from({ length: MAX_LEVEL }, (_, index) => (
+          <i key={index} data-on={index < level} data-ready={index >= level && index < level + ready} />
+        ))}
+      </span>
+
       <div className="card__body">
         {maxed ? (
-          <div className="req">
-            <p className="req__short">
-              Built as high as it goes. Level {MAX_LEVEL} of {MAX_LEVEL}.
-            </p>
-          </div>
+          <p className="req__short req__short--done">
+            Built as high as it goes. Level {MAX_LEVEL} of {MAX_LEVEL}.
+          </p>
         ) : (
           <div className="req">
             <p className="req__line">
-              <span className="res__icon" aria-hidden="true">
+              <span className="req__icon" aria-hidden="true">
                 <ResourceIcon resource={building.resource} />
               </span>
               <span className="req__count" data-testid="have">
@@ -61,7 +64,7 @@ export function BuildingCard({ view, onUpgrade, onClose }: Props) {
               <span className="req__of" data-testid="need">
                 / {money(building.resource, need!)}
               </span>
-              <span>{words.name.toLowerCase()}</span>
+              <span className="req__unit">{words.unit}</span>
             </p>
 
             <span className="req__bar" role="img" aria-label={`${Math.round(progress * 100)}% toward level ${level + 1}`}>
@@ -71,8 +74,8 @@ export function BuildingCard({ view, onUpgrade, onClose }: Props) {
             <p className="req__short">
               {shortfall > 0 ? (
                 <>
-                  Level {level + 1} needs <strong>{money(building.resource, need!)}</strong> — {money(building.resource, shortfall)}{" "}
-                  {plural(shortfall, building.resource)} to go.
+                  <strong>{money(building.resource, shortfall)}</strong> more {words.unit} and level{" "}
+                  {level + 1} is yours.
                 </>
               ) : (
                 <>Level {level + 1} is paid for. Take it.</>
@@ -89,7 +92,8 @@ export function BuildingCard({ view, onUpgrade, onClose }: Props) {
           disabled={state !== "ready"}
           onClick={onUpgrade}
         >
-          {maxed ? "Fully built" : ready > 0 ? `Upgrade to level ${level + 1}` : `Grow to level ${level + 1}`}
+          {state === "ready" ? <UpMark className="press__mark" /> : null}
+          {maxed ? "Fully built" : ready > 0 ? `Build level ${level + 1}` : `Locked until level ${level + 1}`}
         </button>
       </div>
 

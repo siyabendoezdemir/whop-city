@@ -39,11 +39,21 @@ describe("the ladder is made of real numbers", () => {
     }
   });
 
-  it("puts the first rung within reach of a business that just opened", () => {
-    // Nothing should be unreachable on day one across the whole city, or the
-    // first session is a wall.
-    const openable = BUILDINGS.filter((building) => building.ladder[0] <= 5);
-    expect(openable.length).toBeGreaterThanOrEqual(BUILDINGS.length / 2);
+  it("puts something on the ground on the first real day of trading", () => {
+    // A hundred taken, five members, thirty visitors: a business a week old.
+    // Several plots should already be standing, or the first session is a wall
+    // of empty ground with nothing to show for the work that got them here.
+    const dayOne = metrics({ gold: 100, citizens: 5, traffic: 30 });
+    const standing = BUILDINGS.filter((building) => earnedLevel(building, dayOne) > 0);
+    expect(standing.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("leaves most of the city as empty ground on that same day", () => {
+    // The other half of the same requirement: it has to be visibly unfinished,
+    // or there is nothing to grow into.
+    const dayOne = metrics({ gold: 100, citizens: 5, traffic: 30 });
+    const empty = BUILDINGS.filter((building) => earnedLevel(building, dayOne) === 0);
+    expect(empty.length).toBeGreaterThanOrEqual(BUILDINGS.length / 2);
   });
 
   it("spreads the city across more than one number", () => {
@@ -51,6 +61,19 @@ describe("the ladder is made of real numbers", () => {
     // standing still. That is the nudge.
     const used = new Set(BUILDINGS.map((building) => building.resource));
     expect(used.size).toBeGreaterThanOrEqual(4);
+  });
+
+  it("gives each district one thing it runs on, so the skyline is readable", () => {
+    // Downtown is money, the forge is recurring money, the quarter is people.
+    // Mixing resources inside a district makes the wide shot unreadable.
+    const byDistrict = new Map<string, Set<string>>();
+    for (const building of BUILDINGS) {
+      const seen = byDistrict.get(building.district) ?? new Set<string>();
+      seen.add(building.resource);
+      byDistrict.set(building.district, seen);
+    }
+    expect([...byDistrict.get("commerce-core")!]).toEqual(["gold"]);
+    expect([...byDistrict.get("offer-forge")!]).toEqual(["recurring"]);
   });
 
   it("earns a level exactly when the business reaches the rung", () => {

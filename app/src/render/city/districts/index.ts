@@ -16,6 +16,7 @@ import {
   type Rig,
 } from "../actors";
 import { localPlace, localProp, parcelBounds, type Parcel } from "../parcel";
+import { STOREY_HEIGHT } from "../../../game/plots";
 import { authoredBlock, roofOf, shopfront, skinFor, type Skin, type StateName } from "./buildings";
 
 /**
@@ -36,7 +37,73 @@ export type Ctx = {
   state: StateName;
   rng: Rng;
   rigs: Rig[];
+  /** 0..5. Nought is vacant ground; five is a tower. */
+  level: number;
+  /** How many floors this plot stands at this level. Zero means vacant. */
+  storeys: number;
 };
+
+/**
+ * A plot with nothing on it yet.
+ *
+ * A new city is entirely made of these, so it has to look deliberate rather
+ * than unfinished: hoarding along the street, a gravelled site behind it, a
+ * survey peg, and enough weeds and left equipment that it reads as ground
+ * waiting for something rather than a hole in the render.
+ *
+ * Nothing here animates and nobody stands in it. An empty plot should be the
+ * quietest thing in the frame — the eye is supposed to go to what *is* built.
+ */
+export function buildVacantLot(ctx: Ctx): void {
+  const { local, kit, matrix, rng, parcel } = ctx;
+  const { x0, x1, z0, z1 } = parcelBounds(parcel);
+  const y = parcel.level;
+
+  local.add(M.gravel, box(parcel.width - 1.2, 0.08, parcel.depth - 1.2), [0, y + 0.04, 0]);
+  // Tyre tracks worn in from the street: somebody has been on this ground.
+  local.add(M.dirt, box(3.4, 0.03, parcel.depth - 2.4), [x0 + parcel.width * 0.34, y + 0.09, 0]);
+
+  // Hoarding along the frontage, with a gate left open in the middle.
+  const gate = 3.2;
+  for (let x = x0 + 1.2; x < x1 - 1.0; x += 2.45) {
+    if (Math.abs(x) < gate) continue;
+    localProp(kit, matrix, Prop.hoarding, [x, y, z1 - 0.7], 0);
+  }
+  // Mesh fence down the two flanks, so the plot is enclosed rather than open.
+  for (const side of [x0 + 0.8, x1 - 0.8]) {
+    for (let z = z0 + 1.4; z < z1 - 1.4; z += 2.45) {
+      localProp(kit, matrix, Prop.fence, [side, y, z], Math.PI / 2);
+    }
+  }
+
+  // Site board on the hoarding: the one bright thing on an empty plot.
+  local.add(M.timberDark, post(0.1, 2.4, 5), [-gate - 1.4, y + 1.2, z1 - 0.55]);
+  local.add(M.timberDark, post(0.1, 2.4, 5), [-gate - 4.4, y + 1.2, z1 - 0.55]);
+  local.add(M.signBoard, box(3.4, 1.9, 0.12), [-gate - 2.9, y + 2.1, z1 - 0.5]);
+  local.add(M.accent, box(2.8, 0.34, 0.06), [-gate - 2.9, y + 2.62, z1 - 0.43]);
+  local.add(M.plaster, box(2.8, 0.9, 0.05), [-gate - 2.9, y + 1.86, z1 - 0.43]);
+
+  // Left behind: an aggregate heap, a couple of pallets, a drum, some weeds.
+  localPlace(kit, matrix, "gravelPile", [x1 - 4.5, y, z0 + 4.0], rng.range(0, 3), 1.1);
+  localPlace(kit, matrix, "dirtPile", [x0 + 4.0, y, z0 + 3.2], rng.range(0, 3), 0.95);
+  for (let i = 0; i < 3; i++) {
+    localPlace(kit, matrix, "pallet", [rng.range(x0 + 3, x1 - 3), y, rng.range(z0 + 3, z1 - 5)], rng.range(0, 1.4));
+  }
+  localPlace(kit, matrix, "drum", [x1 - 3.0, y, z1 - 5.0], rng.range(0, 3));
+  for (let i = 0; i < 9; i++) {
+    localPlace(
+      kit,
+      matrix,
+      "weeds",
+      [rng.range(x0 + 2, x1 - 2), y + 0.06, rng.range(z0 + 2, z1 - 2)],
+      rng.range(0, 3),
+      rng.range(0.8, 1.35),
+    );
+  }
+  for (let i = 0; i < 2; i++) {
+    localPlace(kit, matrix, "cone", [rng.range(-gate, gate), y, z1 - rng.range(1.6, 3.0)], 0, 1.0);
+  }
+}
 
 const COATS = [M.personBody, M.personAlt, M.renderTeal, M.accentDeep, M.renderClay, M.timberDark];
 const TROUSERS = [M.ironDark, M.steel, M.timberDark, M.personBody];
@@ -103,17 +170,25 @@ const CORE_SKINS: Skin[] = [
 ];
 
 export function buildCommerceCore(ctx: Ctx): void {
-  const { local, rng, state, parcel } = ctx;
+  const { local, rng, state, parcel, storeys } = ctx;
   const { x0, x1, z0, z1 } = parcelBounds(parcel);
   const y = parcel.level;
   const skin = skinFor(state, CORE_SKIN);
   const landmark = parcel.id === "core-landmark";
+  const storeyH = STOREY_HEIGHT["commerce-core"];
+  /** Everything on this plot has to add up to this, or the markers float wrong. */
+  const target = storeys * storeyH;
 
   local.add(M.plaster, box(parcel.width - 1, 0.06, parcel.depth - 1), [0, y + 0.03, 0]);
 
   if (landmark) {
     // The civic silhouette: a setback tower with a crown, on a retail podium.
-    const podiumH = 7.2;
+    // The podium is a fixed two storeys of retail; the tower above it is
+    // however much height the business has earned, split into up to three
+    // diminishing stages so a small one still reads as a building rather than
+    // as a stub.
+    const podiumH = Math.min(7.2, Math.max(4.2, target * 0.24));
+    const towerH = Math.max(0, target - podiumH);
     local.add(skin.body, bevelBox(parcel.width - 2, podiumH, parcel.depth - 2, 0.12), [0, y + podiumH / 2, 0]);
     local.add(M.concreteDark, box(parcel.width - 1.6, 0.8, parcel.depth - 1.6), [0, y + 0.4, 0]);
     local.add(skin.trim, box(parcel.width - 1.4, 0.4, parcel.depth - 1.4), [0, y + podiumH, 0]);
@@ -122,13 +197,20 @@ export function buildCommerceCore(ctx: Ctx): void {
     }
     shopfront(local, skin, parcel.width - 6, z1 - 1.0, state);
 
-    // Tower: three diminishing stages with a lantern.
+    // Tower: up to three diminishing stages with a lantern.
     let base = y + podiumH;
-    const stages: Array<[number, number, number]> = [
-      [13, 11, 13.5],
-      [10.5, 9, 11],
-      [8, 7, 8.5],
+    const stageCount = towerH >= 24 ? 3 : towerH >= 11 ? 2 : towerH > 0 ? 1 : 0;
+    const share = [0.42, 0.34, 0.24];
+    const plans: Array<[number, number]> = [
+      [13, 11],
+      [10.5, 9],
+      [8, 7],
     ];
+    const scale = stageCount === 0 ? 0 : share.slice(0, stageCount).reduce((a, b) => a + b, 0);
+    const stages: Array<[number, number, number]> = [];
+    for (let i = 0; i < stageCount; i++) {
+      stages.push([plans[i][0], plans[i][1], (towerH * share[i]) / scale]);
+    }
     for (const [w, d, h] of stages) {
       local.add(skin.body, bevelBox(w, h, d, 0.12), [0, base + h / 2, -1.2]);
       local.add(skin.trim, box(w + 0.5, 0.5, d + 0.5), [0, base + h, -1.2]);
@@ -145,33 +227,40 @@ export function buildCommerceCore(ctx: Ctx): void {
       }
       base += h;
     }
-    // Crown: stepped cap, mast and a beacon.
+    // Crown: stepped cap, mast and a beacon. Only a finished tower gets one —
+    // it is the visible reward for the top of the ladder.
     local.add(skin.trim, box(6.6, 0.7, 7.0), [0, base + 0.35, -1.2]);
     local.add(skin.body, bevelBox(4.4, 2.4, 4.8, 0.14), [0, base + 1.6, -1.2]);
     local.add(skin.roof, wedge(4.8, 1.5, 5.2), [0, base + 3.5, -1.2]);
-    local.add(M.steel, post(0.14, 5.0, 6), [0, base + 6.5, -1.2]);
-    local.add(state === "healthy" ? M.signLit : M.signDead, box(0.5, 0.5, 0.5), [0, base + 9.1, -1.2]);
+    if (ctx.level >= 5) {
+      local.add(M.steel, post(0.14, 5.0, 6), [0, base + 6.5, -1.2]);
+      local.add(M.signLit, box(0.5, 0.5, 0.5), [0, base + 9.1, -1.2]);
+    }
     return;
   }
 
-  // Perimeter commercial blocks: deep, glazed, with retail at grade.
+  // Perimeter commercial blocks: deep, glazed, with retail at grade. The first
+  // slot always takes the plot's full height so the level is legible from the
+  // wide shot; the rest step down from it, which is what stops a block of
+  // identical extrusions.
   const slots = Math.max(2, Math.round(parcel.width / 13));
   const slotW = (parcel.width - 2) / slots;
   for (let i = 0; i < slots; i++) {
     const cx = x0 + 1 + slotW * (i + 0.5);
     const inner = new PartsBuilder();
-    const storeys = rng.int(4, 8);
+    const slotStoreys = i === 0 ? storeys : Math.max(1, storeys - rng.int(0, Math.min(3, storeys - 1)));
     authoredBlock(inner, {
       skin: skinFor(state, CORE_SKINS[(i + parcel.id.length * 2) % CORE_SKINS.length]),
       w: slotW - 1.0,
       d: parcel.depth - 4,
-      storeys,
+      storeys: slotStoreys,
+      storeyH,
       bays: rng.int(3, 5),
       roof: rng.pick(["parapet", "stepped", "monitor"] as const),
       clutter: rng.pick(["plant", "tank", "stair", "vent"] as const),
       shopfront: true,
       state,
-      glazedBands: rng.chance(0.55),
+      glazedBands: slotStoreys >= 5 && rng.chance(0.7),
       rng,
     });
     const group = inner.build("core-block");
@@ -239,26 +328,29 @@ const FORGE_SKINS: Record<string, Skin> = {
 };
 
 export function buildOfferForge(ctx: Ctx): void {
-  const { local, kit, matrix, rng, state, parcel } = ctx;
+  const { local, kit, matrix, rng, state, parcel, storeys } = ctx;
   const { x0, x1, z0, z1 } = parcelBounds(parcel);
   const y = parcel.level;
   const skin = skinFor(state, FORGE_SKINS[parcel.id] ?? FORGE_SKINS["forge-hero"]);
   const hero = parcel.id === "forge-hero";
+  const target = storeys * STOREY_HEIGHT["offer-forge"];
 
   local.add(M.yardApron, box(parcel.width - 1, 0.05, parcel.depth - 1), [0, y + 0.025, 0]);
 
   // ------------------------------------------------------ persistent spine
-  // Brick street unit at the frontage.
+  // Brick street unit at the frontage. This is the piece that carries the
+  // plot's height: a working district gets taller by stacking offices over the
+  // shed, not by growing the shed.
   const suW = Math.min(9.5, parcel.width * 0.32);
   const suX = x0 + suW / 2 + 0.8;
-  const suH = 9.2;
+  const suH = target;
   local.add(M.brick, bevelBox(suW, suH, 6.2, 0.09), [suX, y + suH / 2, z1 - 3.4]);
   local.add(M.concreteDark, box(suW + 0.2, 0.55, 6.4), [suX, y + 0.28, z1 - 3.4]);
   local.add(M.brickDark, box(suW + 0.34, 0.44, 6.5), [suX, y + suH + 0.22, z1 - 3.4]);
   local.add(M.fascia, box(suW + 0.46, 0.16, 6.6), [suX, y + suH + 0.5, z1 - 3.4]);
   local.add(M.roofFelt, box(suW - 0.2, 0.14, 6.0), [suX, y + suH + 0.08, z1 - 3.4]);
   shopfront(local, skin, suW, z1 - 0.28, state);
-  for (let f = 0; f < 2; f++) {
+  for (let f = 0; f * 2.7 + 5.0 < suH - 1.4; f++) {
     for (let i = 0; i < 3; i++) {
       const wx = suX - suW / 2 + 1.5 + i * ((suW - 3) / 2);
       const wy = y + 5.0 + f * 2.7;
@@ -282,9 +374,10 @@ export function buildOfferForge(ctx: Ctx): void {
   const hasYard = parcel.width >= 28;
   const yardW = hasYard ? 11.5 : 0;
 
-  // Vent stack — the landmark in flat black.
+  // Vent stack — the landmark in flat black. Kept just under the plot's own
+  // roofline so a floating marker still clears it.
   const vsX = x0 + 1.8;
-  const vsH = hero ? 12.4 : 8.6;
+  const vsH = Math.max(4.2, target * (hero ? 0.9 : 0.72) + 1.6);
   local.add(M.brick, bevelBox(1.5, vsH, 1.5, 0.07), [vsX, y + vsH / 2, z0 + 2.4]);
   for (let i = 1; i <= 3; i++) local.add(M.brickDark, box(1.62, 0.3, 1.62), [vsX, y + i * (vsH / 4), z0 + 2.4]);
   local.add(M.brickDark, box(1.86, 0.55, 1.86), [vsX, y + vsH - 0.2, z0 + 2.4]);
@@ -294,7 +387,7 @@ export function buildOfferForge(ctx: Ctx): void {
   const gx0 = x1 - 10.5;
   const gx1 = x1 - 1.6;
   if (hasYard) {
-  const gTop = y + 8.2;
+  const gTop = y + Math.max(5.4, Math.min(target * 0.6, 8.2));
   const gSteel = state === "struggling" ? M.steelRust : M.steelPainted;
   for (const gx of [gx0, gx1]) {
     for (const gz of [z0 + 3.0, z0 + 11.0]) {
@@ -318,7 +411,9 @@ export function buildOfferForge(ctx: Ctx): void {
   const wsD = parcel.depth - 9.5;
   const wsCX = (wsX0 + wsX1) / 2;
   const wsCZ = z0 + wsD / 2 + 1.2;
-  const eave = 8.4;
+  // A shed stays a shed. It gains headroom as the plot grows but never turns
+  // into a tower, which is what keeps the Forge reading as a working district.
+  const eave = Math.max(4.6, Math.min(target * 0.62, 12.5));
 
   if (state === "rising") {
     // Slab, footings and a part-clad frame under a crane.
@@ -351,14 +446,15 @@ export function buildOfferForge(ctx: Ctx): void {
     });
     local.add(skin.body, box(bayW * 2, eave, 0.22), [wsX0 + bayW, y + eave / 2, wsCZ + wsD / 2]);
 
-    // Tower crane.
+    // Tower crane. Sized to the site rather than to a constant, so it does not
+    // stand twice the height of the thing it is putting up.
     const mx = wsX0 - 2.4;
     const mz = wsCZ - wsD / 2 + 3.0;
-    const mastH = 15.5;
+    const mastH = Math.max(7.4, target + 2.2);
     for (const [ox, oz] of [[-0.68, -0.68], [0.68, -0.68], [-0.68, 0.68], [0.68, 0.68]]) {
       local.add(M.hazard, box(0.2, mastH, 0.2), [mx + ox, y + mastH / 2, mz + oz]);
     }
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i * 2.2 + 0.8 < mastH - 1.2; i++) {
       const ly = y + 0.8 + i * 2.2;
       local.add(M.hazard, box(1.5, 0.14, 0.14), [mx, ly, mz - 0.68]);
       local.add(M.hazard, box(1.5, 0.14, 0.14), [mx, ly, mz + 0.68]);
@@ -513,9 +609,10 @@ const CREATOR_SKINS: Skin[] = [
 ];
 
 export function buildCreatorQuarter(ctx: Ctx): void {
-  const { local, kit, matrix, rng, state, parcel } = ctx;
+  const { local, kit, matrix, rng, state, parcel, storeys } = ctx;
   const { x0, x1, z0, z1 } = parcelBounds(parcel);
   const y = parcel.level;
+  const storeyH = STOREY_HEIGHT["creator-quarter"];
 
   local.add(M.plaster, box(parcel.width - 1, 0.06, parcel.depth - 1), [0, y + 0.03, 0]);
 
@@ -564,14 +661,17 @@ export function buildCreatorQuarter(ctx: Ctx): void {
   for (let i = 0; i < bayCount; i++) {
     const cx = startX + bayW * (i + 0.5);
     const skin = skinFor(state, CREATOR_SKINS[(i + parcel.id.length) % CREATOR_SKINS.length]);
-    const storeys = rng.int(2, 3);
+    // The run steps: one bay always takes the plot's full height and its
+    // neighbours drop a floor or two off it, which is what gives a terrace its
+    // grain instead of one long parapet line.
+    const bayStoreys = i === 0 ? storeys : Math.max(1, storeys - rng.int(0, Math.min(2, storeys - 1)));
     const inner = new PartsBuilder();
     const h = authoredBlock(inner, {
       skin,
       w: bayW - 0.5,
       d: parcel.depth * 0.42,
-      storeys,
-      storeyH: 3.0,
+      storeys: bayStoreys,
+      storeyH,
       bays: 2,
       roof: rng.pick(["terrace", "terrace", "pitched", "parapet"] as const),
       clutter: rng.chance(0.5) ? rng.pick(["dish", "vent", "stair"] as const) : undefined,
@@ -580,7 +680,7 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       rng,
     });
     // Balcony on the upper floor — live/work signature.
-    if (storeys > 2 && state !== "struggling") {
+    if (bayStoreys > 2 && state !== "struggling") {
       inner.add(M.timberPale, slab(bayW - 2.0, 0.12, 1.1, 0.03), [0, h - 3.0, parcel.depth * 0.21 + 0.55]);
       inner.add(M.ironDark, box(bayW - 2.0, 0.06, 0.06), [0, h - 2.05, parcel.depth * 0.21 + 1.05]);
       for (let r = 0; r <= 5; r++) {
@@ -656,19 +756,24 @@ export function buildCreatorQuarter(ctx: Ctx): void {
   if (parcel.id === "creator-venue") {
     const vx = x0 + 6;
     const vz = z0 + 6;
-    local.add(M.brickDark, bevelBox(14, 8.5, 12, 0.12), [vx, y + 4.25, vz]);
+    // Scaled with the plot: a venue that keeps its full fly tower on a level-one
+    // lot would stand over the terrace beside it and break the skyline read.
+    const vh = Math.max(4.6, Math.min(storeys * storeyH * 0.72, 11));
+    const flyH = vh * 0.42;
+    const flyTop = y + vh + 1.2 + flyH;
+    local.add(M.brickDark, bevelBox(14, vh, 12, 0.12), [vx, y + vh / 2, vz]);
     local.add(M.concreteDark, box(14.4, 0.8, 12.4), [vx, y + 0.4, vz]);
-    local.add(M.roofZinc, wedge(14.6, 2.4, 12.6), [vx, y + 9.7, vz]);
+    local.add(M.roofZinc, wedge(14.6, 2.4, 12.6), [vx, y + vh + 1.2, vz]);
     // Entrance canopy and marquee.
     local.add(M.ironDark, box(8.0, 0.3, 2.6), [vx, y + 4.4, vz + 7.2]);
     for (const ox of [-3.4, 3.4]) local.add(M.steel, post(0.08, 4.3, 6), [vx + ox, y + 2.2, vz + 8.2]);
-    local.add(state === "healthy" ? M.signLit : M.signDead, box(6.4, 1.1, 0.16), [vx, y + 5.4, vz + 6.1]);
+    local.add(state === "healthy" ? M.signLit : M.signDead, box(6.4, 1.1, 0.16), [vx, y + Math.min(5.4, vh - 1.2), vz + 6.1]);
     local.add(M.timberDark, box(3.2, 3.2, 0.2), [vx, y + 1.7, vz + 6.05]);
     // Fly tower and rigging.
-    local.add(M.brickDark, bevelBox(6.5, 3.5, 6.5, 0.1), [vx - 2, y + 10.2, vz - 2]);
-    local.add(M.steel, post(0.1, 3.0, 5), [vx - 4.4, y + 13.4, vz - 4.2]);
-    local.add(M.steel, post(0.1, 3.0, 5), [vx + 0.4, y + 13.4, vz - 4.2]);
-    local.add(M.ironDark, box(5.2, 0.12, 0.12), [vx - 2, y + 14.8, vz - 4.2]);
+    local.add(M.brickDark, bevelBox(6.5, flyH, 6.5, 0.1), [vx - 2, y + vh + 1.2 + flyH / 2, vz - 2]);
+    local.add(M.steel, post(0.1, 3.0, 5), [vx - 4.4, flyTop + 1.4, vz - 4.2]);
+    local.add(M.steel, post(0.1, 3.0, 5), [vx + 0.4, flyTop + 1.4, vz - 4.2]);
+    local.add(M.ironDark, box(5.2, 0.12, 0.12), [vx - 2, flyTop + 2.8, vz - 4.2]);
     if (state === "healthy") {
       for (let i = 0; i < 4; i++) {
         stand(ctx, person(rng, rng.pick(["stand", "lean", "point"] as const)), [vx - 3 + i * 2, y, vz + 9.2], rng.range(1, 5));

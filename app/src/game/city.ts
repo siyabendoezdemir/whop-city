@@ -12,7 +12,7 @@
  * numbers back it, and otherwise gets you nothing.
  */
 
-import type { CityMetrics } from "../city/projection";
+import type { CityMetrics, DistrictId } from "../city/projection";
 import {
   BUILDINGS,
   MAX_LEVEL,
@@ -34,8 +34,24 @@ export type CityState = {
   readonly lastSeen: CityMetrics | null;
 };
 
-export function newCity(seed: string, now: number): CityState {
-  return { seed, claimed: {}, lastSeenAt: now, lastSeen: null };
+/**
+ * A city, opened for the first time.
+ *
+ * Seeded to what the business has already earned rather than to nothing. A
+ * founder with no sales gets bare ground, which is the honest picture and the
+ * whole point of the empty start; somebody who has been running a real
+ * business for two years gets the city that business built, rather than eleven
+ * empty plots and fifty-five buttons to press before it looks like anything.
+ *
+ * Everything after the first visit is earned live: the levels only move again
+ * when the numbers do.
+ */
+export function newCity(seed: string, now: number, metrics: CityMetrics | null = null): CityState {
+  const claimed: Record<string, number> = {};
+  if (metrics) {
+    for (const building of BUILDINGS) claimed[building.id] = earnedLevel(building, metrics);
+  }
+  return { seed, claimed, lastSeenAt: now, lastSeen: metrics };
 }
 
 /** One building, as the interface needs it. */
@@ -134,4 +150,45 @@ export function changesSince(state: CityState, metrics: CityMetrics): Change[] {
 
 export function cityTier(state: CityState, metrics: CityMetrics) {
   return tierFor(totalLevels(state, metrics));
+}
+
+/** Levels per plot, which is the only thing the renderer needs. */
+export function levelsOf(state: CityState, metrics: CityMetrics): Record<string, number> {
+  const levels: Record<string, number> = {};
+  for (const view of viewAll(state, metrics)) levels[view.building.id] = view.level;
+  return levels;
+}
+
+/**
+ * Which plots should be wearing a bubble, and which bubble.
+ *
+ * A plus over empty ground, a chevron over a building that has outgrown its
+ * current size. Nothing over a plot that is finished or still saving up: a
+ * marker over everything is a marker over nothing.
+ */
+export function markersOf(
+  state: CityState,
+  metrics: CityMetrics,
+): Record<string, "ready" | "build"> {
+  const markers: Record<string, "ready" | "build"> = {};
+  for (const view of viewAll(state, metrics)) {
+    if (view.ready <= 0) continue;
+    markers[view.building.id] = view.level === 0 ? "build" : "ready";
+  }
+  return markers;
+}
+
+/** What one district has standing in it, for the rail. */
+export function districtTally(
+  state: CityState,
+  metrics: CityMetrics,
+  district: DistrictId,
+): { levels: number; ready: number; built: number; plots: number } {
+  const views = viewAll(state, metrics).filter((view) => view.building.district === district);
+  return {
+    levels: views.reduce((sum, view) => sum + view.level, 0),
+    ready: views.reduce((sum, view) => sum + view.ready, 0),
+    built: views.filter((view) => view.level > 0).length,
+    plots: views.length,
+  };
 }

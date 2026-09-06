@@ -1,12 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 
-import { DISTRICT_NAMES } from "../city/explain";
-import { parseProjection, type PublicCityProjection } from "../city/projection";
-import { BUILDINGS, buildingById, nextTier } from "../game/buildings";
+import { DISTRICT_IDS, parseProjection, type DistrictId, type PublicCityProjection } from "../city/projection";
+import { BUILDINGS, MAX_LEVEL, buildingById, buildingsIn, nextTier } from "../game/buildings";
 import {
   claim,
   cityTier,
+  districtTally,
+  levelsOf,
   markSeen,
+  markersOf,
   newCity,
   readyCount,
   totalLevels,
@@ -14,10 +16,13 @@ import {
   viewOf,
   type CityState,
 } from "../game/city";
+import { cityQuest, questFor, readingFor } from "../game/quests";
 import { loadCity, saveCity } from "../state/cityStore";
-import { Advisor } from "./Advisor";
 import { BuildingCard } from "./BuildingCard";
 import { DesktopOnly } from "./DesktopOnly";
+import { DistrictRail, type RailEntry } from "./DistrictRail";
+import { ProfileChip, type Profile } from "./Profile";
+import { QuestCard } from "./QuestCard";
 import { ResourceBar } from "./ResourceBar";
 import { Seal } from "./Glyphs";
 
@@ -28,16 +33,24 @@ const CityCanvas = lazy(() =>
 /**
  * Whop City.
  *
- * A city you fly around, made of buildings that level up when your Whop
- * business does. There is one loop and it is short: see a building with a
- * green arrow over it, click it, read what it cost — five customers, three
- * products — and press the button. The city grows toward a skyline.
+ * A city you fly around, made of buildings that go up when your Whop business
+ * does. The loop is short: a gold bubble appears over a plot, you click the
+ * plot, the card tells you what the business reached, and you press the
+ * button. The city grows toward a skyline.
  *
  * Nothing here simulates a business. Every number on screen came out of the
  * account, and the only way to move one is to go and move it for real.
+ *
+ * The layout is a heads-up display and obeys the rules of one: everything is
+ * anchored to an edge, nothing floats in the middle, and the four regions
+ * never overlap at any desktop width. Top left is who you are and how grand
+ * the city is; top centre is what you have; top right is which Whop this is.
+ * Down the left are the three districts. Bottom right is the one contextual
+ * panel — a building when you have selected one, otherwise the quest.
  */
 
 const SNAPSHOT_ENDPOINT = "/api/city/snapshot";
+const PROFILE_ENDPOINT = "/api/city/profile";
 /** Whop's own figures move slowly; a minute is plenty and is kind to the API. */
 const REFRESH_MS = 60_000;
 
@@ -52,16 +65,39 @@ function endpointUrl(): string {
   return scenario ? `${SNAPSHOT_ENDPOINT}?scenario=${encodeURIComponent(scenario)}` : SNAPSHOT_ENDPOINT;
 }
 
+/** Somebody who has asked for less motion does not want a four-second intro. */
+function prefersStill(): boolean {
+  return (
+    typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/** How long each storey of the founding sweep holds before the next one. */
+const RISE_MS = 820;
+
 export function CityShell() {
   const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [city, setCity] = useState<CityState | null>(null);
   const [picked, setPicked] = useState<string | null>(null);
+  const [district, setDistrict] = useState<DistrictId | null>(null);
   const [framing, setFraming] = useState<string>("city");
   const [zoom, setZoom] = useState(1);
-  const [badges, setBadges] = useState<Array<{ id: string; x: number; y: number; n: number }>>([]);
   const [flash, setFlash] = useState<string | null>(null);
-  const [advisorOpen, setAdvisorOpen] = useState(true);
   const [tooSmall, setTooSmall] = useState(false);
+  /**
+   * The founding sweep.
+   *
+   * On a first visit the city is seeded to whatever the business has already
+   * earned, which for an established Whop is most of a skyline arriving in one
+   * frame. Instead it rises: every plot is capped at this number, and the cap
+   * climbs a level at a time. Nothing is invented — it is the same city, told
+   * over four seconds instead of none — and it is the moment that makes the
+   * connection between the business and the buildings without a word of copy.
+   *
+   * Null once it has played, and null from the start on a return visit.
+   */
+  const [rising, setRising] = useState<number | null>(null);
 
   /** What came back from the sign-in round trip, if anything. */
   const authNote = useMemo(() => {
@@ -111,9 +147,19 @@ export function CityShell() {
       .then((next) => {
         if (!alive) return;
         setLoad({ status: "ready", projection: next });
-        setCity(loadCity(next.seed) ?? newCity(next.seed, Date.now()));
+        // Seeded from the business on a first visit, so somebody who has been
+        // trading for two years arrives at the city that business built rather
+        // than at eleven empty plots.
+        const saved = loadCity(next.seed);
+        setCity(saved ?? newCity(next.seed, Date.now(), next.metrics));
+        if (!saved && next.metrics.source === "owner" && !prefersStill()) setRising(0);
       })
       .catch(() => alive && setLoad({ status: "failed" }));
+
+    fetch(PROFILE_ENDPOINT, { headers: { accept: "application/json" } })
+      .then((response) => (response.ok ? response.json() : { signedIn: false }))
+      .then((body) => alive && setProfile(body as Profile))
+      .catch(() => alive && setProfile({ signedIn: false }));
 
     // The business keeps moving while the city is open, so the city keeps up.
     const timer = window.setInterval(() => {
@@ -132,10 +178,52 @@ export function CityShell() {
     () => (city && metrics ? viewAll(city, metrics) : []),
     [city, metrics],
   );
+  const settled = useMemo(
+    () => (city && metrics ? levelsOf(city, metrics) : {}),
+    [city, metrics],
+  );
+  const levels = useMemo(() => {
+    if (rising === null) return settled;
+    return Object.fromEntries(
+      Object.entries(settled).map(([id, level]) => [id, Math.min(level, rising)]),
+    );
+  }, [settled, rising]);
+  const markers = useMemo(
+    () => (city && metrics && rising === null ? markersOf(city, metrics) : {}),
+    [city, metrics, rising],
+  );
+
+  // Climb a storey at a time, then stop and never run again this session.
+  useEffect(() => {
+    if (rising === null) return;
+    if (rising >= MAX_LEVEL) {
+      const done = window.setTimeout(() => setRising(null), RISE_MS);
+      return () => window.clearTimeout(done);
+    }
+    const timer = window.setTimeout(() => setRising((step) => (step === null ? null : step + 1)), RISE_MS);
+    return () => window.clearTimeout(timer);
+  }, [rising]);
   const waiting = city && metrics ? readyCount(city, metrics) : 0;
-  const levels = city && metrics ? totalLevels(city, metrics) : 0;
+  const built = city && metrics ? totalLevels(city, metrics) : 0;
   const tier = city && metrics ? cityTier(city, metrics) : null;
-  const upcoming = nextTier(levels);
+  const upcoming = nextTier(built);
+
+  const rail: RailEntry[] = useMemo(() => {
+    if (!city || !metrics) return [];
+    return DISTRICT_IDS.map((id) => {
+      const tally = districtTally(city, metrics, id);
+      return {
+        district: id,
+        levels: tally.levels,
+        maxLevels: buildingsIn(id).length * MAX_LEVEL,
+        built: tally.built,
+        plots: tally.plots,
+        ready: tally.ready,
+        reading: readingFor(id, metrics),
+        resource: buildingsIn(id)[0].resource,
+      };
+    });
+  }, [city, metrics]);
 
   const persist = useCallback((next: CityState) => {
     setCity(next);
@@ -150,7 +238,7 @@ export function CityShell() {
       const after = viewOf(buildingById(id)!, next, metrics).level;
       if (after === before) return;
       persist(next);
-      setFlash(`${buildingById(id)!.name} is now level ${after}`);
+      setFlash(`${buildingById(id)!.name} — level ${after}`);
     },
     [city, metrics, persist],
   );
@@ -165,42 +253,25 @@ export function CityShell() {
 
   useEffect(() => {
     if (!flash) return;
-    const timer = window.setTimeout(() => setFlash(null), 2_600);
+    const timer = window.setTimeout(() => setFlash(null), 2_400);
     return () => window.clearTimeout(timer);
   }, [flash]);
 
-  /**
-   * Green arrows over anything ready.
-   *
-   * Positioned from the renderer's own projection of each plot, refreshed on a
-   * timer rather than every frame: eleven badges do not need sixty updates a
-   * second, and the camera glide settles well inside this.
-   */
-  useEffect(() => {
-    const tick = () => {
-      const hooks = window.__city;
-      if (!hooks?.ready) return;
-      setBadges(
-        views
-          .filter((view) => view.ready > 0)
-          .map((view) => {
-            const at = hooks.plotPoint(view.building.id);
-            return at ? { id: view.building.id, x: at.x, y: at.y, n: view.ready } : null;
-          })
-          .filter((badge): badge is { id: string; x: number; y: number; n: number } => badge !== null),
-      );
-    };
-    tick();
-    const timer = window.setInterval(tick, 300);
-    return () => window.clearInterval(timer);
-  }, [views]);
-
   const pickedView = picked ? views.find((view) => view.building.id === picked) ?? null : null;
 
-  const goTo = useCallback((id: string) => {
+  const goToPlot = useCallback((id: string) => {
     setPicked(id);
     const building = buildingById(id);
-    if (building) setFraming(building.district);
+    if (building) {
+      setDistrict(building.district);
+      setFraming(building.district);
+    }
+  }, []);
+
+  const goToDistrict = useCallback((id: DistrictId) => {
+    setDistrict((was) => (was === id ? null : id));
+    setFraming((was) => (was === id ? "city" : id));
+    setPicked(null);
   }, []);
 
   // ----------------------------------------------------------- keyboard
@@ -209,6 +280,7 @@ export function CityShell() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "Escape") {
         setPicked(null);
+        setDistrict(null);
         setFraming("city");
       }
     };
@@ -240,6 +312,8 @@ export function CityShell() {
     );
   }
 
+  const quest = district ? questFor(district, metrics) : cityQuest(metrics);
+
   return (
     <main className="city" data-freshness={projection.freshness} data-tier={tier.level}>
       <Suspense fallback={null}>
@@ -247,119 +321,62 @@ export function CityShell() {
           projection={projection}
           framing={framing as never}
           zoom={zoom}
-          levels={Object.fromEntries(views.map((view) => [view.building.id, view.level]))}
+          levels={levels}
+          markers={markers}
           selected={picked}
-          onSelectPlot={goTo}
-          onSelectDistrict={(key) => {
-            setFraming(key);
-            setPicked(null);
-          }}
+          onSelectPlot={goToPlot}
+          onSelectDistrict={goToDistrict}
           onUnavailable={() => undefined}
         />
       </Suspense>
 
-      {/* ------------------------------------------------------------ tier */}
-      <div className="tier" data-testid="tier">
-        <Seal className="tier__crest" />
-        <span className="tier__text">
-          <span className="tier__name">{tier.name}</span>
-          <span className="tier__levels">
-            {upcoming ? `${levels} / ${upcoming.at} to ${upcoming.name}` : `${levels} levels — as grand as it gets`}
+      {/* ------------------------------------------------------- top left */}
+      <div className="crest" data-testid="tier">
+        <span className="crest__shield" aria-hidden="true">
+          <Seal className="crest__seal" />
+          <span className="crest__level">{tier.level}</span>
+        </span>
+        <span className="crest__text">
+          <span className="crest__name">{tier.name}</span>
+          <span className="crest__meter">
+            <span
+              className="crest__fill"
+              style={{ width: `${upcoming ? Math.round((built / upcoming.at) * 100) : 100}%` }}
+            />
+          </span>
+          <span className="crest__sub">
+            {upcoming ? `${built} / ${upcoming.at} to ${upcoming.name}` : `${built} levels — as grand as it gets`}
           </span>
         </span>
       </div>
 
       <ResourceBar metrics={metrics} />
 
-      {/* --------------------------------------------------- ready to press */}
-      {badges.map((badge) => (
-        <button
-          key={badge.id}
-          type="button"
-          className="ready"
-          data-ready={badge.id}
-          style={{ left: badge.x, top: badge.y }}
-          aria-label={`${buildingById(badge.id)?.name}: ${badge.n} upgrade ready`}
-          onClick={() => goTo(badge.id)}
-        >
-          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M8 13V4" />
-            <path d="M3.6 8.4 8 3.6l4.4 4.8" />
-          </svg>
-          {badge.n > 1 ? <span className="ready__n">{badge.n}</span> : null}
-        </button>
-      ))}
-
-
-      {metrics.source !== "owner" ? (
-        <div className="signin">
-          <p className="signin__line">
-            {authNote ?? "This is the public city. Sign in to play it with your own business."}
-          </p>
-          <a className="press signin__go" href="/api/auth/start" data-action="signin">
-            Sign in with Whop
-          </a>
-        </div>
-      ) : (
-        <a className="signout" href="/api/auth/logout" data-action="signout">
-          Sign out
-        </a>
-      )}
-
-      {pickedView ? (
-        <BuildingCard view={pickedView} onUpgrade={() => upgrade(pickedView.building.id)} onClose={() => setPicked(null)} />
-      ) : null}
-
-      {flash ? (
-        <p className="toast surface" role="status">
-          {flash}
-        </p>
-      ) : null}
-
-      {/* ------------------------------------------------------ nothing ready */}
-      {waiting === 0 && !pickedView ? (
-        <p className="nudge surface" role="status">
-          {metrics.source === "owner"
-            ? "Nothing to upgrade yet. Grow the business and the city follows."
-            : "Open this from your Whop dashboard to see your own figures."}
-        </p>
-      ) : null}
-
-      {/* One column, bottom left: where to go, then what to do about it. They
-          used to be two things anchored to the same corner. */}
-      <div className="leftrail">
-      <nav className="districts" aria-label="Districts">
-        {(["commerce-core", "offer-forge", "creator-quarter"] as const).map((id) => {
-          const built = views.filter((view) => view.building.district === id);
-          const ready = built.reduce((sum, view) => sum + view.ready, 0);
-          return (
-            <button
-              key={id}
-              type="button"
-              className="districts__go"
-              data-district={id}
-              data-ready={ready > 0 ? "true" : "false"}
-              aria-pressed={framing === id}
-              onClick={() => {
-                setFraming(id);
-                setPicked(null);
-              }}
-            >
-              {DISTRICT_NAMES[id]}
-              <span className="districts__count">{built.reduce((sum, view) => sum + view.level, 0)}</span>
-              {ready > 0 ? <span className="districts__bell">{ready}</span> : null}
-            </button>
-          );
-        })}
-      </nav>
-        <Advisor
-          metrics={metrics}
-          open={advisorOpen && !pickedView}
-          onToggle={() => setAdvisorOpen((was) => !was)}
-        />
+      <div className="corner">
+        <ProfileChip profile={profile} />
       </div>
 
-      <div className="camera surface" role="group" aria-label="Camera">
+      {/* ------------------------------------------------------ left rail */}
+      <DistrictRail entries={rail} active={district} onPick={goToDistrict} />
+
+      {/* ------------------------------------- bottom right: one panel only */}
+      {pickedView ? (
+        <BuildingCard
+          view={pickedView}
+          onUpgrade={() => upgrade(pickedView.building.id)}
+          onClose={() => setPicked(null)}
+        />
+      ) : quest ? (
+        <QuestCard
+          quest={quest}
+          metrics={metrics}
+          scope={district ? "district" : "city"}
+          onGo={district ? undefined : () => goToDistrict(quest.district)}
+        />
+      ) : null}
+
+      {/* --------------------------------------------------------- camera */}
+      <div className="camera" role="group" aria-label="Camera">
         <button type="button" data-cam="in" aria-label="Zoom in" onClick={() => setZoom((z) => Math.max(0.45, z - 0.15))}>
           +
         </button>
@@ -373,6 +390,7 @@ export function CityShell() {
           onClick={() => {
             setZoom(1);
             setFraming("city");
+            setDistrict(null);
             setPicked(null);
           }}
         >
@@ -380,6 +398,32 @@ export function CityShell() {
         </button>
       </div>
 
+      {/* -------------------------------------------------- status, briefly */}
+      {flash ? (
+        <p className="toast" role="status" data-testid="toast">
+          {flash}
+        </p>
+      ) : null}
+
+      {rising !== null ? (
+        <p className="nudge" role="status" data-testid="rising">
+          Surveying your Whop — this is the city your business has already built.
+        </p>
+      ) : null}
+
+      {rising === null && !flash && metrics.source !== "owner" ? (
+        <p className="nudge" role="status" data-testid="nudge">
+          {metrics.source === "unreadable"
+            ? "Whop would not give up this business's figures just now. The city is waiting on them."
+            : (authNote ?? "This is the public city. Sign in with Whop to play it with your own business.")}
+        </p>
+      ) : null}
+
+      {rising === null && !flash && metrics.source === "owner" && waiting === 0 && built === 0 ? (
+        <p className="nudge" role="status" data-testid="nudge">
+          Empty ground. Everything here goes up when the business does — start with the quest.
+        </p>
+      ) : null}
     </main>
   );
 }

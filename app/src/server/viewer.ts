@@ -11,7 +11,7 @@
  * no third state and no way to ask for one.
  */
 
-import { readSession } from "./session";
+import { readSession, viewingOf, type Session } from "./session";
 import { apiOrigin, readOwningAccountId, type Env } from "./whop-client";
 
 const CHECK_TIMEOUT_MS = 5_000;
@@ -59,11 +59,42 @@ export async function isAdminOf(userId: string, env: Env): Promise<boolean> {
  * app, unreachable check — lands on public, because the safe answer and the
  * error answer have to be the same one.
  */
-export async function audienceFor(request: Request, env: Env): Promise<"public" | "owner"> {
+export type Viewer = {
+  readonly audience: "public" | "owner";
+  /** The business the deployment is bound to. Null when it cannot be resolved. */
+  readonly deployment: string | null;
+  /** The business whose figures to read. Only ever set for an owner. */
+  readonly viewing: string | null;
+  readonly session: Session | null;
+};
+
+const ANONYMOUS: Viewer = { audience: "public", deployment: null, viewing: null, session: null };
+
+/**
+ * Who is asking, and about which business.
+ *
+ * Two separate questions, because a signed-in owner may run several Whops and
+ * the one this deployment is bound to is not necessarily the one they want to
+ * look at. The account being read still cannot come from the request: it comes
+ * from the signed session, and the session only ever carries businesses Whop
+ * itself listed for that user at sign-in.
+ */
+export async function viewerFor(request: Request, env: Env): Promise<Viewer> {
   const account = await readOwningAccountId(env);
-  if (!account.ok) return "public";
+  if (!account.ok) return ANONYMOUS;
 
   const secret = typeof env.CITY_SESSION_SECRET === "string" ? env.CITY_SESSION_SECRET : undefined;
   const session = await readSession(request, secret, account.data);
-  return session ? "owner" : "public";
+  if (!session) return { ...ANONYMOUS, deployment: account.data };
+
+  return {
+    audience: "owner",
+    deployment: account.data,
+    viewing: viewingOf(session),
+    session,
+  };
+}
+
+export async function audienceFor(request: Request, env: Env): Promise<"public" | "owner"> {
+  return (await viewerFor(request, env)).audience;
 }

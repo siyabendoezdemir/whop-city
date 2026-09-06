@@ -2,11 +2,10 @@ import * as THREE from "three";
 import { useEffect, useRef } from "react";
 
 import type { DistrictId, PublicCityProjection } from "../city/projection";
-import { buildCity, disposeCity, type City } from "../render/city/city";
-import { createWorks, type Works } from "../render/city/works";
-import { levelPlan } from "../game/plots";
+import { buildLots, buildTerrain, type Lots, type Terrain } from "../render/city/city";
+import { createWorks, type MarkerKind, type Works } from "../render/city/works";
 import { applySurfaceDetail } from "../render/scene/materials";
-import { SUPERSAMPLE_DEFAULT, VIEW, createStage } from "../render/scene/stage";
+import { SUPERSAMPLE_DEFAULT, createStage } from "../render/scene/stage";
 import { FRAMING_ORDER, framingFor, type FramingKey } from "./framings";
 
 /**
@@ -33,6 +32,12 @@ type Props = {
    */
   /** Level per building id: what the business has earned and the player took. */
   levels: Readonly<Record<string, number>>;
+  /**
+   * Which plots are asking for attention, and why. Drawn in the world above
+   * the roofline rather than as HTML over the canvas, so the bubbles cannot
+   * lag the camera.
+   */
+  markers: Readonly<Record<string, MarkerKind>>;
   selected: string | null;
   onSelectPlot: (plotId: string) => void;
   /** A district was picked in the world. The shell decides what that means. */
@@ -94,6 +99,7 @@ export function CityCanvas({
   framing,
   zoom,
   levels,
+  markers,
   selected,
   onSelectPlot,
   onSelectDistrict,
@@ -101,7 +107,8 @@ export function CityCanvas({
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<ReturnType<typeof createStage> | null>(null);
-  const cityRef = useRef<City | null>(null);
+  const terrainRef = useRef<Terrain | null>(null);
+  const lotsRef = useRef<Lots | null>(null);
 
   const worksRef = useRef<Works | null>(null);
   // Held in a ref so the pointer handler, which is installed once, always
@@ -212,12 +219,20 @@ export function CityCanvas({
     // rotates, so dragging is two fixed directions on the ground: screen right
     // is one, screen up is the other. Clash of Clans does the same — the angle
     // is the art, the position is the player's.
-    const groundRight = new THREE.Vector3(
-      Math.cos(THREE.MathUtils.degToRad(45)),
-      0,
-      -Math.sin(THREE.MathUtils.degToRad(45)),
-    ).normalize();
-    const groundUp = new THREE.Vector3(-groundRight.z, 0, groundRight.x).normalize();
+    //
+    // Both are read off the camera's own matrix rather than reconstructed from
+    // the azimuth. Reconstructing them is how the vertical axis ended up
+    // inverted: the hand-written "up" was the negative of the camera's, so
+    // dragging down pulled the city up.
+    stage.camera.updateMatrixWorld();
+    const groundRight = new THREE.Vector3()
+      .setFromMatrixColumn(stage.camera.matrixWorld, 0)
+      .setY(0)
+      .normalize();
+    const groundUp = new THREE.Vector3()
+      .setFromMatrixColumn(stage.camera.matrixWorld, 1)
+      .setY(0)
+      .normalize();
 
     /** Keep the city on screen: you may roam the promontory, not the void. */
     const clampFocus = (focus: THREE.Vector3) => {
@@ -243,6 +258,8 @@ export function CityCanvas({
       // One screen pixel is this many world units at the current zoom.
       const perPixel = held.height / Math.max(1, stage.renderer.domElement.clientHeight);
       const before = want.focus.clone();
+      // Grab, not push: the ground under the cursor stays under the cursor, so
+      // the camera moves opposite to the hand on both axes.
       want.focus.addScaledVector(groundRight, -dxPixels * perPixel);
       want.focus.addScaledVector(groundUp, dyPixels * perPixel);
       clampFocus(want.focus);
@@ -284,26 +301,23 @@ export function CityCanvas({
      * makes the city fill the frame on a viewport of any shape.
      */
     const fit = () => {
-      const availableWidth = mount.clientWidth || window.innerWidth;
-      const availableHeight = mount.clientHeight || window.innerHeight;
-      // Fill the window rather than letterboxing into it. The stage holds the
-      // authored composition and grows the frustum vertically when the window
-      // is narrower than it was authored for, so nothing is cropped and no
-      // black bars appear.
-      const scale = Math.min(availableWidth / VIEW.width, availableHeight / VIEW.height);
-      const fitsWide = availableWidth / availableHeight >= VIEW.width / VIEW.height;
+      // Fill whatever box the shell gives us. The stage keeps the authored
+      // frustum *height* and widens or grows it to match the aspect, so a
+      // 21:9 monitor sees more city rather than two black bars, and nothing is
+      // ever stretched. Letterboxing to 1440x900 is what left a wide desktop
+      // with a small picture in the middle of a black field.
       stage.resize(
-        Math.max(320, Math.round(fitsWide ? VIEW.width * scale : availableWidth)),
-        Math.max(200, Math.round(fitsWide ? VIEW.height * scale : availableHeight)),
+        Math.max(320, Math.round(mount.clientWidth || window.innerWidth)),
+        Math.max(200, Math.round(mount.clientHeight || window.innerHeight)),
       );
-
     };
 
     const loop = () => {
       const dt = timer.getDelta();
       clock += dt;
       glide(dt);
-      cityRef.current?.update(clock);
+      terrainRef.current?.update(clock);
+      lotsRef.current?.update(clock);
       worksRef.current?.update(clock);
       stage.renderer.render(stage.scene, stage.camera);
       raf = requestAnimationFrame(loop);
@@ -451,7 +465,8 @@ export function CityCanvas({
     const renderAt = (focus: THREE.Vector3, height: number, t: number) => {
       clock = t;
       stage.frame(focus, height);
-      cityRef.current?.update(t);
+      terrainRef.current?.update(t);
+      lotsRef.current?.update(t);
       worksRef.current?.update(t);
       stage.renderer.render(stage.scene, stage.camera);
     };
@@ -479,7 +494,8 @@ export function CityCanvas({
 
         renderFrame: (t: number) => {
           clock = t;
-          cityRef.current?.update(t);
+          terrainRef.current?.update(t);
+          lotsRef.current?.update(t);
           stage.renderer.render(stage.scene, stage.camera);
         },
 
@@ -539,7 +555,7 @@ export function CityCanvas({
         silhouette: (on: boolean) => {
           stage.scene.background = on ? new THREE.Color("#ffffff") : originalBackground;
           stage.scene.fog = on ? null : originalFog;
-          cityRef.current?.group.traverse((child) => {
+          for (const half of [terrainRef.current?.group, lotsRef.current?.group]) half?.traverse((child) => {
             if (!(child instanceof THREE.Mesh) && !(child instanceof THREE.InstancedMesh)) return;
             const named = child.parent?.name ?? "";
             const isContext =
@@ -569,8 +585,8 @@ export function CityCanvas({
             triangles: info.render.triangles,
             geometries: info.memory.geometries,
             textures: info.memory.textures,
-            parcels: cityRef.current?.stats.parcels ?? 0,
-            propInstances: cityRef.current?.stats.instances ?? 0,
+            parcels: lotsRef.current?.stats.parcels ?? 0,
+            propInstances: lotsRef.current?.stats.instances ?? 0,
           };
         },
 
@@ -601,59 +617,77 @@ export function CityCanvas({
     };
   }, []);
 
-  // ---------------------------------------------------------- the world itself
-  // Rebuilt whenever the projection changes, which is the only thing that
-  // changes it. Serialised as the dependency so an identical projection
-  // arriving as a new object does not throw the city away and build it again.
-  const projectionKey = JSON.stringify(projection);
-  // Only levels and trades change the architecture. A tick changes lamps, and
-  // lamps are the works layer, which never triggers a rebuild.
+  // ------------------------------------------------------------- the terrain
+  // Everything that does not depend on what the player built: the ground, the
+  // roads, both bays, the surrounding massing, the traffic. It is most of the
+  // geometry in the scene and it is built once. The seed is the only thing
+  // that could change it, and the seed is stable per business.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+
+    const terrain = buildTerrain(projection.seed);
+    terrainRef.current = terrain;
+    stage.scene.add(terrain.group);
+    terrain.update(0);
+
+    return () => {
+      stage.scene.remove(terrain.group);
+      terrain.dispose();
+      terrainRef.current = null;
+    };
+  }, [projection.seed]);
+
+  // ----------------------------------------------------------------- the lots
+  // The eleven plots and everything standing on them. Rebuilt when a level
+  // moves, which is a fraction of the work rebuilding the world used to be.
   const planKey = JSON.stringify(levels);
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    if (cityRef.current) {
-      stage.scene.remove(cityRef.current.group);
-      disposeCity(cityRef.current);
-    }
+    const lots = buildLots(projection.seed, levels);
+    lotsRef.current = lots;
+    stage.scene.add(lots.group);
 
-    const city = buildCity(projection, levelPlan(levels));
-    cityRef.current = city;
-    stage.scene.add(city.group);
-
-    // The works stand outside the city group: a rebuild must not take the
-    // player's lamps and pick targets with it.
+    // The works stand outside both halves: a rebuild must not take the markers
+    // and pick targets with it.
     if (!worksRef.current) {
-      const works = createWorks(Object.keys(levels));
+      const works = createWorks(Object.keys(levels), stage.camera);
       worksRef.current = works;
       stage.scene.add(works.group);
     }
-    worksRef.current?.apply(levels, selected);
+    worksRef.current?.apply({ tops: lots.tops, markers, selected });
 
     const f = framingFor(viewRef.current.framing);
     stage.frame(new THREE.Vector3(...f.focus), f.height * viewRef.current.zoom);
-    city.update(0);
+    lots.update(0);
     stage.renderer.render(stage.scene, stage.camera);
+
+    return () => {
+      stage.scene.remove(lots.group);
+      lots.dispose();
+      lotsRef.current = null;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectionKey, planKey]);
+  }, [projection.seed, planKey]);
 
   // ------------------------------------------------- markers follow the state
-  // Cheap, and runs on every tick: the works are materials and visibility, not
-  // geometry, so the state of the city can change once every five seconds
-  // without the city being rebuilt once every five seconds.
-  const worksKey = JSON.stringify(levels);
+  // Cheap, and runs whenever the game state moves: a marker appearing is one
+  // instance matrix, not a city.
+  const markerKey = JSON.stringify(markers);
   useEffect(() => {
     const stage = stageRef.current;
     const works = worksRef.current;
-    if (!stage || !works) return;
-    works.apply(levels, selected);
+    const lots = lotsRef.current;
+    if (!stage || !works || !lots) return;
+    works.apply({ tops: lots.tops, markers, selected });
     if (isCaptureMode()) {
       works.update(0);
       stage.renderer.render(stage.scene, stage.camera);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [worksKey, selected]);
+  }, [markerKey, selected]);
 
 
   // On a phone the dossier is a sheet over the lower two thirds, so the framing
@@ -673,7 +707,8 @@ export function CityCanvas({
     if (!stage || !isCaptureMode()) return;
     const f = framingFor(framing);
     stage.frame(new THREE.Vector3(...f.focus), f.height * zoom);
-    cityRef.current?.update(0);
+    terrainRef.current?.update(0);
+    lotsRef.current?.update(0);
     stage.renderer.render(stage.scene, stage.camera);
   }, [framing, zoom]);
 

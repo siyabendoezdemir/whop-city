@@ -3,54 +3,143 @@ import * as THREE from "three";
 import { plotSite } from "../../game/plots";
 
 /**
- * The works: what the player's decisions look like standing in the street.
+ * The works: everything laid over the city that is about the *game* rather than
+ * the architecture.
  *
- * The buildings themselves are the approved architecture, raised through the
- * renderer's existing states as a plot levels up. This layer is everything the
- * architecture cannot say on its own and everything that has to change faster
- * than the city can be rebuilt:
+ * There are only three things left here, and that is deliberate. Once a plot's
+ * level started driving the building itself — vacant ground at nought, a tower
+ * at five — the posts, lamps, trade signs and crowns this layer used to plant
+ * were saying a second time what the skyline already said, and standing in
+ * front of it while they did.
  *
- *   a **trade sign** whose silhouette says what the plot does — a canopy for a
- *   market, a crossarm for a signal tower, a stack for a foundry
+ *   a **marker** floating over any plot with something waiting: a gold bubble
+ *   with a chevron on a built plot, a plus on empty ground
  *
- *   a **lamp** lit while the plot is running and dead when it is not, coloured
- *   by the trouble: amber over capacity, red when the city could not pay
+ *   a **ring** on the ground under the selected plot
  *
- *   a **crown** on a level-three plot, so the top of the ladder is visible
- *   from the wide shot rather than only in a panel
+ *   an invisible **pick box** over the whole parcel, so a plot is chosen by
+ *   clicking the building or the ground it stands on
  *
- *   an invisible **pick box** over the parcel, so a plot is selected by
- *   clicking the ground it stands on rather than by hunting for a marker
+ * The markers are the part that had to be got right. They used to be HTML
+ * positioned from a projected point on a 300ms timer, which meant that during
+ * any camera move they lagged the world by up to a third of a second and
+ * visibly swam. They are geometry in the scene now: they are placed once, in
+ * world space, at the measured top of whatever is actually standing on the plot
+ * — `city.tops`, from the real bounding box, not a predicted height — so there
+ * is no per-frame reprojection to get wrong and nothing to drift out of sync
+ * with the camera. They cannot jitter because nothing moves them.
  *
- * Every piece is instanced. Eleven plots with a post, a lamp and a sign each
- * would be fifty-odd draw calls and the city has a budget; this is seven,
- * whatever the city grows into. Hiding an instance means scaling it to nothing
- * rather than removing it, so the count never changes either.
+ * Everything is instanced. Hiding one means scaling it to nothing rather than
+ * removing it, so the instance count never changes and neither does the draw
+ * count.
  */
 
-const LIT_TONE = 0xffd58a;
-const CROWN_TONE = 0xffc247;
-const IDLE_TONE = 0x8ea4c0;
-
-type SignKind = "canopy" | "crossarm" | "stack";
-
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
+
+/** How far above the roofline a marker floats. */
+const MARKER_LIFT = 4.6;
+const MARKER_SIZE = 7.2;
+
+export type MarkerKind = "ready" | "build";
 
 export type Works = {
   group: THREE.Group;
   picks: THREE.Object3D[];
   /** Screen-space anchor for a plot, for tests and captures. */
   anchor: (plotId: string) => THREE.Vector3 | null;
-  apply: (levels: Readonly<Record<string, number>>, selected: string | null) => void;
+  apply: (input: {
+    tops: Readonly<Record<string, number>>;
+    markers: Readonly<Record<string, MarkerKind>>;
+    selected: string | null;
+  }) => void;
   update: (t: number) => void;
   dispose: () => void;
 };
 
-export function createWorks(ids: readonly string[]): Works {
+/**
+ * The bubble, drawn once into a canvas.
+ *
+ * A texture rather than geometry because the shape wants a soft edge and a
+ * drop shadow, and both are two lines here and a mesh each otherwise.
+ */
+function bubbleTexture(kind: MarkerKind): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const cx = size / 2;
+  const cy = size * 0.44;
+  const r = size * 0.3;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(18,22,30,0.5)";
+  ctx.shadowBlur = size * 0.07;
+  ctx.shadowOffsetY = size * 0.03;
+
+  // Body: a warm gold disc with a lighter cap, so it reads as a struck coin.
+  const body = ctx.createLinearGradient(0, cy - r, 0, cy + r);
+  body.addColorStop(0, kind === "ready" ? "#ffd66b" : "#9ad7ff");
+  body.addColorStop(1, kind === "ready" ? "#e39a1c" : "#3f8fd0");
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fillStyle = body;
+  ctx.fill();
+  ctx.restore();
+
+  // Tail, pointing down at the roof it belongs to.
+  ctx.beginPath();
+  ctx.moveTo(cx - size * 0.075, cy + r * 0.88);
+  ctx.lineTo(cx + size * 0.075, cy + r * 0.88);
+  ctx.lineTo(cx, cy + r * 1.5);
+  ctx.closePath();
+  ctx.fillStyle = kind === "ready" ? "#e39a1c" : "#3f8fd0";
+  ctx.fill();
+
+  ctx.lineWidth = size * 0.028;
+  ctx.strokeStyle = "rgba(38,26,8,0.55)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Glyph: a chevron for an upgrade waiting, a plus for empty ground.
+  ctx.strokeStyle = "#2b1e06";
+  ctx.lineWidth = size * 0.055;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  if (kind === "ready") {
+    const w = r * 0.52;
+    ctx.beginPath();
+    ctx.moveTo(cx - w, cy + w * 0.42);
+    ctx.lineTo(cx, cy - w * 0.5);
+    ctx.lineTo(cx + w, cy + w * 0.42);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - w, cy + w * 1.05);
+    ctx.lineTo(cx, cy + w * 0.13);
+    ctx.lineTo(cx + w, cy + w * 1.05);
+    ctx.stroke();
+  } else {
+    const w = r * 0.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - w, cy);
+    ctx.lineTo(cx + w, cy);
+    ctx.moveTo(cx, cy - w);
+    ctx.lineTo(cx, cy + w);
+    ctx.stroke();
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  return texture;
+}
+
+export function createWorks(ids: readonly string[], camera: THREE.Camera): Works {
   const group = new THREE.Group();
   group.name = "works";
   const sites = ids.map((id) => ({ id, ...plotSite(id) }));
-  const count = sites.length;
+  const count = Math.max(1, sites.length);
 
   const disposables: Array<{ dispose: () => void }> = [];
   const keep = <T extends { dispose: () => void }>(item: T): T => {
@@ -58,56 +147,49 @@ export function createWorks(ids: readonly string[]): Works {
     return item;
   };
 
-  const structural = keep(
-    new THREE.MeshStandardMaterial({ color: 0x2c3846, roughness: 0.55, metalness: 0.25 }),
-  );
+  // The camera never rotates, so a billboard is a fixed orientation rather than
+  // a per-frame lookAt. One quaternion, read once, reused by every marker.
+  camera.updateMatrixWorld();
+  const facing = camera.quaternion.clone();
 
-  const posts = new THREE.InstancedMesh(
-    keep(new THREE.CylinderGeometry(0.24, 0.34, 1, 6)),
-    structural,
-    count,
-  );
-  posts.name = "works:posts";
-  posts.castShadow = true;
-  posts.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  group.add(posts);
-
-  // Lit without depth testing: a lamp behind a tower is a plot nobody can find.
-  const lampMaterial = keep(
-    new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, depthTest: false }),
-  );
-  const lamps = new THREE.InstancedMesh(keep(new THREE.SphereGeometry(0.82, 12, 9)), lampMaterial, count);
-  lamps.name = "works:lamps";
-  lamps.renderOrder = 10;
-  lamps.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  group.add(lamps);
-
-  const signGeometry: Record<SignKind, THREE.BufferGeometry> = {
-    canopy: keep(new THREE.BoxGeometry(4.8, 0.34, 1.7)),
-    crossarm: keep(new THREE.BoxGeometry(3.2, 0.3, 0.3)),
-    stack: keep(new THREE.CylinderGeometry(0.6, 0.82, 3.4, 6)),
+  const quad = keep(new THREE.PlaneGeometry(MARKER_SIZE, MARKER_SIZE));
+  const markers: Record<MarkerKind, THREE.InstancedMesh> = {
+    ready: new THREE.InstancedMesh(
+      quad,
+      keep(
+        new THREE.MeshBasicMaterial({
+          map: keep(bubbleTexture("ready")),
+          transparent: true,
+          // Always on top. A marker hidden behind the tower next door is a
+          // building the player never finds.
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      ),
+      count,
+    ),
+    build: new THREE.InstancedMesh(
+      quad,
+      keep(
+        new THREE.MeshBasicMaterial({
+          map: keep(bubbleTexture("build")),
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+          toneMapped: false,
+        }),
+      ),
+      count,
+    ),
   };
-  const signs: Record<SignKind, THREE.InstancedMesh> = {
-    canopy: new THREE.InstancedMesh(signGeometry.canopy, structural, count),
-    crossarm: new THREE.InstancedMesh(signGeometry.crossarm, structural, count),
-    stack: new THREE.InstancedMesh(signGeometry.stack, structural, count),
-  };
-  for (const [kind, mesh] of Object.entries(signs)) {
-    mesh.name = `works:sign:${kind}`;
-    mesh.castShadow = true;
+  for (const [kind, mesh] of Object.entries(markers)) {
+    mesh.name = `works:marker:${kind}`;
+    mesh.renderOrder = 20;
+    mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     group.add(mesh);
   }
-
-  const crowns = new THREE.InstancedMesh(
-    keep(new THREE.ConeGeometry(1.5, 3.4, 4)),
-    keep(new THREE.MeshStandardMaterial({ color: 0xf0a44a, roughness: 0.35, metalness: 0.45 })),
-    count,
-  );
-  crowns.name = "works:crowns";
-  crowns.castShadow = true;
-  crowns.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  group.add(crowns);
 
   // One plot is selected at a time, so the ring is one mesh that moves.
   const ringMaterial = keep(
@@ -126,74 +208,47 @@ export function createWorks(ids: readonly string[]): Works {
   ring.visible = false;
   group.add(ring);
 
+  /**
+   * Pick boxes.
+   *
+   * Tall enough to cover the building rather than the plot floor, because a
+   * player aiming at the fortieth storey of a tower is aiming at the tower.
+   * Resized whenever the levels change.
+   */
   const picks = sites.map((site) => {
     const box = new THREE.Mesh(
-      keep(new THREE.BoxGeometry(site.width * 0.96, 8, site.depth * 0.96)),
+      keep(new THREE.BoxGeometry(site.width * 0.96, 1, site.depth * 0.96)),
       keep(new THREE.MeshBasicMaterial({ visible: false })),
     );
-    box.position.set(site.x, 4, site.z);
+    box.position.set(site.x, 0.5, site.z);
     box.userData.plotId = site.id;
     group.add(box);
     return box;
   });
 
-  /** Per-plot presentation, recomputed whenever the city changes. */
-  type Slot = {
-    height: number;
-    sign: SignKind | null;
-    lit: boolean;
-    pulse: boolean;
-    bare: boolean;
-    crowned: boolean;
-  };
-  const slots: Slot[] = sites.map(() => ({
-    height: 0,
-    sign: null,
-    lit: false,
-    pulse: false,
-    bare: true,
-    crowned: false,
-  }));
+  type Slot = { top: number; marker: MarkerKind | null };
+  const slots: Slot[] = sites.map(() => ({ top: 0, marker: null }));
 
   const matrix = new THREE.Matrix4();
-  const colour = new THREE.Color();
+  const scale = new THREE.Vector3(1, 1, 1);
+  const at = new THREE.Vector3();
   let selectedIndex = -1;
 
-  function writeStatic(): void {
-    const usedBySign: Record<SignKind, number> = { canopy: 0, crossarm: 0, stack: 0 };
+  /** Where a plot's marker floats, ignoring the bob. */
+  const restingHeight = (index: number) => slots[index].top + MARKER_LIFT;
 
-    sites.forEach((site, index) => {
-      const slot = slots[index];
-
-      if (slot.bare) {
-        posts.setMatrixAt(index, HIDDEN);
-      } else {
-        matrix.makeScale(1, slot.height, 1);
-        matrix.setPosition(site.x, slot.height / 2, site.z);
-        posts.setMatrixAt(index, matrix);
-      }
-
-      matrix.makeScale(slot.crowned ? 1 : 0, slot.crowned ? 1 : 0, slot.crowned ? 1 : 0);
-      matrix.setPosition(site.x, slot.height + 2.6, site.z);
-      crowns.setMatrixAt(index, matrix);
-    });
-
-    // Signs are laid out per kind so each instanced mesh is packed from zero.
-    for (const kind of ["canopy", "crossarm", "stack"] as const) {
+  function writeMarkers(bob: number): void {
+    for (const kind of ["ready", "build"] as const) {
+      let used = 0;
       sites.forEach((site, index) => {
-        if (slots[index].sign !== kind) return;
-        matrix.makeRotationY(0);
-        matrix.setPosition(site.x, slots[index].height - 0.9, site.z);
-        signs[kind].setMatrixAt(usedBySign[kind]++, matrix);
+        if (slots[index].marker !== kind) return;
+        at.set(site.x, restingHeight(index) + bob, site.z);
+        matrix.compose(at, facing, scale);
+        markers[kind].setMatrixAt(used++, matrix);
       });
-      for (let spare = usedBySign[kind]; spare < count; spare++) {
-        signs[kind].setMatrixAt(spare, HIDDEN);
-      }
-      signs[kind].instanceMatrix.needsUpdate = true;
+      for (let spare = used; spare < count; spare++) markers[kind].setMatrixAt(spare, HIDDEN);
+      markers[kind].instanceMatrix.needsUpdate = true;
     }
-
-    posts.instanceMatrix.needsUpdate = true;
-    crowns.instanceMatrix.needsUpdate = true;
   }
 
   return {
@@ -203,33 +258,23 @@ export function createWorks(ids: readonly string[]): Works {
     anchor: (plotId) => {
       const index = sites.findIndex((site) => site.id === plotId);
       if (index < 0) return null;
-      // Well inside the pick box, not on its lid: a ray aimed at the exact top
-      // face is a coin toss.
-      return new THREE.Vector3(sites[index].x, 3, sites[index].z);
+      return new THREE.Vector3(sites[index].x, restingHeight(index), sites[index].z);
     },
 
-    apply: (levels, selected) => {
+    apply: ({ tops, markers: wanted, selected }) => {
       selectedIndex = sites.findIndex((site) => site.id === selected);
 
       sites.forEach((site, index) => {
-        const level = levels[site.id] ?? 0;
-        const slot = slots[index];
+        slots[index].top = Math.max(0, tops[site.id] ?? 0);
+        slots[index].marker = wanted[site.id] ?? null;
 
-        slot.bare = level === 0;
-        // The tower keeps climbing past the point the architecture stops, so a
-        // grown business ends up with a skyline rather than a bigger number.
-        slot.height = level === 0 ? 0 : 6 + level * 5.5;
-        slot.sign = null;
-        slot.lit = level > 0;
-        slot.pulse = false;
-        slot.crowned = level >= 4;
-
-        colour.setHex(level >= 4 ? CROWN_TONE : level > 0 ? LIT_TONE : IDLE_TONE);
-        lamps.setColorAt(index, colour);
+        // Cover the building, floor to roof, so the whole thing is clickable.
+        const reach = Math.max(6, slots[index].top + 2);
+        picks[index].scale.set(1, reach, 1);
+        picks[index].position.set(site.x, reach / 2, site.z);
       });
 
-      if (lamps.instanceColor) lamps.instanceColor.needsUpdate = true;
-      writeStatic();
+      writeMarkers(0);
 
       if (selectedIndex >= 0) {
         const site = sites[selectedIndex];
@@ -243,25 +288,11 @@ export function createWorks(ids: readonly string[]): Works {
     },
 
     update: (t) => {
-      // Trouble strobes, a working plot breathes: motion carries the same fact
-      // the colour carries, for anyone who cannot use the colour.
-      sites.forEach((site, index) => {
-        const slot = slots[index];
-        if (slot.bare) {
-          lamps.setMatrixAt(index, HIDDEN);
-          return;
-        }
-        const beat = slot.pulse
-          ? 0.5 + 0.5 * Math.sin(t * 4.6 + index)
-          : 0.5 + 0.5 * Math.sin(t * 1.3 + index);
-        const size = (slot.lit ? 0.9 + beat * 0.22 : 0.58 + beat * 0.16) * (index === selectedIndex ? 1.3 : 1);
-        matrix.makeScale(size, size, size);
-        matrix.setPosition(site.x, slot.height + 0.6, site.z);
-        lamps.setMatrixAt(index, matrix);
-      });
-      lamps.instanceMatrix.needsUpdate = true;
+      // One shared bob. Every marker rides the same wave, which reads as the
+      // city breathing rather than as eleven independent bouncing objects.
+      writeMarkers(Math.sin(t * 1.9) * 0.55);
 
-      if (ring.visible) {
+      if (ring.visible && selectedIndex >= 0) {
         const wobble = 1 + Math.sin(t * 2.1) * 0.035;
         const site = sites[selectedIndex];
         const reach = Math.max(site.width, site.depth) * 0.44 * wobble;

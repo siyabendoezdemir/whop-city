@@ -94,8 +94,17 @@ export type CityMetrics = {
   readonly refunds: number;
   /** New members this month. */
   readonly joined: number;
-  /** Whether these are the business's own figures or a zeroed public stand-in. */
-  readonly source: "owner" | "withheld";
+  /**
+   * Where these came from.
+   *
+   * `owner` — the business's own figures, read successfully.
+   * `withheld` — a visitor is looking; the figures are not theirs to see.
+   * `unreadable` — the owner is looking and Whop would not answer. Zeroes are
+   *   shown either way, and the difference is the whole point: "you have made
+   *   no money" and "we could not find out" are not the same sentence, and a
+   *   city that says the first when it means the second is lying.
+   */
+  readonly source: "owner" | "withheld" | "unreadable";
 };
 
 export const ZERO_METRICS: CityMetrics = {
@@ -215,7 +224,9 @@ export function sealProjection(input: PublicCityProjection): PublicCityProjectio
  * a price cannot travel through here whatever anyone does upstream.
  */
 function sealMetrics(input: CityMetrics | undefined): CityMetrics {
-  if (!input || input.source !== "owner") return ZERO_METRICS;
+  if (!input) return ZERO_METRICS;
+  if (input.source === "unreadable") return { ...ZERO_METRICS, source: "unreadable" };
+  if (input.source !== "owner") return ZERO_METRICS;
   return {
     gold: boundedInt(input.gold, 0, METRIC_MAX, "metrics.gold"),
     goldBefore: boundedInt(input.goldBefore, 0, METRIC_MAX, "metrics.goldBefore"),

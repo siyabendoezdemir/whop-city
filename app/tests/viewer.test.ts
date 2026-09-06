@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { audienceFor, isAdminOf } from "../src/server/viewer";
+import { audienceFor, isAdminOf, viewerFor } from "../src/server/viewer";
 import { mintSession, readSession, sessionCookie } from "../src/server/session";
 
 /**
@@ -22,9 +22,24 @@ const withCookie = (cookie: string | null) =>
     headers: cookie ? { cookie } : {},
   });
 
-const signedIn = async (over: { user?: string; account?: string; secret?: string; now?: number } = {}) =>
+const signedIn = async (
+  over: {
+    user?: string;
+    account?: string;
+    secret?: string;
+    now?: number;
+    shops?: Array<{ id: string; name: string }>;
+    viewing?: string;
+  } = {},
+) =>
   `city_session=${encodeURIComponent(
-    await mintSession(over.user ?? "user_real", over.account ?? ACCOUNT, over.secret ?? SECRET, over.now),
+    await mintSession(
+      over.user ?? "user_real",
+      over.account ?? ACCOUNT,
+      over.secret ?? SECRET,
+      { shops: over.shops, viewing: over.viewing },
+      over.now,
+    ),
   )}`;
 
 afterEach(() => {
@@ -143,5 +158,36 @@ describe("the audience", () => {
     expect(await audienceFor(withCookie(good), { ...ENV, CITY_SESSION_SECRET: undefined })).toBe("public");
     // And no account binding means there is nothing to be an owner of.
     expect(await audienceFor(withCookie(good), { CITY_SESSION_SECRET: SECRET })).toBe("public");
+  });
+});
+
+describe("which business is being read", () => {
+  it("is the deployment's own by default", async () => {
+    const viewer = await viewerFor(withCookie(await signedIn()), ENV);
+    expect(viewer.viewing).toBe(ACCOUNT);
+  });
+
+  it("honours a switch to another Whop Whop itself listed for this user", async () => {
+    const cookie = await signedIn({
+      shops: [{ id: ACCOUNT, name: "This one" }, { id: "biz_second", name: "The other one" }],
+      viewing: "biz_second",
+    });
+    expect((await viewerFor(withCookie(cookie), ENV)).viewing).toBe("biz_second");
+  });
+
+  it("refuses a business the session never listed", async () => {
+    // The whole point: the id in the cookie is not a free parameter. A session
+    // can only point at somewhere Whop said this user runs.
+    const cookie = await signedIn({
+      shops: [{ id: ACCOUNT, name: "This one" }],
+      viewing: "biz_somebody_elses",
+    });
+    expect((await viewerFor(withCookie(cookie), ENV)).viewing).toBe(ACCOUNT);
+  });
+
+  it("reads nothing at all for a visitor", async () => {
+    const viewer = await viewerFor(withCookie(null), ENV);
+    expect(viewer.audience).toBe("public");
+    expect(viewer.viewing).toBeNull();
   });
 });

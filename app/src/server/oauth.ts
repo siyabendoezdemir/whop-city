@@ -16,11 +16,20 @@
  */
 
 import { apiOrigin, boundAppId, readOwningAccountId, type Env } from "./whop-client";
-import { SESSION_SECONDS, clearedSessionCookie, mintSession, sessionCookie } from "./session";
+import {
+  SESSION_SECONDS,
+  clearedSessionCookie,
+  mintSession,
+  readSession,
+  sessionCookie,
+  trimShops,
+  type Shop,
+} from "./session";
 
 export const AUTH_START = "/api/auth/start";
 export const AUTH_CALLBACK = "/api/auth/callback";
 export const AUTH_LOGOUT = "/api/auth/logout";
+export const AUTH_VIEW = "/api/auth/view";
 
 const PKCE_COOKIE = "city_pkce";
 const PKCE_SECONDS = 600;
@@ -88,23 +97,60 @@ export async function handleAuthStart(request: Request, env: Env): Promise<Respo
     response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri(request),
-    // Identity only. The city needs to know who signed in, nothing more —
-    // every business figure is read with the deployment's own credential.
-    scope: "openid",
+    // Identity and a display name. Not `email`: nothing here sends mail, and
+    // an address is the one field worth not holding. Every business figure is
+    // still read with the deployment's own credential, never with this token.
+    scope: "openid profile",
     state,
     nonce: random(16),
     code_challenge: await challenge(verifier),
     code_challenge_method: "S256",
   });
 
-  // Scoping the token to this business is what makes "are you an admin here"
-  // a question Whop can answer about the right place.
-  const account = await readOwningAccountId(env);
-  if (account.ok) params.set("company_id", account.data);
-
+  // Deliberately *not* scoped to a company. A token pinned to one business can
+  // only ever see that one, and somebody with several Whops needs to be told
+  // which ones they have before they can choose between them.
   const headers = new Headers({ location: `${origin}/oauth/authorize?${params}` });
   headers.append("set-cookie", pkceCookie(JSON.stringify({ verifier, state }), PKCE_SECONDS));
   return new Response(null, { status: 302, headers });
+}
+
+/**
+ * The businesses this user runs, as Whop lists them for their own token.
+ *
+ * Best effort, and treated as such: a deployment whose app was never granted a
+ * scope that reaches this gets an empty list and the profile menu simply shows
+ * the one business the city is bound to. That is a smaller answer, not a wrong
+ * one, so it is not worth failing the sign-in over.
+ */
+async function readShops(origin: string, token: string, signal: AbortSignal): Promise<Shop[]> {
+  try {
+    const response = await fetch(`${origin}/api/v1/accounts?first=20`, {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token}`,
+        "Api-Version-Date": "2026-09-02-2",
+        // The proxy would otherwise replace this with the deployment's own
+        // credential, which answers for the app rather than for the visitor.
+        "x-whop-inject-key": "none",
+      },
+      signal,
+    });
+    if (!response.ok) return [];
+    const body = (await response.json()) as { data?: unknown };
+    if (!Array.isArray(body.data)) return [];
+    return trimShops(
+      body.data
+        .filter((entry): entry is Record<string, unknown> => typeof entry === "object" && entry !== null)
+        .map((entry) => ({
+          id: String(entry.id ?? ""),
+          name: String(entry.title ?? entry.name ?? entry.route ?? entry.id ?? ""),
+        }))
+        .filter((shop) => shop.id.startsWith("biz_")),
+    );
+  } catch {
+    return [];
+  }
 }
 
 export async function handleAuthCallback(request: Request, env: Env): Promise<Response> {
@@ -161,9 +207,13 @@ export async function handleAuthCallback(request: Request, env: Env): Promise<Re
     clearTimeout(timer);
     if (!who.ok) return backToCity(request, "failed", [drop]);
 
-    const profile = (await who.json()) as { sub?: unknown };
+    const profile = (await who.json()) as { sub?: unknown; name?: unknown; preferred_username?: unknown };
     const userId = typeof profile.sub === "string" ? profile.sub : null;
     if (!userId) return backToCity(request, "failed", [drop]);
+
+    const name = [profile.name, profile.preferred_username].find(
+      (value): value is string => typeof value === "string" && value.length > 0,
+    );
 
     // Signing in is not the same as running the place.
     const { isAdminOf } = await import("./viewer");
@@ -172,7 +222,9 @@ export async function handleAuthCallback(request: Request, env: Env): Promise<Re
     const secret = typeof env.CITY_SESSION_SECRET === "string" ? env.CITY_SESSION_SECRET : "";
     if (secret.length < 24) return backToCity(request, "unavailable", [drop]);
 
-    const session = await mintSession(userId, account.data, secret);
+    const shops = await readShops(origin, tokens.access_token, controller.signal);
+
+    const session = await mintSession(userId, account.data, secret, { name, shops });
     return backToCity(request, "ok", [drop, sessionCookie(session, SESSION_SECONDS)]);
   } catch {
     return backToCity(request, "failed", [drop]);
@@ -181,4 +233,33 @@ export async function handleAuthCallback(request: Request, env: Env): Promise<Re
 
 export function handleAuthLogout(request: Request): Response {
   return backToCity(request, "out", [clearedSessionCookie]);
+}
+
+/**
+ * Point the city at a different one of your own Whops.
+ *
+ * The id is only honoured if Whop listed it for this user at sign-in, so the
+ * query string cannot name a business — it can only pick one already in the
+ * signed session. Anything else silently falls back to the deployment's own.
+ */
+export async function handleAuthView(request: Request, env: Env): Promise<Response> {
+  const account = await readOwningAccountId(env);
+  if (!account.ok) return backToCity(request, "failed");
+
+  const secret = typeof env.CITY_SESSION_SECRET === "string" ? env.CITY_SESSION_SECRET : "";
+  const session = await readSession(request, secret, account.data);
+  if (!session) return backToCity(request, "failed");
+
+  const wanted = new URL(request.url).searchParams.get("business") ?? account.data;
+  const allowed =
+    wanted === account.data || (session.shops ?? []).some((shop) => shop.id === wanted)
+      ? wanted
+      : account.data;
+
+  const next = await mintSession(session.userId, account.data, secret, {
+    name: session.name,
+    shops: session.shops,
+    viewing: allowed,
+  });
+  return backToCity(request, "switched", [sessionCookie(next, SESSION_SECONDS)]);
 }

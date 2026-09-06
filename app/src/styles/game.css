@@ -1,44 +1,121 @@
 /* ==========================================================================
-   Whop City — the game
+   Whop City — the game surfaces
    --------------------------------------------------------------------------
-   Chunky, warm, and physical. Panels are carved wood and brass rather than
-   glass; buttons have a thick bottom edge so pressing them looks like pressing
-   something; numbers are big because the numbers are the point.
+   Four regions, and they never overlap at any desktop width the game will run
+   at:
 
-   Every figure on screen is real: they come from the business's own Whop
+     top left      the crest — how grand the city is
+     top centre    the resource bar — what the business has
+     top right     the profile — which Whop this is
+     left, lower   the district rail — where to go
+     bottom right  one contextual panel — a building, or the quest
+     bottom centre the camera
+
+   Every figure on screen is real and comes from the business's own Whop
    account. Nothing here is a simulated currency and nothing here is decorative
    chrome pretending to be data.
    ========================================================================== */
 
-:root {
-  /* Carved panel */
-  --wood: #3a2a1c;
-  --wood-lit: #4c3826;
-  --wood-dark: #241809;
-  --parchment: #f2e4c9;
-  --parchment-dim: #cdb894;
+/* --------------------------------------------------------------------------
+   Crest — top left
+   -------------------------------------------------------------------------- */
 
-  /* Brass and gold */
-  --gold: #ffc247;
-  --gold-deep: #d18a1a;
-  --gold-ink: #3a2405;
+.crest {
+  position: absolute;
+  top: var(--pad);
+  left: var(--pad);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px 8px 10px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--pill);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--lift);
+}
 
-  /* States */
-  --grow: #6fe08a;
-  --grow-deep: #2f9a4d;
-  --stone: #8a7a68;
-  --stone-dark: #5d5145;
+.crest__shield {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  color: rgba(58, 36, 5, 0.55);
+  background: radial-gradient(120% 120% at 34% 24%, var(--gold-hi), var(--gold) 46%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.5), inset 0 -3px 5px rgba(90, 55, 5, 0.4);
+}
 
-  --card-radius: 16px;
-  --pill-radius: 999px;
+.crest__seal {
+  width: 28px;
+  height: 28px;
+}
+
+.crest__level {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-family: var(--face-narrow);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--gold);
+  background: var(--panel);
+  border: 2px solid var(--panel-edge);
+  border-radius: 50%;
+}
+
+.crest__text {
+  display: grid;
+  gap: 3px;
+  min-width: 9.5rem;
+}
+
+.crest__name {
+  font-family: var(--face-narrow);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+.crest__meter {
+  display: block;
+  height: 5px;
+  border-radius: var(--pill);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.crest__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill);
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold));
+  transition: width 400ms ease;
+}
+
+.crest__sub {
+  font-size: 11.5px;
+  line-height: 1.2;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --------------------------------------------------------------------------
-   Resource bar
+   Resource bar — top centre
    --------------------------------------------------------------------------
    A capsule per resource with a jewelled badge proud of its left edge. Fixed
-   widths and no shrinking: the earlier version let flex squeeze five pills
-   into ovals with the words wrapping inside them.
+   widths and no shrinking: letting flex squeeze four pills turns them into
+   ovals with the words wrapping inside.
    -------------------------------------------------------------------------- */
 
 .res {
@@ -48,7 +125,7 @@
   transform: translateX(-50%);
   z-index: 4;
   display: flex;
-  gap: 10px;
+  gap: 9px;
 }
 
 .res__pill {
@@ -56,80 +133,79 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   height: 46px;
-  padding: 0 16px 0 30px;
-  border-radius: var(--pill-radius);
-  background: linear-gradient(180deg, #2c2115, #1a1209);
-  border: 2px solid #0d0904;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 220, 160, 0.16),
-    0 3px 0 #0d0904,
-    0 8px 18px rgba(0, 0, 0, 0.4);
+  padding: 0 15px 0 28px;
+  border-radius: var(--pill);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 3px 0 var(--panel-edge), 0 8px 18px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
 }
 
 .res__badge {
   position: absolute;
-  left: -8px;
+  left: -13px;
   top: 50%;
   transform: translateY(-50%);
-  width: 40px;
-  height: 40px;
   display: grid;
   place-items: center;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  border: 3px solid #0d0904;
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25), inset 0 2px 0 rgba(255, 255, 255, 0.4);
+  border: 2px solid var(--panel-edge);
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.35), inset 0 -3px 5px rgba(0, 0, 0, 0.3);
 }
 
 .res__badge svg {
-  width: 21px;
-  height: 21px;
+  width: 19px;
+  height: 19px;
 }
 
-/* One material per resource, the way gold, elixir and dark elixir differ. */
+[data-tone="gold"] .res__badge,
 .res__pill[data-tone="gold"] .res__badge {
-  background: radial-gradient(circle at 34% 26%, #fff4c9, #ffc247 52%, #c8830f);
-  color: #6b4405;
+  color: #5a3a05;
+  background: radial-gradient(120% 120% at 34% 24%, #ffeaa8, var(--gold) 48%, var(--gold-deep));
 }
+
 .res__pill[data-tone="green"] .res__badge {
-  background: radial-gradient(circle at 34% 26%, #d8ffe4, #6fe08a 52%, #218a45);
-  color: #0f4a25;
+  color: #06301a;
+  background: radial-gradient(120% 120% at 34% 24%, #c4f7d4, #62d98c 48%, #26884b);
 }
+
 .res__pill[data-tone="violet"] .res__badge {
-  background: radial-gradient(circle at 34% 26%, #f5d9ff, #c77dff 52%, #7a2fc0);
-  color: #3d0a63;
+  color: #2c0f3d;
+  background: radial-gradient(120% 120% at 34% 24%, #e7c9ff, #b57ae8 48%, #7738b5);
 }
-.res__pill[data-tone="dark"] .res__badge {
-  background: radial-gradient(circle at 34% 26%, #b9a6d8, #6a4f9c 52%, #2b1a4d);
-  color: #eadcff;
+
+.res__pill[data-tone="blue"] .res__badge {
+  color: #06263f;
+  background: radial-gradient(120% 120% at 34% 24%, #cbe8ff, #6fb3ec 48%, #2a72b4);
 }
 
 .res__figures {
   display: grid;
-  gap: 1px;
-  min-width: 3.4rem;
+  gap: 0;
+  line-height: 1.12;
 }
 
 .res__value {
   font-family: var(--face-narrow);
-  font-size: 21px;
+  font-size: 20px;
   font-weight: 600;
-  line-height: 1;
-  color: var(--parchment);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
 .res__name {
-  font-size: 11.5px;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  color: var(--parchment-dim);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-4);
 }
 
 .res__move {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
 }
 
@@ -138,119 +214,630 @@
 }
 
 .res__move[data-move="down"] {
-  color: #ff7a5c;
+  color: var(--bad);
 }
 
-/* Withheld: the public view does not get the owner's figures. */
-.res[data-source="withheld"] .res__value {
-  color: var(--stone);
+/* Not the owner: the figures are withheld, and the bar says so by being dim
+   rather than by showing plausible noughts. */
+.res[data-source="withheld"],
+.res[data-source="unreadable"] {
+  opacity: 0.6;
 }
 
 /* --------------------------------------------------------------------------
-   Tier banner — how grand the city has become
+   Profile — top right
    -------------------------------------------------------------------------- */
 
-.tier {
+.corner {
   position: absolute;
   top: var(--pad);
-  left: var(--pad);
-  z-index: 4;
+  right: var(--pad);
+  z-index: 6;
+}
+
+.chip__root {
+  position: relative;
+}
+
+.chip {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 16px 8px 10px;
-  border-radius: var(--pill-radius);
-  background: linear-gradient(180deg, var(--wood-lit), var(--wood));
-  border: 2px solid var(--wood-dark);
-  box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.2), 0 3px 0 var(--wood-dark);
+  height: 46px;
+  max-width: 15rem;
+  padding: 0 12px 0 6px;
+  font: inherit;
+  text-decoration: none;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--pill);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--lift);
+  cursor: pointer;
 }
 
-.tier__crest {
-  width: 30px;
-  height: 30px;
-  flex: none;
-  color: var(--gold);
+.chip:hover {
+  border-color: rgba(255, 194, 71, 0.4);
 }
 
-.tier__text {
-  display: grid;
-  gap: 1px;
-}
-
-.tier__name {
+.chip--in {
+  gap: 8px;
+  padding: 0 16px;
   font-family: var(--face-narrow);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--gold);
-  line-height: 1;
 }
 
-.tier__levels {
-  font-size: 12px;
-  color: var(--parchment-dim);
+.chip__seal {
+  width: 20px;
+  height: 20px;
+}
+
+.chip__avatar {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-family: var(--face-narrow);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: radial-gradient(120% 120% at 34% 24%, var(--gold-hi), var(--gold) 48%, var(--gold-deep));
+  border: 2px solid #6d4405;
+}
+
+.chip__text {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.chip__who {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip__where {
+  font-size: 11px;
+  color: var(--ink-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip__chev {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-4);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 17.5rem;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--shadow);
+  animation: menu-in 120ms ease-out;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.menu__head {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.menu__now {
+  margin: 0 0 4px;
+  display: grid;
+  font-family: var(--face-narrow);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--gold);
+}
+
+.menu__route {
+  font-family: var(--face);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--ink-4);
+}
+
+.menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+
+.menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 13.5px;
+  text-decoration: none;
+  color: var(--ink-2);
+  border-radius: 8px;
+}
+
+a.menu__item:hover {
+  color: var(--ink);
+  background: rgba(255, 214, 150, 0.09);
+}
+
+.menu__item[data-current="true"] {
+  color: var(--gold);
+}
+
+.menu__item.is-locked {
+  color: var(--ink-4);
+}
+
+.menu__locked {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.menu__note {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-4);
+}
+
+.menu__out {
+  margin-top: 6px;
+  padding-top: 10px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  font-size: 13.5px;
+  text-decoration: none;
+  color: var(--ink-3);
+  border-top: 1px solid rgba(255, 214, 150, 0.12);
+}
+
+.menu__out:hover {
+  color: var(--bad);
 }
 
 /* --------------------------------------------------------------------------
-   The building card — where you press the button
+   District rail — left, lower half
    -------------------------------------------------------------------------- */
 
+.rail {
+  position: absolute;
+  left: var(--pad);
+  bottom: var(--pad);
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  width: 17rem;
+}
+
+.rail__go {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  font: inherit;
+  text-align: left;
+  color: var(--ink);
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 4px 0 var(--panel-edge), 0 8px 18px rgba(0, 0, 0, 0.36);
+  cursor: pointer;
+  transition: transform 90ms ease, border-color 120ms ease;
+}
+
+.rail__go:hover {
+  border-color: rgba(255, 194, 71, 0.42);
+}
+
+.rail__go:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 2px 0 var(--panel-edge);
+}
+
+.rail__go[aria-pressed="true"] {
+  border-color: var(--gold);
+  box-shadow: inset 0 1px 0 var(--panel-rim), 0 4px 0 #6d4405, 0 0 0 1px rgba(255, 194, 71, 0.3);
+}
+
+.rail__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  color: var(--ink-3);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.rail__icon svg {
+  width: 23px;
+  height: 23px;
+}
+
+.rail__go[aria-pressed="true"] .rail__icon {
+  color: var(--gold);
+}
+
+.rail__text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.rail__top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.rail__name {
+  font-family: var(--face-narrow);
+  font-size: 15.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail__built {
+  font-family: var(--face-narrow);
+  font-size: 12px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.rail__pips {
+  display: flex;
+  gap: 2px;
+}
+
+.rail__pips i {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+.rail__pips i[data-on="true"] {
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold-deep));
+  box-shadow: 0 0 4px rgba(255, 194, 71, 0.4);
+}
+
+.rail__reading {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail__reading[data-tone="bad"] {
+  color: var(--bad);
+}
+
+.rail__reading[data-tone="good"] {
+  color: var(--grow);
+}
+
+.rail__bell {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  font-family: var(--face-narrow);
+  font-size: 13px;
+  font-weight: 600;
+  color: #06280f;
+  background: linear-gradient(180deg, #a7f5ba, var(--grow) 45%, var(--grow-deep));
+  border: 2px solid #123f22;
+  border-radius: var(--pill);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  animation: bell-beat 1.9s ease-in-out infinite;
+}
+
+@keyframes bell-beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   The contextual panel — bottom right. One at a time, never two.
+   -------------------------------------------------------------------------- */
+
+.quest,
 .card {
   position: absolute;
   right: var(--pad);
   bottom: var(--pad);
   z-index: 5;
-  width: min(23rem, calc(100vw - 2 * var(--pad)));
+  width: 22.5rem;
+  max-height: calc(100vh - 2 * var(--pad) - 74px);
+  overflow-y: auto;
   display: grid;
-  gap: 0;
-  border-radius: var(--card-radius);
-  background: linear-gradient(180deg, var(--wood-lit), var(--wood) 60%);
-  border: 3px solid var(--wood-dark);
-  box-shadow:
-    inset 0 2px 0 rgba(255, 220, 160, 0.18),
-    0 6px 0 var(--wood-dark),
-    0 18px 40px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-  animation: card-in 200ms cubic-bezier(0.2, 1.3, 0.5, 1);
+  gap: 9px;
+  padding: 15px 17px 15px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  border: 2px solid var(--panel-edge);
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 var(--panel-rim), var(--shadow);
+  scrollbar-width: thin;
+  animation: panel-in 160ms ease-out;
 }
 
-@keyframes card-in {
+@keyframes panel-in {
   from {
-    transform: translateY(14px) scale(0.97);
     opacity: 0;
+    transform: translateY(8px);
   }
 }
 
-.card__head {
+/* ------------------------------------------------------------------ quest */
+
+.quest__head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.16), transparent);
-  border-bottom: 2px solid var(--wood-dark);
+  gap: 8px;
 }
 
-/* The level badge: a brass plate with the number stamped on it. */
-.card__badge {
-  flex: none;
-  width: 46px;
-  height: 46px;
+.quest__mark {
   display: grid;
   place-items: center;
-  border-radius: 12px;
-  font-family: var(--face-narrow);
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--gold-ink);
-  background: linear-gradient(180deg, #ffe08a, var(--gold) 45%, var(--gold-deep));
-  border: 2px solid var(--wood-dark);
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2);
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--gold);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
 }
 
-.card__badge[data-level="0"] {
-  color: var(--parchment-dim);
-  background: linear-gradient(180deg, #6b5b4a, #3f3428);
+.quest__mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.quest__where {
+  font-size: 10.5px;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.quest__flag {
+  margin-left: auto;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #33110a;
+  background: var(--bad);
+  border-radius: var(--pill);
+}
+
+.quest__title {
+  margin: 0;
+  font-family: var(--face-narrow);
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.14;
+  color: var(--ink);
+}
+
+.quest__why {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.quest__standing {
+  margin: 0;
+  padding: 8px 11px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  background: var(--panel-sunk);
+  border-left: 3px solid var(--ink-4);
+  border-radius: 0 8px 8px 0;
+}
+
+.quest__meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.quest__bar {
+  flex: 1 1 auto;
+  height: 12px;
+  border-radius: var(--pill);
+  background: var(--panel-sunk);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.quest__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--pill);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 45%, var(--gold-deep));
+  transition: width 500ms ease;
+}
+
+.quest__pct {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--face-narrow);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+
+.quest__res {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  color: var(--ink-3);
+}
+
+.quest__res svg {
+  width: 16px;
+  height: 16px;
+}
+
+.quest__done {
+  margin: -3px 0 0;
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+.quest__toggle {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.quest__toggle:hover {
+  color: var(--gold);
+}
+
+.quest__toggle svg {
+  width: 13px;
+  height: 13px;
+  transition: transform 140ms ease;
+  transform: rotate(-90deg);
+}
+
+.quest__toggle svg.is-open {
+  transform: none;
+}
+
+.quest__how {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+  display: grid;
+  gap: 7px;
+}
+
+.quest__how li {
+  counter-increment: step;
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 9px;
+  align-items: start;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.quest__how li::before {
+  content: counter(step);
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-family: var(--face-narrow);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold);
+  background: var(--panel-sunk);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* ------------------------------------------------------------- building */
+
+.card__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 11px;
+  align-items: start;
+}
+
+.card__badge {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  font-family: var(--face-narrow);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--gold-ink);
+  background: radial-gradient(120% 120% at 34% 24%, var(--gold-hi), var(--gold) 48%, var(--gold-deep));
+  border: 2px solid #6d4405;
+  border-radius: 11px;
+  box-shadow: inset 0 2px 3px rgba(255, 255, 255, 0.45);
+}
+
+.card[data-level="0"] .card__badge {
+  color: #7b6c58;
+  background: linear-gradient(180deg, #4a4132, #2c2519);
+  border-color: #1d1810;
+  box-shadow: none;
 }
 
 .card__title {
@@ -265,622 +852,221 @@
   font-size: 21px;
   font-weight: 600;
   line-height: 1.1;
-  color: var(--parchment);
 }
 
 .card__role {
   margin: 0;
-  font-size: 13px;
-  line-height: 1.35;
-  color: var(--parchment-dim);
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink-3);
 }
 
 .card__close {
-  margin-left: auto;
-  align-self: flex-start;
-  width: 30px;
-  height: 30px;
-  flex: none;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
   font: inherit;
-  font-size: 16px;
-  color: var(--parchment-dim);
-  background: rgba(0, 0, 0, 0.22);
-  border: 2px solid var(--wood-dark);
+  font-size: 13px;
+  color: var(--ink-4);
+  background: var(--panel-sunk);
+  border: 0;
+  border-radius: 8px;
   cursor: pointer;
 }
 
 .card__close:hover {
-  color: var(--parchment);
+  color: var(--ink);
+}
+
+.card__pips {
+  display: flex;
+  gap: 4px;
+}
+
+.card__pips i {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--panel-sunk);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.card__pips i[data-on="true"] {
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold-deep));
+}
+
+.card__pips i[data-ready="true"] {
+  background: linear-gradient(180deg, #a7f5ba, var(--grow-deep));
+  animation: bell-beat 1.9s ease-in-out infinite;
 }
 
 .card__body {
   display: grid;
-  gap: 12px;
-  padding: 16px;
+  gap: 11px;
 }
-
-/* ---- the requirement, which is the whole game ---- */
 
 .req {
   display: grid;
-  gap: 9px;
-  padding: 14px;
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.26);
-  border: 2px solid var(--wood-dark);
+  gap: 7px;
+  padding: 11px 13px;
+  background: var(--panel-sunk);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .req__line {
+  margin: 0;
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 7px;
   flex-wrap: wrap;
-  font-size: 15px;
-  color: var(--parchment-dim);
+}
+
+.req__icon {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  color: var(--gold);
+}
+
+.req__icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .req__count {
   font-family: var(--face-narrow);
-  font-size: 27px;
+  font-size: 26px;
   font-weight: 600;
   line-height: 1;
-  color: var(--parchment);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 
 .req__of {
   font-family: var(--face-narrow);
-  font-size: 19px;
-  color: var(--parchment-dim);
+  font-size: 17px;
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
+.req__unit {
+  flex: 1 1 100%;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
 .req__bar {
-  height: 16px;
-  border-radius: var(--pill-radius);
+  display: block;
+  height: 10px;
+  border-radius: var(--pill);
   background: rgba(0, 0, 0, 0.45);
-  border: 2px solid var(--wood-dark);
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
 
 .req__fill {
   display: block;
   height: 100%;
-  border-radius: var(--pill-radius);
-  background: linear-gradient(180deg, #9cf0ae, var(--grow) 45%, var(--grow-deep));
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.18);
-  transition: width 420ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  border-radius: var(--pill);
+  background: linear-gradient(180deg, var(--gold-hi), var(--gold) 45%, var(--gold-deep));
+  transition: width 450ms ease;
+}
+
+.card[data-state="ready"] .req__fill {
+  background: linear-gradient(180deg, #a7f5ba, var(--grow) 45%, var(--grow-deep));
 }
 
 .req__short {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 12.5px;
   line-height: 1.45;
-  color: var(--parchment-dim);
+  color: var(--ink-2);
 }
 
 .req__short strong {
   color: var(--gold);
 }
 
-/* ---- the button ---- */
+.req__short--done {
+  padding: 11px 13px;
+  color: var(--ink-3);
+  background: var(--panel-sunk);
+  border-radius: 10px;
+}
 
-.press {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
+.card .press {
   width: 100%;
-  min-height: 54px;
-  padding: 0 18px;
-  font: inherit;
-  font-family: var(--face-narrow);
-  font-size: 19px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--gold-ink);
-  background: linear-gradient(180deg, #b6f5c4, var(--grow) 40%, var(--grow-deep));
-  border: 2px solid #1d5c30;
-  border-radius: 12px;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), 0 5px 0 #1d5c30;
-  cursor: pointer;
-  transition: transform 90ms ease, box-shadow 90ms ease;
-}
-
-.press:hover {
-  filter: brightness(1.05);
-}
-
-.press:active {
-  transform: translateY(4px);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3), 0 1px 0 #1d5c30;
-}
-
-.press[data-state="waiting"] {
-  color: var(--parchment-dim);
-  background: linear-gradient(180deg, #6b5b4a, #3f3428);
-  border-color: var(--wood-dark);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.08), 0 5px 0 var(--wood-dark);
-  cursor: not-allowed;
-}
-
-.press[data-state="waiting"]:active {
-  transform: none;
-}
-
-.press[data-state="maxed"] {
-  color: var(--gold-ink);
-  background: linear-gradient(180deg, #ffe08a, var(--gold) 45%, var(--gold-deep));
-  border-color: #8a5a10;
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.4), 0 5px 0 #8a5a10;
-  cursor: default;
-}
-
-/* Ready to press: it should catch your eye from across the screen. */
-.press[data-state="ready"] {
-  animation: press-breathe 1.9s ease-in-out infinite;
-}
-
-@keyframes press-breathe {
-  0%,
-  100% {
-    filter: brightness(1);
-  }
-  50% {
-    filter: brightness(1.14);
-  }
 }
 
 .card__foot {
   margin: 0;
-  padding: 0 16px 14px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--stone);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-4);
 }
 
 /* --------------------------------------------------------------------------
-   Ready badge over the world
+   Narrower desktops
+   --------------------------------------------------------------------------
+   Below the desktop gate the game does not run at all, so this only has to
+   cover laptops. Everything shrinks toward the edges rather than reflowing.
    -------------------------------------------------------------------------- */
 
-.ready {
-  position: absolute;
-  z-index: 3;
-  transform: translate(-50%, -100%);
-  pointer-events: auto;
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  padding: 0;
-  border: 3px solid #1d5c30;
-  border-radius: 50%;
-  color: var(--gold-ink);
-  background: radial-gradient(circle at 35% 28%, #c9ffd6, var(--grow) 55%, var(--grow-deep));
-  box-shadow: 0 4px 0 #1d5c30, 0 10px 22px rgba(0, 0, 0, 0.45);
-  cursor: pointer;
-  animation: ready-bob 1.5s ease-in-out infinite;
-}
-
-.ready svg {
-  width: 20px;
-  height: 20px;
-}
-
-.ready__n {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  display: grid;
-  place-items: center;
-  border-radius: var(--pill-radius);
-  font-family: var(--face-narrow);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--gold-ink);
-  background: var(--gold);
-  border: 2px solid var(--wood-dark);
-}
-
-@keyframes ready-bob {
-  0%,
-  100% {
-    transform: translate(-50%, -100%);
-  }
-  50% {
-    transform: translate(-50%, calc(-100% - 7px));
-  }
-}
-
-/* --------------------------------------------------------------------------
-   Narrow screens
-   -------------------------------------------------------------------------- */
-
-@media (max-width: 780px) {
-  .res {
-    top: auto;
-    bottom: calc(var(--pad) + 4px);
-    left: var(--pad);
-    right: var(--pad);
-    transform: none;
-    justify-content: space-between;
-    overflow-x: auto;
-    scrollbar-width: none;
+@media (max-width: 1240px) {
+  .quest,
+  .card {
+    width: 20rem;
   }
 
-  .res::-webkit-scrollbar {
-    display: none;
+  .rail {
+    width: 15.5rem;
   }
 
   .res__pill {
-    padding: 6px 12px 6px 7px;
+    padding: 0 12px 0 26px;
   }
 
-  .res__name {
+  .res__value {
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 1080px) {
+  :root {
+    --pad: 12px;
+  }
+
+  .crest__text {
     display: none;
   }
 
+  .crest {
+    padding: 8px;
+  }
+
+  .chip__text {
+    display: none;
+  }
+
+  .chip {
+    padding: 0 8px;
+  }
+}
+
+/* Short laptops: the panel would otherwise reach the resource bar. */
+@media (max-height: 720px) {
+  .quest,
   .card {
-    left: var(--pad);
-    right: var(--pad);
-    bottom: calc(var(--pad) + 62px);
-    width: auto;
+    max-height: calc(100vh - 2 * var(--pad) - 66px);
   }
 
-  .tier {
-    padding: 6px 12px 6px 8px;
+  .quest__title {
+    font-size: 20px;
   }
-
-  .tier__levels {
-    display: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card,
-  .ready,
-  .press {
-    animation: none !important;
-  }
-}
-
-/* --------------------------------------------------------------------------
-   The Advisor
-   -------------------------------------------------------------------------- */
-
-.advisor,
-.advisor__tab {
-  border-radius: var(--card-radius);
-  background: linear-gradient(180deg, var(--wood-lit), var(--wood) 60%);
-  border: 3px solid var(--wood-dark);
-  box-shadow:
-    inset 0 2px 0 rgba(255, 220, 160, 0.18),
-    0 6px 0 var(--wood-dark),
-    0 18px 40px rgba(0, 0, 0, 0.5);
-}
-
-.advisor {
-  width: min(23rem, 34vw);
-  overflow: hidden;
-  animation: card-in 200ms cubic-bezier(0.2, 1.3, 0.5, 1);
-}
-
-.advisor__tab {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  width: min(23rem, 34vw);
-  padding: 10px 16px 10px 11px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.advisor__tab:hover {
-  filter: brightness(1.08);
-}
-
-/* The exclamation a Clash player looks for. */
-.advisor__mark {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  font-family: var(--face-narrow);
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--gold-ink);
-  background: radial-gradient(circle at 34% 26%, #fff4c9, var(--gold) 52%, var(--gold-deep));
-  border: 2px solid var(--wood-dark);
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22);
-  animation: press-breathe 2.2s ease-in-out infinite;
-}
-
-.advisor__tabText,
-.advisor__who {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.advisor__tabTitle {
-  font-family: var(--face-narrow);
-  font-size: 15.5px;
-  font-weight: 600;
-  color: var(--parchment);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.advisor__tabStage,
-.advisor__stage {
-  font-size: 12px;
-  color: var(--parchment-dim);
-}
-
-.advisor__head {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 13px 15px;
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.16), transparent);
-  border-bottom: 2px solid var(--wood-dark);
-}
-
-.advisor__name {
-  font-family: var(--face-narrow);
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--gold);
-  line-height: 1;
-}
-
-.advisor__body {
-  display: grid;
-  gap: 9px;
-  padding: 15px;
-}
-
-.advisor__reads {
-  margin: 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--parchment-dim);
-  background: rgba(0, 0, 0, 0.26);
-  border-left: 3px solid var(--gold);
-}
-
-.advisor__title {
-  margin: 2px 0 0;
-  font-family: var(--face-narrow);
-  font-size: 21px;
-  font-weight: 600;
-  line-height: 1.15;
-  color: var(--parchment);
-}
-
-.advisor__why {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--parchment-dim);
-}
-
-.advisor__track {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 3px;
-}
-
-.advisor__track .req__bar {
-  flex: 1;
-  height: 13px;
-}
-
-.advisor__pct {
-  font-family: var(--face-narrow);
-  font-size: 13px;
-  color: var(--parchment-dim);
-  font-variant-numeric: tabular-nums;
-}
-
-.advisor__measure {
-  margin: 0;
-  font-size: 12px;
-  color: var(--stone);
-}
-
-.advisor__howBtn {
-  justify-self: start;
-  padding: 7px 13px;
-  font: inherit;
-  font-size: 13px;
-  color: var(--parchment);
-  background: rgba(0, 0, 0, 0.28);
-  border: 2px solid var(--wood-dark);
-  border-radius: 9px;
-  cursor: pointer;
-}
-
-.advisor__howBtn:hover {
-  filter: brightness(1.2);
-}
-
-.advisor__how {
-  margin: 2px 0 0;
-  padding-left: 20px;
-  display: grid;
-  gap: 7px;
-  font-size: 13.5px;
-  line-height: 1.5;
-  color: var(--parchment);
-}
-
-.advisor__how li::marker {
-  color: var(--gold);
-  font-family: var(--face-narrow);
-  font-weight: 600;
-}
-
-/* --------------------------------------------------------------------------
-   Too small to play
-   -------------------------------------------------------------------------- */
-
-.gate {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 14px;
-  padding: 28px;
-  text-align: center;
-  background: radial-gradient(circle at 50% 30%, #23303f, #0a0f16 70%);
-}
-
-.gate__crest {
-  width: 54px;
-  height: 54px;
-  color: var(--gold);
-}
-
-.gate__title {
-  margin: 0;
-  font-family: var(--face-narrow);
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--parchment);
-}
-
-.gate__line {
-  margin: 0;
-  max-width: 26rem;
-  font-size: 15px;
-  line-height: 1.55;
-  color: var(--parchment-dim);
-}
-
-.gate__small {
-  margin: 0;
-  max-width: 24rem;
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--stone);
-}
-
-/* --------------------------------------------------------------------------
-   Sign in with Whop
-   --------------------------------------------------------------------------
-   A website has no iframe and no injected identity, so the owner signs in and
-   the figures appear. Everyone else gets the city with the numbers withheld,
-   which is the honest public view rather than a locked door.
-   -------------------------------------------------------------------------- */
-
-.signin {
-  position: absolute;
-  top: calc(var(--pad) + 58px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 4;
-  display: grid;
-  justify-items: center;
-  gap: 9px;
-  max-width: min(32rem, calc(100vw - 2 * var(--pad)));
-  padding: 13px 18px 15px;
-  text-align: center;
-  border-radius: var(--card-radius);
-  background: linear-gradient(180deg, var(--wood-lit), var(--wood) 60%);
-  border: 3px solid var(--wood-dark);
-  box-shadow: inset 0 2px 0 rgba(255, 220, 160, 0.18), 0 6px 0 var(--wood-dark);
-}
-
-.signin__line {
-  margin: 0;
-  font-size: 13.5px;
-  line-height: 1.45;
-  color: var(--parchment-dim);
-}
-
-.signin__go {
-  min-height: 46px;
-  padding: 0 22px;
-  text-decoration: none;
-  font-size: 17px;
-}
-
-.signout {
-  position: absolute;
-  top: calc(var(--pad) + 58px);
-  right: var(--pad);
-  z-index: 4;
-  padding: 7px 14px;
-  font-size: 12.5px;
-  text-decoration: none;
-  color: var(--parchment-dim);
-  background: rgba(26, 18, 9, 0.9);
-  border: 2px solid var(--wood-dark);
-  border-radius: var(--pill-radius);
-}
-
-.signout:hover {
-  color: var(--parchment);
-}
-
-/* --------------------------------------------------------------------------
-   Where things sit
-   --------------------------------------------------------------------------
-   Four anchors that cannot reach each other: the rail bottom left, the card
-   bottom right, the camera against the right edge halfway down, the resources
-   along the top. Everything used to hang off a corner and two of them shared
-   one, which is how the advisor ended up on top of the district buttons.
-   -------------------------------------------------------------------------- */
-
-.leftrail {
-  position: absolute;
-  left: var(--pad);
-  bottom: var(--pad);
-  z-index: 5;
-  display: grid;
-  gap: 10px;
-  justify-items: start;
-  /* Never taller than the stage, and never wide enough to reach the card. */
-  max-height: calc(100% - 2 * var(--pad) - 60px);
-  max-width: min(24rem, 36vw);
-}
-
-/* The advisor is the tall part, so it is the part that scrolls. */
-.leftrail .advisor {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-/* The gap between the rail and the card is the one strip nothing else wants,
-   so the camera lives there and cannot reach either of them. */
-.camera {
-  top: auto;
-  right: auto;
-  left: 50%;
-  bottom: var(--pad);
-  transform: translateX(-50%);
-  flex-direction: row;
-}
-
-/* The card owns the bottom right; the sign-out sits clear of the resources. */
-.card {
-  max-height: calc(100% - 2 * var(--pad) - 74px);
-  overflow-y: auto;
 }
