@@ -110,6 +110,8 @@ export function CityCanvas({
   const stageRef = useRef<ReturnType<typeof createStage> | null>(null);
   const terrainRef = useRef<Terrain | null>(null);
   const lotsRef = useRef<Lots | null>(null);
+  /** Set only by the capture hook. Null in the product, always. */
+  const pinnedRef = useRef<Record<string, number> | null>(null);
 
   const worksRef = useRef<Works | null>(null);
   // Held in a ref so the pointer handler, which is installed once, always
@@ -609,6 +611,33 @@ export function CityCanvas({
         },
 
         /**
+         * Stands the plots at levels of the caller's choosing.
+         *
+         * The game decides levels from what the business earned — that is the
+         * point of it, and it also means there is no way to look at the forge
+         * at level two without finding a business that earned exactly that.
+         * Reviewing eleven plots across six levels each needs the sixty-six of
+         * them on demand.
+         */
+        setLevels: (next: Record<string, number>) => {
+          // Pinned, not just applied. The shell rebuilds the plots whenever the
+          // figures move, and a live poll landing mid-capture would quietly put
+          // the earned city back while the camera was pointed at a level two.
+          pinnedRef.current = next;
+          const standing = lotsRef.current;
+          if (standing) {
+            stage.scene.remove(standing.group);
+            standing.dispose();
+          }
+          const lots = buildLots(projection.seed, next);
+          lotsRef.current = lots;
+          stage.scene.add(lots.group);
+          worksRef.current?.apply({ tops: lots.tops, markers: {}, selected: null });
+          lots.update(0);
+          stage.renderer.render(stage.scene, stage.camera);
+        },
+
+        /**
          * Every moving thing on the terrain, where it is right now.
          *
          * Exists so a test can step the clock and check that nothing teleports.
@@ -700,7 +729,7 @@ export function CityCanvas({
     const stage = stageRef.current;
     if (!stage) return;
 
-    const lots = buildLots(projection.seed, levels);
+    const lots = buildLots(projection.seed, pinnedRef.current ?? levels);
     lotsRef.current = lots;
     stage.scene.add(lots.group);
 
@@ -719,8 +748,15 @@ export function CityCanvas({
     stage.renderer.render(stage.scene, stage.camera);
 
     return () => {
-      stage.scene.remove(lots.group);
-      lots.dispose();
+      // Whatever is current, not the one this effect happened to build. The
+      // capture hook below can swap the lots out from under it, and disposing
+      // the closed-over object would drop the replacement on the floor and
+      // free something already freed.
+      const standing = lotsRef.current;
+      if (standing) {
+        stage.scene.remove(standing.group);
+        standing.dispose();
+      }
       lotsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

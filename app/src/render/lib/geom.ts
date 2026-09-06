@@ -33,12 +33,23 @@ export type Vec3 = [number, number, number];
  * its own, which is why the extruded roof shapes elsewhere still do.
  */
 const prototypes = new Map<string, THREE.BufferGeometry>();
+/**
+ * Identity, not a flag on the geometry.
+ *
+ * `userData` cannot carry this. `BufferGeometry.copy` assigns the source's
+ * `userData` **by reference**, so every clone of a prototype — and every clone
+ * of a clone, however many transforms deep — shares one object with it. A mark
+ * left there says "I am the prototype" on geometry that is nothing of the kind.
+ */
+const isPrototype = new WeakSet<THREE.BufferGeometry>();
+/** Prototype -> its merge-ready form. Same reason it is not on `userData`. */
+const flattened = new WeakMap<THREE.BufferGeometry, THREE.BufferGeometry>();
 
 function prototype(key: string, make: () => THREE.BufferGeometry): THREE.BufferGeometry {
   const found = prototypes.get(key);
   if (found) return found;
   const made = make();
-  made.userData.protoKey = key;
+  isPrototype.add(made);
   prototypes.set(key, made);
   return made;
 }
@@ -111,10 +122,21 @@ function normalise(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   // A prototype only has to be flattened once. After that every placement is a
   // buffer copy, which is the cheapest this can be without sharing geometry
   // between parts that are about to be merged at different matrices.
-  const cached = geometry.userData.flattened as THREE.BufferGeometry | undefined;
+  //
+  // Keyed on the geometry itself. Keeping this on `userData` looked equivalent
+  // and was not: a non-indexed prototype is flattened by cloning, a clone
+  // shares its source's `userData` object, and so every placed copy ended up
+  // holding a reference back to the untransformed prototype. Re-adding one to a
+  // builder — which is exactly how a district composes a block and how a parcel
+  // bakes into the world — then handed back the prototype and threw the
+  // placement away. Whole building masses and roofs were being stacked at the
+  // origin while their windows and trim, built from indexed primitives that
+  // escaped the same path, stayed correctly on the plot.
+  const cached = flattened.get(geometry);
   if (cached) return cached.clone();
 
   const flat = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  flat.userData = {};
   for (const name of Object.keys(flat.attributes)) {
     if (name !== "position" && name !== "normal" && name !== "uv" && name !== "color") {
       flat.deleteAttribute(name);
@@ -133,8 +155,8 @@ function normalise(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
   flat.morphAttributes = {};
   flat.clearGroups();
   // Only prototypes are worth remembering; a one-off extrusion would just leak.
-  if (prototypes.get(geometry.userData.protoKey as string) === geometry) {
-    geometry.userData.flattened = flat;
+  if (isPrototype.has(geometry)) {
+    flattened.set(geometry, flat);
     return flat.clone();
   }
   return flat;
