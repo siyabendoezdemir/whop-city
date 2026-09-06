@@ -166,24 +166,33 @@ not account-bound, so they carry inert seeds and need no secret.
 
 ### The endpoints
 
-The browser may call exactly two same-origin paths:
+The browser may call exactly three same-origin paths:
 
 ```
 GET /api/city/snapshot     the public projection, with the figures gated inside it
 GET /api/city/profile      owner-only: who is signed in, and which Whop this is
+GET /api/city/live         owner-only: the four figures, and the sales behind them
 ```
 
-Two documents with two audiences, which is why the profile is not a field on the
-snapshot: they must not share a cache entry. A visitor gets exactly
+Three documents with two audiences, which is why the profile is not a field on
+the snapshot: they must not share a cache entry. A visitor gets exactly
 `{"signedIn": false}` and learns nothing else — not the business name, not the
 route, not the id, not whether a session exists at all.
 `tests/browser/data-safety.spec.ts` asserts that body verbatim.
 
+The live endpoint is the small, frequent read, and it is separate from the
+snapshot for the same reason: the snapshot is parcels, districts and freshness
+and costs up to twenty-seven upstream reads, which is not a thing to poll every
+fifteen seconds. A visitor gets `{"live": false}` and is never polled for at
+all — the audience is checked before any upstream work, so a visitor cannot cost
+the business a read, and `useLive` is not even enabled unless the snapshot
+already said the figures are theirs.
+
 Sign-in adds four more fixed paths: `/api/auth/start`, `/api/auth/callback`,
-`/api/auth/logout` and `/api/auth/view`. All six are mounted in `src/server.ts`
+`/api/auth/logout` and `/api/auth/view`. All seven are mounted in `src/server.ts`
 — a custom TanStack Start server entry — as pathname **equality checks** ahead of
 the router. There is no pattern, no parameter and no dispatch table, so the set
-of endpoints the browser can reach is those six literals, and the framework's
+of endpoints the browser can reach is those seven literals, and the framework's
 `/_serverFn` prefix is closed outright rather than left answering with whatever
 its error shape is, since City registers no server functions to serve.
 
@@ -251,9 +260,34 @@ to read the wrong business, or an arbitrary one where the credential has several
 
 **Zero is not silence.** A metric that cannot be read is `null`, never zero. The
 reads are independent, so one slow node costs a figure rather than the city; but
-where none of the four the game runs on answered, `metricsFor` returns
+where none of the four the game runs on answered, `metricsFrom` returns
 `source: "unreadable"` and the interface shows a dash. A row of noughts is a
 claim about the business; a dash is a claim about the reading.
+
+### Keeping up
+
+The stats API reports whole days and whole months, which is the right grain for
+"how big should this building be" and the wrong grain for "somebody just bought
+something". `server/sales.ts` reads the payments themselves — the only place on
+the platform where an individual sale exists as an event — and the browser polls
+`/api/city/live` for them every fifteen seconds while the tab is visible,
+stopping entirely when it is not.
+
+A sale that lands throws a card under the resource bar it just moved, the figure
+pulses with the amount, and the roll behind the Activity tab keeps the last day.
+Levels are computed from these figures rather than the snapshot's, so a sale that
+takes a building over its next threshold makes it offer itself in the same beat.
+
+What crosses the wire from a payment is an amount, a time, first-or-renewal and
+the product name. No buyer: not their name, email, id, membership or country —
+and not the payment id either, since the client only needs to know "same sale as
+last poll" and an upstream identifier on the wire is one that can end up in a
+log. The dedupe key is a digest of it. `tests/live.test.ts` asserts the exact
+field set and that a row carrying a buyer does not leak one.
+
+Nothing on the feed is invented. Every line is a payment that exists or a figure
+Whop reports that moved; there is no encouraging filler and nothing fires on a
+timer, so a quiet hour looks quiet.
 
 ## Data source
 
@@ -438,12 +472,57 @@ the fixed 45° three-quarter camera angle, the world-fixed sun and shadow volume
 parcel layout stays fixed — it is the approved composition — and the game
 decides what stands on it.
 
+### The ground, and where it stops
+
+The city used to stand on a three-hundred-metre square of dark concrete. Two
+things were wrong with that and both were plainly visible: the square ran out,
+so panning south-east walked you off the end of the world onto a grey cliff over
+nothing; and the parts of it no building stood on read as an enormous empty car
+park, because that is what an unbroken field of paving is.
+
+It is open country now. The plain runs far enough in every direction that no
+camera the game allows can reach its edge, the distance is eaten by the fog
+rather than by a boundary, and nothing is paved except what somebody paved:
+carriageways, footways, quays and plots. `countryside.ts` farms the distance
+into hedged fields on a jittered grid, with woods, ponds and the odd barn,
+thinning out as they go.
+
+Two related fixes came with it. The orthographic camera sits much further back —
+irrelevant to the projection, entirely about clipping, since ground nearer than
+the near plane is cut and zoomed out over open country the plain was being
+sliced off in a dead straight line with sky behind it. And the canal was
+authored *underneath* the slab that covered it, so the bridge spanned solid
+ground; the land is cut around it.
+
+### The roads are a graph
+
+Roads used to be independent rectangles of asphalt that knew nothing about each
+other, and every junction was wrong in four ways at once: a kerb across the
+mouth of the side street, a raised footway over a carriageway, two coplanar
+carriageways fighting for the same depth values, and the boulevard's planted
+median sealing the crossing shut so nothing could turn even in principle.
+
+`roads.ts` models the network. Crossings are computed, each layer asks for them
+and stops clear, and `buildJunctions` lays footway corners and crossing stripes
+from the network rather than from a hand-written list of coordinates. Five of
+the seven roads used to stop in mid-air; a ring road and two highways out of
+town mean every road now ends at another road or runs off past the fog.
+
+The same graph carries the traffic. Every vehicle follows a closed circuit found
+by `findCircuit` — it turns at junctions, keeps right, climbs the bridge deck
+and comes back round — instead of running a modulo along one street and
+switching itself off inside the bridge gap. Pedestrians walk the footways the
+same way. `tests/browser/traffic.spec.ts` steps the clock and asserts the
+continuity: nothing hidden, nothing teleporting, nothing off the map, everything
+back where it started, and the canal crossed over rather than through.
+
 ### Terrain and lots
 
-`buildTerrain` is the ground, both bays, the road network, the surrounding
-massing, the traffic and the ferry: none of it depends on what the player has
-built, so it is built once for the life of the page. `buildLots` is the eleven
-plots and everything on them, and it is the only thing a level change rebuilds.
+`buildTerrain` is the ground, the countryside, both bays, the road network, the
+surrounding massing, the traffic, the pedestrians and the ferry: none of it
+depends on what the player has built, so it is built once for the life of the
+page. `buildLots` is the eleven plots and everything on them, and it is the only
+thing a level change rebuilds.
 Rebuilding the whole city to change the height of one tower meant re-merging
 every road, every kerb and every far-bank block, and the frame it cost was
 plainly visible. Measured by `capture/bench.mjs` on the CI machine under
@@ -506,25 +585,46 @@ Measured by `pnpm bench` on the largest fixture, against the budget
 
 | | measured | budget |
 | --- | --- | --- |
-| draw calls | 153 | 220 |
-| triangles | 202,822 | 250,000 |
+| draw calls | 176 | 220 |
+| triangles | 160,326 | 250,000 |
 
 The same spec asserts the budget on every scenario, and that cycling through all
 of them and back leaks no textures or geometries.
+
+The countryside arrived costing 126,000 triangles and put the frame over its
+budget at 329,000. `capture/weigh.mjs` attributes the count by group, which
+found three things worth fixing and one of them was nothing to do with the
+countryside:
+
+- The lamp lantern was a rounded box. It is thirty-four centimetres across and
+  four metres up — three pixels at the default framing — and it was spending
+  three hundred triangles each, twenty-two thousand across the city.
+- Open country plants a cheap thirty-six-triangle tree rather than the
+  eighty-four-triangle street tree, merged into one prototype so it is one
+  instanced mesh instead of two.
+- `bevelBox` used two segments where one does the same job. The bevel exists so
+  a long straight edge catches a highlight instead of going to a hard vector
+  line; the radius is five centimetres, which is under a pixel at every framing
+  the game allows. Two segments cost three hundred triangles a box against a
+  hundred and eight, and bevelled boxes are most of the city.
+
+The frame is smaller than it was before any of this.
 
 A level change costs the lot rebuild rather than a world rebuild, which is what
 splitting the two halves bought:
 
 | | |
 | --- | --- |
-| terrain, built once per page | 38 ms |
-| lots, every plot at level five | 218 ms |
+| terrain, built once per page | 67 ms |
+| lots, every plot at level five | 219 ms |
 | lots, every plot vacant | 7 ms |
 
 Those are software-rendering numbers on a shared machine with no GPU, and the
 first version of the lot rebuild was 414 ms. Cached geometry prototypes, the two
 per-vertex bake passes rewritten over raw arrays, and banded glazing above six
-storeys instead of a thousand punched openings account for the difference.
+storeys instead of a thousand punched openings account for the difference. The
+terrain grew from 38 ms because it now builds the countryside and finds the
+traffic circuits, and it is paid once for the life of the page.
 
 ## The interface
 
@@ -560,9 +660,9 @@ city and a card side by side, not what the device calls itself.
 
 ```bash
 pnpm typecheck
-pnpm test                     # 193 unit tests: the boundary, the routes, the game
-pnpm test:browser:fixtures    # 16 tests: the world and the game, on a fixtures build
-pnpm test:browser:production  # 17 tests: data safety and the bundle, on a deployable build
+pnpm test                     # 237 unit tests: the boundary, the routes, the game, the network
+pnpm test:browser:fixtures    # 30 tests: the world, the game, the traffic and the live feed
+pnpm test:browser:production  # 18 tests: data safety and the bundle, on a deployable build
 pnpm build
 ```
 
@@ -573,15 +673,23 @@ positions and canvas pixels across scenarios, because a static city would pass a
 suite that only read panel text; the production suite watches the wire and greps
 the deployable bundle. `CITY_URL` points them elsewhere.
 
-Five capture scripts drive a running server:
+The capture scripts drive a running server:
 
 ```bash
 node capture/shot.mjs <name> [scenario]   # one still
+node capture/spot.mjs name:x,z,height     # a close look at a world coordinate
 node capture/play.mjs [scenario]          # walks the loop, a still per step
+node capture/feed.mjs                     # the live feed, with a sale injected into the poll
 node capture/walkthrough.mjs [outDir]     # the evidence set, one still per state
+node capture/tour.mjs                     # the world, frame by frame, stitched to mp4
+node capture/weigh.mjs                    # where the triangles are, by group
 pnpm bench                                # rebuild, submit and present timings, as JSON
 pnpm bench:drag [outDir]                  # how far the ground moves for how far the hand does
 ```
+
+`capture/rebuild.sh` builds and restarts the preview server on a known port, so
+a capture is never pointed at a stale bundle. `CITY_BUILD="pnpm build:fixtures"`
+switches which build it serves.
 
 All of them drive Playwright's bundled Chromium under SwiftShader and pin
 supersampling to 1 through the page's own `ss=` query. `CITY_BASE` points them

@@ -45,6 +45,7 @@ describe("reading a payment", () => {
     id: "pay_ABC123",
     usd_total: 49,
     paid_at: "2026-09-06T11:30:00Z",
+    status: "paid",
     billing_reason: "subscription_create",
     product: { title: "Pro monthly" },
   };
@@ -81,6 +82,20 @@ describe("reading a payment", () => {
     // signing up, and calling it a renewal is calling a win a retention.
     expect(toSale({ ...row, billing_reason: "subscription_create" }, now)!.kind).toBe("first");
     expect(toSale({ ...row, billing_reason: "one_time" }, now)!.kind).toBe("first");
+  });
+
+  it("only counts money that actually arrived", () => {
+    for (const status of ["pending", "open", "draft", "authorized", "void", "uncollectible"]) {
+      expect(toSale({ ...row, status }, now), `announced a ${status} payment`).toBeNull();
+    }
+    expect(toSale({ ...row, status: "paid" }, now)).not.toBeNull();
+    expect(toSale({ ...row, status: "succeeded" }, now)).not.toBeNull();
+    // No status field at all: a paid time is the fallback, and no paid time
+    // with no status is not a sale.
+    expect(toSale({ ...row, status: undefined }, now)).not.toBeNull();
+    expect(
+      toSale({ ...row, status: undefined, paid_at: undefined, created_at: row.paid_at }, now),
+    ).toBeNull();
   });
 
   it("drops a row it cannot honestly describe", () => {

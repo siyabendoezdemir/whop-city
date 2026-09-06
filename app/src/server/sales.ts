@@ -112,6 +112,28 @@ function kindOf(reason: unknown): "first" | "renewal" {
 }
 
 /**
+ * Money that actually arrived.
+ *
+ * A payment record is not a sale. Whop's list carries drafts, authorisations
+ * awaiting capture, pending charges, past-due renewals and payments that failed
+ * outright, and announcing any of those as a sale would be announcing revenue
+ * the business does not have. The request asks for `paid` and this checks the
+ * answer, because a filter the API ignores is a filter that is not there.
+ *
+ * A refund is left alone. It reverses a payment that did happen, the stats API
+ * already accounts for it in the revenue figure, and striking a card off the
+ * feed retroactively is a worse lie than leaving it.
+ */
+const PAID_STATUSES = new Set(["paid", "succeeded"]);
+
+function isPaid(row: PaymentRow): boolean {
+  const status = typeof row.status === "string" ? row.status.toLowerCase() : null;
+  if (status !== null) return PAID_STATUSES.has(status);
+  // No status on the row at all: fall back to whether it has a paid time.
+  return row.paid_at !== undefined && row.paid_at !== null;
+}
+
+/**
  * Turns one upstream row into a sale, or nothing.
  *
  * Exported so the shape handling is testable without a network. A row missing
@@ -124,6 +146,7 @@ export function toSale(row: unknown, now: number): Sale | null {
 
   const id = typeof record.id === "string" ? record.id : null;
   if (id === null) return null;
+  if (!isPaid(record)) return null;
 
   const amount = Number(record.usd_total ?? record.total);
   if (!Number.isFinite(amount) || amount <= 0) return null;
@@ -159,6 +182,7 @@ export async function readSales(env: Env, accountId: string | null): Promise<Rea
   url.searchParams.set("order", "created_at");
   url.searchParams.set("direction", "desc");
   url.searchParams.set("created_after", new Date(now - WINDOW_MS).toISOString());
+  url.searchParams.append("statuses[]", "paid");
   // Named, always. Omitting it means "whatever the credential defaults to",
   // which on a credential that can read more than one business is a quiet way
   // to put somebody else's sales in this city's feed.
