@@ -71,8 +71,20 @@ const builtTriangles = (page: Page) =>
     return total;
   });
 
-/** Knocks every claimed level back by one: a business that grew overnight. */
+/**
+ * Knocks every claimed level back by one: a business that grew overnight.
+ *
+ * Waits for the city to have been written first. The shell saves on a debounce
+ * after the figures settle, and a test that edited storage before that landed
+ * was editing a key that did not exist yet — which passed or failed on how
+ * slow the software renderer happened to be that run.
+ */
 async function fallBehind(page: Page): Promise<number> {
+  await page.waitForFunction(
+    () => Object.keys(localStorage).some((key) => key.startsWith("whop-city.game.v1")),
+    null,
+    { timeout: 60_000 },
+  );
   return page.evaluate(() => {
     const key = Object.keys(localStorage).find((entry) => entry.startsWith("whop-city.game.v1"));
     if (!key) return 0;

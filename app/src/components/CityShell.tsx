@@ -331,12 +331,21 @@ export function CityShell() {
   // those to storage would leave an empty saved city behind that the owner
   // then inherits when they sign in — no founding sweep, and a baseline of
   // nought for the panel that is supposed to say what changed.
+  //
+  // Keyed on the figures rather than on the object holding them. Every live
+  // poll hands back a fresh object whether or not anything moved, and keying
+  // on identity meant a poll every fifteen seconds restarted this four-second
+  // debounce for as long as the tab was open — so a city that had never been
+  // saved could stay that way indefinitely.
+  const settledAt = metrics
+    ? `${metrics.source}|${metrics.gold}|${metrics.citizens}|${metrics.traffic}|${metrics.recurring}`
+    : "";
   useEffect(() => {
     if (!city || !metrics || metrics.source !== "owner") return;
     const timer = window.setTimeout(() => persist(markSeen(city, metrics, Date.now())), 4_000);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metrics]);
+  }, [settledAt]);
 
   useEffect(() => {
     if (!flash) return;

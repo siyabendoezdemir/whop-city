@@ -163,7 +163,20 @@ export function fixtureSnapshot(scenario: FixtureScenario, now: number = Date.no
 export function fixtureStats(scenario: FixtureScenario): BusinessStats {
   switch (scenario) {
     case "blank":
-      return NO_STATS;
+      // A Whop that exists and has sold nothing: every figure read, every
+      // figure nought. Not the same thing as a business whose figures could
+      // not be read — that is `unavailable`, and it is the only scenario that
+      // returns `NO_STATS`. Modelling the two the same way was hiding the
+      // whole empty-city state behind an error message.
+      return {
+        revenue: { now: 0, before: 0 },
+        recurring: { now: 0, before: 0 },
+        members: { now: 0, before: 0 },
+        traffic: { now: 0, before: 0 },
+        newMembers: { now: 0, before: 0 },
+        churn: 0,
+        refundRate: 0,
+      };
 
     case "launch":
       // People arriving, nobody buying yet. The advisor should call it a page
