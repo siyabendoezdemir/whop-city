@@ -269,7 +269,7 @@ export function CityShell() {
 
   useEffect(() => {
     if (!flash) return;
-    const timer = window.setTimeout(() => setFlash(null), 2_400);
+    const timer = window.setTimeout(() => setFlash(null), 3_400);
     return () => window.clearTimeout(timer);
   }, [flash]);
 

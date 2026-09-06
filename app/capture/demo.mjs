@@ -39,6 +39,49 @@ const browser = await chromium.launch({
 });
 
 const context = await browser.newContext({ viewport: null });
+
+/**
+ * A visible cursor.
+ *
+ * X11 screen capture does not record the pointer, and without it a recording
+ * of a drag is unreadable — you cannot tell whether the world followed the
+ * hand or ran away from it, which is the one thing a camera demo has to show.
+ * Injected by the capture harness only; nothing in the product draws this.
+ */
+await context.addInitScript(() => {
+  const dot = document.createElement("div");
+  dot.style.cssText = [
+    "position:fixed",
+    "left:0",
+    "top:0",
+    "width:26px",
+    "height:26px",
+    "margin:-13px 0 0 -13px",
+    "border-radius:50%",
+    "border:2px solid rgba(255,255,255,0.95)",
+    "background:rgba(255,194,71,0.42)",
+    "box-shadow:0 0 0 2px rgba(0,0,0,0.45), 0 2px 10px rgba(0,0,0,0.5)",
+    "pointer-events:none",
+    "z-index:2147483647",
+    "transition:transform 60ms ease, background 60ms ease",
+  ].join(";");
+  const attach = () => {
+    document.body.appendChild(dot);
+    addEventListener("pointermove", (event) => {
+      dot.style.transform = `translate(${event.clientX}px, ${event.clientY}px)`;
+    });
+    addEventListener("pointerdown", () => {
+      dot.style.background = "rgba(116,221,143,0.75)";
+      dot.style.transform += " scale(0.78)";
+    });
+    addEventListener("pointerup", () => {
+      dot.style.background = "rgba(255,194,71,0.42)";
+    });
+  };
+  if (document.body) attach();
+  else addEventListener("DOMContentLoaded", attach);
+});
+
 const page = await context.newPage();
 
 const ready = async (extra = 2500) => {
@@ -76,66 +119,71 @@ while (!existsSync(GO)) await beat(400);
 await beat(1200);
 
 // ------------------------------------------------------------------ phase B
-// Fly around. Drag down and right: the ground has to stay under the cursor.
 const size = page.viewportSize() ?? { width: W, height: H };
 const cx = Math.round(size.width / 2);
 const cy = Math.round(size.height / 2);
 
-await page.mouse.move(cx, cy - 40);
-await page.mouse.down();
-await page.mouse.move(cx + 90, cy + 130, { steps: 26 });
-await page.mouse.up();
+// The loop first, while the plot is still where the default framing put it.
+// Open a building that has outgrown itself, and build it.
+const at = await page.evaluate(() => window.__city.plotGround("core-landmark"));
+if (at) {
+  await page.mouse.move(at.x, at.y, { steps: 20 });
+  await beat(900);
+  await page.mouse.click(at.x, at.y);
+}
+await beat(3600);
+
+const button = page.locator('[data-action="upgrade"]');
+if ((await button.count()) > 0) {
+  const box = await button.boundingBox();
+  if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 18 });
+  await beat(800);
+  await button.click({ force: true, timeout: 120_000 });
+}
+await beat(5000);
+
+await page.locator('[data-action="close-card"]').click({ force: true }).catch(() => undefined);
 await beat(1600);
 
-await page.mouse.move(cx, cy);
+// Then the camera. Drag down and right: the ground has to stay under the dot.
+await page.mouse.move(cx, cy - 60, { steps: 14 });
+await beat(700);
 await page.mouse.down();
-await page.mouse.move(cx - 140, cy - 70, { steps: 22 });
+await page.mouse.move(cx + 110, cy + 150, { steps: 30 });
 await page.mouse.up();
-await beat(1800);
+await beat(2000);
+
+await page.mouse.down();
+await page.mouse.move(cx - 150, cy - 90, { steps: 26 });
+await page.mouse.up();
+await beat(2000);
 
 // Zoom in on the wheel, then back out.
 for (let i = 0; i < 4; i++) {
   await page.mouse.wheel(0, -120);
-  await beat(260);
+  await beat(280);
 }
-await beat(1600);
+await beat(1800);
 for (let i = 0; i < 4; i++) {
   await page.mouse.wheel(0, 120);
-  await beat(260);
+  await beat(280);
 }
 await beat(1400);
 
-// Open a building that has outgrown itself, and build it.
-const at = await page.evaluate(() => window.__city.plotGround("core-landmark"));
-if (at) {
-  await page.mouse.move(at.x, at.y, { steps: 12 });
-  await beat(500);
-  await page.mouse.click(at.x, at.y);
-}
-await beat(3200);
-
-const button = page.locator('[data-action="upgrade"]');
-if ((await button.count()) > 0 && (await button.isEnabled())) {
-  await button.click({ force: true, timeout: 90_000 });
-}
-await beat(4200);
-
-await page.locator('[data-action="close-card"]').click({ force: true }).catch(() => undefined);
-await beat(1400);
-
-// Back to the whole city, then into a district and its own quest.
+// Back to the whole city, then into two districts and their own quests.
 await page.locator('[data-cam="reset"]').click({ force: true });
-await beat(2600);
+await beat(2800);
 
 await page.locator('[data-district="creator-quarter"].rail__go').click({ force: true });
-await beat(3600);
+await beat(3800);
 
 await page.locator('[data-district="offer-forge"].rail__go').click({ force: true });
-await beat(3400);
+await beat(3600);
 
 // Whose city is this.
 await page.locator('[data-action="profile"]').click({ force: true });
-await beat(3200);
+await beat(4000);
 
 console.log("done");
-await browser.close();
+// Left open on the last frame: closing the browser inside the recording
+// paints a black screen over the end of it.
