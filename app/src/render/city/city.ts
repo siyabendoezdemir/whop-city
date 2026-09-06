@@ -56,9 +56,10 @@ export function createLot(
   const rng = new Rng(spec.seed).fork(spec.parcel.id).fork(spec.state);
   const surface =
     spec.district === "forge" ? M.yardApron : spec.district === "creator" ? M.sidewalk : M.concrete;
+  const storeys = storeysFor(spec.parcel.id, spec.level);
   // Kept in its own bucket so silhouette mode can drop the ground without
   // dropping the buildings standing on it.
-  buildParcelGround(groundTarget, kit, spec.parcel, surface);
+  buildParcelGround(groundTarget, kit, spec.parcel, surface, spec.level <= 0 ? 0 : storeys);
 
   const local = new PartsBuilder();
   const matrix = parcelMatrix(spec.parcel);
@@ -71,7 +72,7 @@ export function createLot(
     rng,
     rigs,
     level: spec.level,
-    storeys: storeysFor(spec.parcel.id, spec.level),
+    storeys,
   };
 
   if (spec.level <= 0) buildVacantLot(ctx);

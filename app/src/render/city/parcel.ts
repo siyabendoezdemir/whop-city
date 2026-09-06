@@ -125,6 +125,8 @@ export function buildParcelGround(
   kit: InstanceKit,
   parcel: Parcel,
   surface: THREE.Material = M.concrete,
+  /** Storeys standing here. A party wall belongs to a building, not to a field. */
+  storeys = 1,
 ): void {
   const local = new PartsBuilder();
   const matrix = parcelMatrix(parcel);
@@ -196,13 +198,37 @@ export function buildParcelGround(
         y - 0.02,
         cz + nz * 0.8,
       ]);
-    } else {
-      // Neighbour: a party wall, blind.
-      local.add(M.brickDark, box(alongZ ? 0.35 : length, 3.4, alongZ ? length : 0.35), [
-        cx + nx * 0.17,
-        y + 1.7,
-        cz + nz * 0.17,
-      ]);
+    } else if (storeys > 0) {
+      // Neighbour: the boundary wall along a party line.
+      //
+      // It only exists because two plots meet here, so an empty one does not
+      // get one — a blind brick slab standing alone in a gravelled site was the
+      // most conspicuous thing in a city that had not been built yet.
+      //
+      // And it is a yard wall, not a gable. It used to be a single unrelieved
+      // plane thirty metres long, which at this camera angle is the largest
+      // flat surface anywhere in the district and read as a missing texture. A
+      // buttressed wall with a coping is the same object, costs a box every
+      // four metres, and reads as masonry.
+      const wallH = 3.2;
+      const thick = 0.42;
+      const side = (a: number, b: number): [number, number, number] => [
+        cx + nx * 0.25 + (alongZ ? 0 : a),
+        y + b,
+        cz + nz * 0.25 + (alongZ ? a : 0),
+      ];
+      const span = (a: number, b: number): [number, number, number] =>
+        alongZ ? [b, 0, a] : [a, 0, b];
+      const [sx, , sz] = span(length, thick);
+      local.add(M.brickDark, box(sx, wallH, sz), side(0, wallH / 2));
+      const [cxs, , czs] = span(length, thick + 0.26);
+      local.add(M.kerb, box(cxs, 0.22, czs), side(0, wallH + 0.11));
+      const piers = Math.max(2, Math.round(length / 4.5));
+      const [px, , pz] = span(0.75, thick + 0.34);
+      for (let i = 0; i <= piers; i++) {
+        const t = -length / 2 + (length / piers) * i;
+        local.add(M.brick, box(px, wallH + 0.34, pz), side(t, (wallH + 0.34) / 2));
+      }
     }
   }
 

@@ -230,6 +230,13 @@ export function registerProps(kit: InstanceKit): void {
   kit.define("gravelPile", protoGeo([
     [new THREE.ConeGeometry(0.9, 0.62, 8), [0, 0.31, 0]],
   ]), M.gravel);
+  // Setting-out peg: what says a cleared plot is a plot rather than waste
+  // ground. Four of them along the building line and the grass reads as
+  // measured.
+  kit.define("peg", protoGeo([
+    [box(0.09, 0.85, 0.09), [0, 0.42, 0]],
+    [box(0.3, 0.16, 0.05), [0, 0.78, 0.03]],
+  ]), M.accent, { castShadow: false });
 
   // temporary fencing / hoarding
   kit.define("fence.mesh", protoGeo([[box(2.3, 1.9, 0.04), [0, 1.0, 0]]]), M.netting, {
