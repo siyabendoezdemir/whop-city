@@ -32,6 +32,11 @@ function everyShape(): CityMetrics[] {
           for (const churn of [0, 25]) {
             for (const refunds of [0, 20]) {
               shapes.push(at({ citizens, traffic, gold, recurring, churn, refunds, goldBefore: gold }));
+              // And the same business having a bad month. Without this the
+              // sweep never reaches anything gated on revenue falling.
+              shapes.push(
+                at({ citizens, traffic, gold, recurring, churn, refunds, goldBefore: gold * 3 + 1000 }),
+              );
             }
           }
         }
@@ -187,6 +192,34 @@ describe("honesty", () => {
   it("has a unique id for every quest", () => {
     const ids = QUESTS.map((quest) => quest.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("names the number that finishes it, even from a standing start", () => {
+    // A bar reading "$0" with nothing beside it is the "what am I supposed to
+    // do" problem. Every measurable quest has to be able to say the goal at
+    // nought progress, where there is no fraction to recover it from.
+    const nothing = at();
+    for (const quest of QUESTS) {
+      if (quest.standing) continue;
+
+      if (quest.rate) {
+        // A rate coming down says so in its own terms rather than reporting
+        // "$0 revenue" under a quest about refunds.
+        const readout = quest.rate(at({ refunds: 22, churn: 30 }));
+        expect(readout.now, quest.id).toMatch(/%/);
+        expect(readout.goal, quest.id).toMatch(/%/);
+        expect(readout.label.length, quest.id).toBeGreaterThan(3);
+        continue;
+      }
+
+      expect(quest.target, `${quest.id} has no target`).toBeTypeOf("function");
+      // Evaluated in a business the quest would actually be offered to. A
+      // target only has to make sense where the quest can appear.
+      const where = quest.when ? everyShape().find((shape) => quest.when!(shape)) ?? nothing : nothing;
+      const goal = quest.target!(where);
+      expect(Number.isFinite(goal), `${quest.id} target is not a number`).toBe(true);
+      expect(goal, `${quest.id} target is not positive`).toBeGreaterThan(0);
+    }
   });
 });
 

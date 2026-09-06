@@ -34,11 +34,9 @@ export function QuestCard({ quest, metrics, scope, onGo }: Props) {
   const [open, setOpen] = useState(false);
   const progress = Math.max(0, Math.min(1, quest.progress(metrics)));
   const words = RESOURCE[quest.resource];
+  const rate = quest.rate?.(metrics) ?? null;
   const have = metrics[quest.resource];
-  // What the bar is measured against, recovered from where they are and how
-  // far along they are. Only shown when it is a real target rather than a
-  // rate the quest computes for itself.
-  const target = progress > 0 ? Math.round(have / progress) : null;
+  const target = quest.target?.(metrics) ?? null;
 
   return (
     <aside
@@ -69,9 +67,9 @@ export function QuestCard({ quest, metrics, scope, onGo }: Props) {
             <span className="quest__fill" style={{ width: `${Math.round(progress * 100)}%` }} />
           </span>
           <span className="quest__count" data-testid="quest-count">
-            <strong>{money(quest.resource, have)}</strong>
-            {target !== null && target > have ? ` / ${money(quest.resource, target)}` : null}
-            <em>{words.name}</em>
+            <strong>{rate ? rate.now : money(quest.resource, have)}</strong>
+            {rate ? ` / ${rate.goal}` : target !== null ? ` / ${money(quest.resource, target)}` : null}
+            <em>{rate ? rate.label : words.name}</em>
           </span>
         </div>
       )}

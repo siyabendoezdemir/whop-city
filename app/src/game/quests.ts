@@ -106,6 +106,23 @@ export type Quest = {
   readonly done: (metrics: CityMetrics) => boolean;
   /** How close it is, 0..1, for the bar. */
   readonly progress: (metrics: CityMetrics) => number;
+  /**
+   * The number that finishes it, where there is one.
+   *
+   * Carried explicitly rather than recovered from the progress fraction,
+   * because at nought progress there is nothing to recover it from — and a bar
+   * reading "$0" with no goal beside it is the exact "what am I supposed to do"
+   * problem the card exists to solve.
+   */
+  readonly target?: (metrics: CityMetrics) => number;
+  /**
+   * For a quest finished by a rate coming *down* rather than a count going up.
+   *
+   * Refunds and churn are not "reach a number of members"; reporting them
+   * against the resource ladder would put "$0 revenue" under a quest about
+   * refunds. They say what they actually are instead.
+   */
+  readonly rate?: (metrics: CityMetrics) => { now: string; goal: string; label: string };
 };
 
 /** A milestone: reach this number of this thing. The bulk of every board. */
@@ -128,6 +145,7 @@ function rung(
     how,
     done: (metrics) => metrics[resource] >= target,
     progress: (metrics) => ratio(metrics[resource], target),
+    target: () => target,
     ...extra,
   };
 }
@@ -152,6 +170,11 @@ const CORE: readonly Quest[] = [
     ],
     done: (metrics) => metrics.refunds < REFUND_ALARM,
     progress: (metrics) => (metrics.refunds <= 0 ? 1 : ratio(REFUND_ALARM, Math.max(1, metrics.refunds))),
+    rate: (metrics) => ({
+      now: `${metrics.refunds}%`,
+      goal: `under ${REFUND_ALARM}%`,
+      label: "refunded",
+    }),
   },
   {
     id: "core-recover",
@@ -168,6 +191,7 @@ const CORE: readonly Quest[] = [
     ],
     done: (metrics) => metrics.goldBefore === 0 || metrics.gold >= metrics.goldBefore,
     progress: (metrics) => ratio(metrics.gold, Math.max(1, metrics.goldBefore)),
+    target: (metrics) => metrics.goldBefore,
   },
   rung(
     "core-open",
@@ -364,6 +388,11 @@ const QUARTER: readonly Quest[] = [
     ],
     done: (metrics) => metrics.churn < CHURN_ALARM,
     progress: (metrics) => (metrics.churn <= 0 ? 1 : ratio(CHURN_ALARM, Math.max(1, metrics.churn))),
+    rate: (metrics) => ({
+      now: `${metrics.churn}%`,
+      goal: `under ${CHURN_ALARM}%`,
+      label: "leaving each month",
+    }),
   },
   {
     id: "quarter-convert",
@@ -381,6 +410,7 @@ const QUARTER: readonly Quest[] = [
     ],
     done: (metrics) => metrics.citizens >= converted(metrics.traffic),
     progress: (metrics) => ratio(metrics.citizens, converted(metrics.traffic)),
+    target: (metrics) => converted(metrics.traffic),
   },
   rung(
     "quarter-first-hundred",
