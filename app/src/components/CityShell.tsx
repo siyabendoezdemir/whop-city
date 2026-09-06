@@ -123,6 +123,8 @@ export function CityShell() {
         return "Sign-in did not complete. Try again.";
       case "unavailable":
         return "This deployment is not set up for sign-in yet.";
+      case "unregistered":
+        return "Whop has not accepted this site's sign-in address yet. Try again in a minute — it registers itself on the first attempt.";
       case "out":
         return "Signed out. This is the public city.";
       default:
@@ -351,14 +353,20 @@ export function CityShell() {
         />
       </Suspense>
 
-      {/* ------------------------------------------------------- top left */}
+      {/* --------------------------------------------------------- top left
+          The name of the Whop comes first, and it is the biggest thing here.
+          "I don't know which Whop it selects" is not a question a player
+          should be able to have, and burying the answer in a corner menu is
+          how they had it. The tier is the smaller line underneath. */}
       <div className="crest" data-testid="tier">
         <span className="crest__shield" aria-hidden="true">
           <Seal className="crest__seal" />
           <span className="crest__level">{tier.level}</span>
         </span>
         <span className="crest__text">
-          <span className="crest__name">{tier.name}</span>
+          <span className="crest__whop" data-testid="crest-business">
+            {profile?.business?.name ?? "Whop City"}
+          </span>
           <span className="crest__meter">
             <span
               className="crest__fill"
@@ -366,7 +374,8 @@ export function CityShell() {
             />
           </span>
           <span className="crest__sub">
-            {upcoming ? `${built} / ${upcoming.at} to ${upcoming.name}` : `${built} levels — as grand as it gets`}
+            {tier.name}
+            {upcoming ? ` · ${built}/${upcoming.at} to ${upcoming.name}` : ` · ${built} levels, the top`}
           </span>
         </span>
       </div>
@@ -381,6 +390,30 @@ export function CityShell() {
 
       {/* ------------------------------------------------------ left rail */}
       <DistrictRail entries={rail} active={district} onPick={goToDistrict} />
+
+      {/* -------------------------------------------------- ready to build
+          The most direct answer there is to "what do I do next": a count and
+          one button, above whatever else is in the corner. A bubble in the
+          world tells you a plot is waiting; this tells you how many and takes
+          you to one. */}
+      {!pickedView && waiting > 0 && rising === null ? (
+        <button
+          type="button"
+          className="ready"
+          data-action="build-next"
+          data-testid="ready-bar"
+          onClick={() => {
+            const next = views.find((view) => view.ready > 0);
+            if (next) goToPlot(next.building.id);
+          }}
+        >
+          <span className="ready__n">{waiting}</span>
+          <span className="ready__what">
+            {waiting === 1 ? "building is ready" : "buildings are ready"}
+          </span>
+          <span className="ready__go">Build</span>
+        </button>
+      ) : null}
 
       {/* ------------------------------------- bottom right: one panel only */}
       {pickedView ? (

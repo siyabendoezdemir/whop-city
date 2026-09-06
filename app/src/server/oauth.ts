@@ -15,7 +15,14 @@
  * browser.
  */
 
-import { apiOrigin, boundAppId, readOwningAccountId, type Env } from "./whop-client";
+import {
+  apiOrigin,
+  boundAppId,
+  readOAuthConfig,
+  readOwningAccountId,
+  writeOAuthConfig,
+  type Env,
+} from "./whop-client";
 import {
   SESSION_SECONDS,
   clearedSessionCookie,
@@ -85,10 +92,49 @@ function backToCity(request: Request, outcome: string, cookies: string[] = []): 
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Has this deployment's app been told where to send people back to.
+ *
+ * Cached for the life of the isolate once it is true: the answer only changes
+ * when someone publishes a new City, and a fresh isolate re-checks anyway.
+ */
+let calledBack = false;
+
+async function ensureCallbackRegistered(env: Env, callback: string): Promise<boolean> {
+  if (calledBack) return true;
+
+  const config = await readOAuthConfig(env);
+  if (!config.ok) return false;
+
+  if (config.data.redirectUris.includes(callback) && config.data.clientType === "public") {
+    calledBack = true;
+    return true;
+  }
+
+  // Merge rather than replace: another environment of the same app may have
+  // registered a callback of its own, and taking it away would break it.
+  const merged = [...new Set([...config.data.redirectUris, callback])];
+  if (!(await writeOAuthConfig(env, merged)).ok) return false;
+
+  // Read it back. A 200 on the write is not the same as the field having
+  // changed, and sending somebody to Whop on the strength of one is how they
+  // end up looking at `redirect_uri is invalid` again.
+  const after = await readOAuthConfig(env);
+  calledBack = after.ok && after.data.redirectUris.includes(callback) && after.data.clientType === "public";
+  return calledBack;
+}
+
 export async function handleAuthStart(request: Request, env: Env): Promise<Response> {
   const origin = apiOrigin(env);
   const clientId = boundAppId(env);
   if (!origin || !clientId) return backToCity(request, "unavailable");
+
+  // A Blueprint deployment is a brand new app with no callback whitelisted, so
+  // the first sign-in on a freshly published City would otherwise be refused by
+  // Whop before it even looked at the scopes.
+  if (!(await ensureCallbackRegistered(env, redirectUri(request)))) {
+    return backToCity(request, "unregistered");
+  }
 
   const verifier = random(32);
   const state = random(16);

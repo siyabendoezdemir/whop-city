@@ -90,42 +90,41 @@ export function ProfileChip({ profile }: { profile: Profile | null }) {
 
       {open ? (
         <div className="menu" role="menu" data-testid="profile-menu">
-          <p className="menu__head">Reading</p>
+          <p className="menu__head">This city is</p>
           <p className="menu__now">
             {business}
             {profile.business?.route ? <span className="menu__route">whop.com/{profile.business.route}</span> : null}
           </p>
+          <p className="menu__note">
+            One city per Whop. This one reads the Whop it was published from and never another, so what
+            you see here is only ever this business.
+          </p>
 
           {others.length > 1 ? (
             <>
-              <p className="menu__head">Your Whops</p>
+              <p className="menu__head">Your other Whops</p>
               <ul className="menu__list">
-                {others.map((shop) => {
-                  const current = shop.id === profile.business?.id;
-                  return (
+                {others
+                  .filter((shop) => shop.id !== profile.business?.id)
+                  .map((shop) => (
                     <li key={shop.id}>
                       {shop.readable ? (
-                        <a
-                          className="menu__item"
-                          data-current={current}
-                          href={`/api/auth/view?business=${encodeURIComponent(shop.id)}`}
-                        >
+                        <a className="menu__item" href={`/api/auth/view?business=${encodeURIComponent(shop.id)}`}>
                           <span>{shop.name}</span>
-                          {current ? <span className="menu__tick">✓</span> : null}
+                          <span className="menu__go">open</span>
                         </a>
                       ) : (
-                        <span className="menu__item is-locked" title="This deployment cannot read that business">
+                        <span className="menu__item is-locked">
                           <span>{shop.name}</span>
-                          <span className="menu__locked">not this deployment</span>
+                          <span className="menu__locked">publish City there</span>
                         </span>
                       )}
                     </li>
-                  );
-                })}
+                  ))}
               </ul>
               <p className="menu__note">
-                A Whop Website reads the business it was published from. To play a different one, publish
-                Whop City from that Whop as well.
+                To play one of those, publish Whop City from it. It gets its own city, on its own address,
+                with its own figures.
               </p>
             </>
           ) : null}

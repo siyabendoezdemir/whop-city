@@ -27,31 +27,47 @@ import type { DistrictId } from "../city/projection";
 export const RESOURCES = ["gold", "citizens", "traffic", "recurring"] as const;
 export type Resource = (typeof RESOURCES)[number];
 
+/**
+ * What each resource is called, and what it actually is.
+ *
+ * `name` is the Whop metric, not a game word. The first version called these
+ * Gold, Citizens, Footfall and Reserve, and the honest report on that was "0
+ * gold, 0 reserve, I have no idea what those things mean" — which is fatal,
+ * because the whole promise is that these are your real numbers. A resource
+ * bar you have to decode is worse than no resource bar.
+ *
+ * The game flavour survives in `blurb`, on the building cards and in the
+ * writing. It does not get to sit where the number is.
+ */
 export const RESOURCE: Record<
   Resource,
-  { name: string; unit: string; prefix?: string; tone: string; blurb: string }
+  { name: string; full: string; unit: string; prefix?: string; tone: string; blurb: string }
 > = {
   gold: {
-    name: "Gold",
+    name: "Revenue",
+    full: "Revenue this month",
     unit: "in revenue this month",
     prefix: "$",
     tone: "gold",
-    blurb: "Everything the business took this month.",
+    blurb: "Everything your Whop took this month, gross.",
   },
   citizens: {
-    name: "Citizens",
+    name: "Members",
+    full: "Paying members",
     unit: "paying members",
     tone: "green",
-    blurb: "People paying you right now. They live here.",
+    blurb: "People paying you right now. In the city, they are who lives here.",
   },
   traffic: {
-    name: "Footfall",
+    name: "Visitors",
+    full: "Visitors today",
     unit: "visitors today",
     tone: "violet",
-    blurb: "People who came through today.",
+    blurb: "People who came through your Whop today.",
   },
   recurring: {
-    name: "Reserve",
+    name: "MRR",
+    full: "Monthly recurring revenue",
     unit: "a month, recurring",
     prefix: "$",
     tone: "blue",

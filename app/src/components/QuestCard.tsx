@@ -2,37 +2,43 @@ import { useState } from "react";
 
 import type { CityMetrics } from "../city/projection";
 import { DISTRICT_NAMES } from "../city/explain";
-import { RESOURCE } from "../game/buildings";
+import { RESOURCE, money } from "../game/buildings";
 import type { Quest } from "../game/quests";
-import { Chevron, DistrictIcon, ResourceIcon } from "./Icons";
+import { Chevron, DistrictIcon } from "./Icons";
 
 /**
- * One quest, and how to do it.
+ * One thing to do next.
  *
- * The interesting design constraint here is that this cannot be a checklist.
- * Nothing on this card can be ticked, because the only thing that finishes a
- * quest is the business's own number moving — so the steps are worded as
- * things to go and do, and the bar underneath is read from Whop rather than
- * from anything the player told us.
+ * The version before this put a title, a paragraph of reasoning, a percentage,
+ * a caveat and three numbered steps on screen at once, in every district, all
+ * the time. The report on it was "information overload with a lot of text
+ * everywhere", and that is exactly right: Clash of Clans never shows you a
+ * paragraph. It shows a picture, a bar with two real numbers on it, and one
+ * button.
  *
- * The "how" is collapsed by default on a quest the player has seen before and
- * open on a fresh one, because the first question is always "what" and the
- * second is "yes but how".
+ * So the resting card is four things — where, what, how far, and a button —
+ * and everything else is behind the button. The bar carries the actual figures
+ * rather than a percentage, because "48%" is not a fact anybody can act on and
+ * "$48k of $100k" is.
  */
 
 type Props = {
   quest: Quest;
   metrics: CityMetrics;
-  /** Shown when the card is standing in for the whole city rather than one district. */
+  /** Shown when the card stands in for the whole city rather than one district. */
   scope: "city" | "district";
   onGo?: () => void;
 };
 
 export function QuestCard({ quest, metrics, scope, onGo }: Props) {
-  const [showHow, setShowHow] = useState(true);
+  const [open, setOpen] = useState(false);
   const progress = Math.max(0, Math.min(1, quest.progress(metrics)));
-  const percent = Math.round(progress * 100);
   const words = RESOURCE[quest.resource];
+  const have = metrics[quest.resource];
+  // What the bar is measured against, recovered from where they are and how
+  // far along they are. Only shown when it is a real target rather than a
+  // rate the quest computes for itself.
+  const target = progress > 0 ? Math.round(have / progress) : null;
 
   return (
     <aside
@@ -40,6 +46,7 @@ export function QuestCard({ quest, metrics, scope, onGo }: Props) {
       data-quest={quest.id}
       data-district={quest.district}
       data-urgent={quest.urgent ? "true" : "false"}
+      data-open={open}
       data-testid="quest"
     >
       <header className="quest__head">
@@ -49,56 +56,51 @@ export function QuestCard({ quest, metrics, scope, onGo }: Props) {
         <span className="quest__where">
           {scope === "city" ? "Do this next" : DISTRICT_NAMES[quest.district]}
         </span>
-        {quest.urgent ? <span className="quest__flag">Needs attention</span> : null}
+        {quest.urgent ? <span className="quest__flag">Fix first</span> : null}
       </header>
 
       <h2 className="quest__title">{quest.title}</h2>
-      <p className="quest__why">{quest.why}</p>
 
       {quest.standing ? (
-        <p className="quest__standing">
-          A practice, not a finish line. Nothing here ticks itself off.
-        </p>
+        <p className="quest__standing">An ongoing practice. Nothing here ticks itself off.</p>
       ) : (
         <div className="quest__meter">
-          <span className="quest__bar" role="img" aria-label={`${percent} percent of the way there`}>
-            <span className="quest__fill" style={{ width: `${percent}%` }} />
+          <span className="quest__bar" role="img" aria-label={`${Math.round(progress * 100)} percent of the way there`}>
+            <span className="quest__fill" style={{ width: `${Math.round(progress * 100)}%` }} />
           </span>
-          <span className="quest__pct">
-            <span className="quest__res" aria-hidden="true">
-              <ResourceIcon resource={quest.resource} />
-            </span>
-            {percent}%
+          <span className="quest__count" data-testid="quest-count">
+            <strong>{money(quest.resource, have)}</strong>
+            {target !== null && target > have ? ` / ${money(quest.resource, target)}` : null}
+            <em>{words.name}</em>
           </span>
         </div>
       )}
 
-      {!quest.standing ? (
-        <p className="quest__done">Done when your {words.name.toLowerCase()} moves. Nothing to tick off.</p>
-      ) : null}
-
       <button
         type="button"
-        className="quest__toggle"
-        aria-expanded={showHow}
-        onClick={() => setShowHow((was) => !was)}
+        className="press press--wide"
+        aria-expanded={open}
+        data-action="quest-how"
+        onClick={() => setOpen((was) => !was)}
       >
-        <Chevron className={showHow ? "is-open" : ""} />
-        {showHow ? "Hide how" : "Show me how"}
+        {open ? "Close" : "How do I do this?"}
+        <Chevron className={open ? "is-open" : ""} />
       </button>
 
-      {showHow ? (
-        <ol className="quest__how">
-          {quest.how.map((step) => (
-            <li key={step}>{step}</li>
-          ))}
-        </ol>
-      ) : null}
-
-      {onGo ? (
-        <button type="button" className="press press--ghost" data-action="quest-go" onClick={onGo}>
-          Show me the district
-        </button>
+      {open ? (
+        <div className="quest__more">
+          <p className="quest__why">{quest.why}</p>
+          <ol className="quest__how">
+            {quest.how.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          {onGo ? (
+            <button type="button" className="press press--ghost" data-action="quest-go" onClick={onGo}>
+              Take me to {DISTRICT_NAMES[quest.district]}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </aside>
   );

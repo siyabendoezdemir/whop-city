@@ -72,9 +72,14 @@ export function DistrictRail({ entries, active, onPick }: Props) {
                 ))}
               </span>
 
-              <span className="rail__reading" data-tone={entry.reading.tone}>
-                {entry.reading.line}
-              </span>
+              {/* Only when something is actually wrong. A line under every
+                  district all the time is three lines of text the player
+                  learns to stop reading, which costs the one that matters. */}
+              {entry.reading.tone === "bad" ? (
+                <span className="rail__reading" data-tone="bad">
+                  {entry.reading.line}
+                </span>
+              ) : null}
             </span>
 
             {entry.ready > 0 ? (

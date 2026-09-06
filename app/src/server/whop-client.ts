@@ -6,9 +6,12 @@
  * way to reach an endpoint that is not written in this file. Adding a Whop
  * operation is a code change and a review, which is the point.
  *
- * Everything here is GET. There is no non-GET function, so no product route can
- * reach a payment, payout, transfer, account, team, OAuth-config or app-config
- * action — not behind a flag, not behind a session.
+ * Everything here is GET but one, so no product route can reach a payment,
+ * payout, transfer, account, team or person action — not behind a flag, not
+ * behind a session. The single exception is `writeOAuthConfig`, which changes
+ * two fields on **this deployment's own app record** so that a freshly
+ * published City can accept a sign-in at all. Its boundary is argued where it
+ * is defined; nothing else here is allowed to follow it.
  *
  * City never holds a credential. The hosted Website runtime attaches the app's
  * key in an outbound proxy, so there is no `Authorization` header anywhere in
@@ -426,6 +429,73 @@ export async function readAccountName(
     ok: true,
     data: { name: name.slice(0, 60), route: isNonEmptyString(body.route) ? body.route : null },
   };
+}
+
+/**
+ * PATCH /api/v1/apps/{id} — the one non-GET in this file.
+ *
+ * Every Blueprint deployment registers a **new app**, and a new app has no
+ * OAuth callback whitelisted and is a `confidential` client. So the first
+ * person to press "Sign in with Whop" on a freshly published City gets
+ * `redirect_uri is invalid` from Whop before anything else happens, and the
+ * only fix is a configuration change on the app. Making that a manual step for
+ * every deployer is a broken product; doing it here makes publishing one step.
+ *
+ * The exception is bounded as tightly as it can be:
+ *
+ *   - one method, one path, and the path is **this deployment's own app id**,
+ *     read from a binding. There is no parameter and no caller can supply one.
+ *   - exactly two fields in the body, both derived — the callback from the
+ *     request's own origin, the client type from a literal.
+ *   - it touches no business, no product, no plan, no payment and no person.
+ *     `developer:update_app` is the only permission involved, and the spike
+ *     verified in production that the injected credential holds it and that
+ *     both fields land.
+ *   - it is skipped entirely when the app is already configured, so the steady
+ *     state is a read.
+ *
+ * See `docs/website-auth-spike.md`, "a deployed Website can self-bootstrap".
+ */
+export type OAuthConfig = { redirectUris: string[]; clientType: string | null };
+
+export async function readOAuthConfig(env: Env): Promise<Read<OAuthConfig>> {
+  const appId = boundAppId(env);
+  if (!appId) return FAILED;
+  const app = await readJson<unknown>(env, `/api/v1/apps/${encodeURIComponent(appId)}`);
+  if (!app.ok || !isObject(app.data)) return FAILED;
+  const uris = Array.isArray(app.data.redirect_uris)
+    ? app.data.redirect_uris.filter(isNonEmptyString)
+    : [];
+  return {
+    ok: true,
+    data: {
+      redirectUris: uris,
+      clientType: isNonEmptyString(app.data.oauth_client_type) ? app.data.oauth_client_type : null,
+    },
+  };
+}
+
+export async function writeOAuthConfig(
+  env: Env,
+  redirectUris: readonly string[],
+): Promise<Read<true>> {
+  const origin = apiOrigin(env);
+  const appId = boundAppId(env);
+  if (origin === null || !appId) return FAILED;
+
+  try {
+    const response = await fetch(`${origin}/api/v1/apps/${encodeURIComponent(appId)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "Api-Version-Date": API_VERSION },
+      // A public client, because the alternative is a per-deployment secret
+      // that a hosted Website has nowhere safe to keep.
+      body: JSON.stringify({ redirect_uris: redirectUris, oauth_client_type: "public" }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    return response.ok ? { ok: true, data: true } : FAILED;
+  } catch {
+    return FAILED;
+  }
 }
 
 /**

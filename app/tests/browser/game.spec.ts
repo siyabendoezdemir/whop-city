@@ -206,19 +206,55 @@ test("hovering does not move the camera or select anything", async ({ page }) =>
 // Whose city, and on what screen
 // ---------------------------------------------------------------------------
 
-test("the corner says which Whop the city is, and offers the others", async ({ page }) => {
+test("the city says which Whop it is without being asked", async ({ page }) => {
   await open(page, "balanced");
 
+  // Top left, in the loudest type on the screen. "I don't know which Whop it
+  // selects" has to be a question the player cannot have.
+  await expect(page.locator('[data-testid="crest-business"]')).toHaveText("Fixture Whop");
   await expect(page.locator('[data-testid="profile-business"]')).toHaveText("Fixture Whop");
-  await page.locator('[data-action="profile"]').click();
 
+  await page.locator('[data-action="profile"]').click();
   const menu = page.locator('[data-testid="profile-menu"]');
   await expect(menu).toBeVisible();
+  await expect(menu).toContainText("One city per Whop");
   await expect(menu).toContainText("Second Whop");
-  // The one this deployment cannot read says so rather than offering a switch
-  // that would quietly show a city full of noughts.
-  await expect(menu.locator(".is-locked")).toContainText("not this deployment");
+  // The one this deployment cannot read says what to do about it rather than
+  // offering a switch that would quietly show a city full of noughts.
+  await expect(menu.locator(".is-locked")).toContainText("publish City there");
   await expect(menu.locator('[data-action="signout"]')).toBeVisible();
+});
+
+test("the resource bar names the Whop metric, not an invented currency", async ({ page }) => {
+  await open(page, "balanced");
+
+  // "0 Gold" and "0 Reserve" are unreadable: a player cannot tell whether that
+  // is a fact about their business or a thing the game has not handed over.
+  const bar = page.locator(".res");
+  for (const label of ["Revenue", "Members", "Visitors", "MRR"]) {
+    await expect(bar).toContainText(label);
+  }
+  for (const invented of ["Gold", "Citizens", "Footfall", "Reserve"]) {
+    await expect(bar).not.toContainText(invented);
+  }
+});
+
+test("the resting quest is four things, and the rest is behind a button", async ({ page }) => {
+  await open(page, "balanced");
+
+  const quest = page.locator('[data-testid="quest"]');
+  await expect(quest).toBeVisible();
+
+  // The bar carries two real figures rather than a percentage.
+  await expect(quest.locator('[data-testid="quest-count"]')).toContainText("/");
+
+  // At rest, no steps and no reasoning: those are what made it a wall of text.
+  await expect(quest.locator(".quest__how")).toHaveCount(0);
+  await expect(quest.locator(".quest__why")).toHaveCount(0);
+
+  await quest.locator('[data-action="quest-how"]').click();
+  await expect(quest.locator(".quest__how li")).toHaveCount(3);
+  await expect(quest.locator(".quest__why")).toBeVisible();
 });
 
 test("a phone is told to come back on a desktop", async ({ page }) => {

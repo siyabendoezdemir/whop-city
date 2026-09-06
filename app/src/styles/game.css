@@ -76,14 +76,18 @@
   min-width: 9.5rem;
 }
 
-.crest__name {
+/* The name of the Whop. The loudest thing in the corner, on purpose. */
+.crest__whop {
+  max-width: 14rem;
   font-family: var(--face-narrow);
-  font-size: 17px;
+  font-size: 19px;
   font-weight: 600;
-  line-height: 1;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
   color: var(--gold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .crest__meter {
@@ -399,6 +403,14 @@ a.menu__item:hover {
   color: var(--ink-3);
 }
 
+.menu__go {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
 .menu__locked {
   flex: 0 0 auto;
   padding: 1px 7px;
@@ -683,6 +695,77 @@ a.menu__item:hover {
 }
 
 /* --------------------------------------------------------------------------
+   Ready to build — one line above the panel, and the shortest path to a press
+   -------------------------------------------------------------------------- */
+
+.ready {
+  position: absolute;
+  right: var(--pad);
+  bottom: calc(var(--pad) + 1px);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 22.5rem;
+  min-height: 52px;
+  padding: 0 8px 0 10px;
+  font: inherit;
+  text-align: left;
+  color: #06280f;
+  background: linear-gradient(180deg, #a7f5ba, var(--grow) 45%, var(--grow-deep));
+  border: 2px solid #1c6134;
+  border-radius: var(--radius);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 4px 0 #1c6134, 0 10px 24px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  animation: panel-in 180ms ease-out;
+}
+
+.ready:active {
+  transform: translateY(3px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 1px 0 #1c6134;
+}
+
+.ready__n {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  font-family: var(--face-narrow);
+  font-size: 19px;
+  font-weight: 600;
+  color: #a7f5ba;
+  background: #0d3a1d;
+  border-radius: var(--pill);
+}
+
+.ready__what {
+  flex: 1 1 auto;
+  font-family: var(--face-narrow);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.ready__go {
+  padding: 0 14px;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  font-family: var(--face-narrow);
+  font-size: 15px;
+  font-weight: 600;
+  color: #06280f;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: var(--pill);
+}
+
+/* The panel underneath slides up to make room for it. */
+.city:has(.ready) .quest {
+  bottom: calc(var(--pad) + 62px);
+  max-height: calc(100vh - 2 * var(--pad) - 136px);
+}
+
+/* --------------------------------------------------------------------------
    The contextual panel — bottom right. One at a time, never two.
    -------------------------------------------------------------------------- */
 
@@ -784,14 +867,12 @@ a.menu__item:hover {
 }
 
 .quest__meter {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  gap: 6px;
 }
 
 .quest__bar {
-  flex: 1 1 auto;
-  height: 12px;
+  height: 14px;
   border-radius: var(--pill);
   background: var(--panel-sunk);
   box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.6);
@@ -806,64 +887,55 @@ a.menu__item:hover {
   transition: width 500ms ease;
 }
 
-.quest__pct {
+/* Two real numbers, not a percentage. "$620 / $1,000 revenue" is a fact
+   somebody can act on; "62%" is arithmetic they have to undo first. */
+.quest__count {
   display: flex;
-  align-items: center;
-  gap: 5px;
+  align-items: baseline;
+  gap: 6px;
   font-family: var(--face-narrow);
   font-size: 15px;
-  font-weight: 600;
-  color: var(--gold);
+  color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
 
-.quest__res {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  color: var(--ink-3);
-}
-
-.quest__res svg {
-  width: 16px;
-  height: 16px;
-}
-
-.quest__done {
-  margin: -3px 0 0;
-  font-size: 11.5px;
-  color: var(--ink-4);
-}
-
-.quest__toggle {
-  justify-self: start;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0;
-  font: inherit;
-  font-size: 12.5px;
-  color: var(--ink-3);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-.quest__toggle:hover {
+.quest__count strong {
+  font-size: 21px;
+  font-weight: 600;
   color: var(--gold);
 }
 
-.quest__toggle svg {
-  width: 13px;
-  height: 13px;
+.quest__count em {
+  margin-left: auto;
+  font-style: normal;
+  font-family: var(--face);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+
+.press--wide {
+  width: 100%;
+  min-height: 40px;
+  font-size: 15px;
+}
+
+.press--wide svg {
+  width: 14px;
+  height: 14px;
   transition: transform 140ms ease;
   transform: rotate(-90deg);
 }
 
-.quest__toggle svg.is-open {
+.press--wide svg.is-open {
   transform: none;
+}
+
+.quest__more {
+  display: grid;
+  gap: 10px;
+  animation: panel-in 140ms ease-out;
 }
 
 .quest__how {
