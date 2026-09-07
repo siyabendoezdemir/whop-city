@@ -595,18 +595,19 @@ export function roofOf(
         const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.2, bevelEnabled: false });
         geo.translate(0, 0, z - 0.1);
         b.add(skin.body, geo);
-        // A flashing along the rake, so the tooth ends in a roof edge.
+        // A coping along the rake, so the tooth ends in a wall.
         //
         // Bare, the upstand is a two-hundred-millimetre triangle of render
-        // standing on edge against a slate pitch — the palest thing on the
-        // shed, with the darkest thing on the shed (the north light) running
-        // underneath it. Six of them in a row read as a comb of cardboard
-        // spikes rather than as the gable of a factory. The capping is what
-        // ties each triangle back to the sheeting it closes.
+        // standing on edge against a slate pitch, with the darkest thing on
+        // the shed — the north light — running underneath it. Six in a row
+        // read as a comb of cardboard spikes rather than as the gable of a
+        // factory, and in the clay palette they read as orange ones. A gable
+        // wall carries a coping, and that pale line along the rake is the
+        // whole difference between a wall and a hole cut in card.
         b.add(
-          deck,
-          box(len, 0.14, 0.36),
-          [(s * (xa + xb)) / 2, h + rise / 2 + 0.08, z + s * 0.02],
+          skin.trim,
+          box(len, 0.17, 0.42),
+          [(s * (xa + xb)) / 2, h + rise / 2 + 0.1, z + Math.sign(z) * 0.05],
           [0, 0, s * Math.atan2(rise, bayW)],
         );
       }
