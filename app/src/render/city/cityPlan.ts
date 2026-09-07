@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { PartsBuilder, bevelBox, box, post, sheet, slab, wedge } from "../lib/geom";
+import { PartsBuilder, bevelBox, box, fade, post, slab, wedge } from "../lib/geom";
 import { Rng } from "../lib/rng";
 import { ACTOR_SURFACE, M } from "../scene/materials";
 import { Prop, type InstanceKit } from "./props";
@@ -726,22 +726,50 @@ function buildLand(b: PartsBuilder): void {
    *
    * In the water's own plane, not above it. `M.shallows` carries the depth bias
    * that settles which of the two coplanar surfaces is drawn.
+   *
+   * Each band fades off into the open water rather than stopping at a line. A
+   * flat band was the first attempt and a reviewer read it, fairly, as a lane
+   * marking painted round the coast: a dead straight edge holding perfectly
+   * still is the one thing a fluid surface never has, so it took the eye
+   * straight to it. Faded, there is no edge to find.
    */
   const SHALLOWS = 1.9;
   const lip = 1.2;
-  const shallows = (x0: number, x1: number, z0: number, z1: number) => {
-    b.add(M.shallows, sheet(x1 - x0, z1 - z0), [(x0 + x1) / 2, WORLD.ground - 1.74, (z0 + z1) / 2]);
+  // Where the fade has to land to vanish. The shallows colour multiplied by
+  // this is exactly the water colour, so the far end of the band and the open
+  // water are the same pixel. Divided out of the two materials rather than
+  // written down, so retinting either of them cannot quietly reopen the seam.
+  const deep = new THREE.Color(
+    M.water.color.r / M.shallows.color.r,
+    M.water.color.g / M.shallows.color.g,
+    M.water.color.b / M.shallows.color.b,
+  );
+  const shallows = (
+    x0: number,
+    x1: number,
+    z0: number,
+    z1: number,
+    axis: "x" | "z",
+    towards: -1 | 1,
+  ) => {
+    b.add(M.shallows, fade(x1 - x0, z1 - z0, axis, towards, deep), [
+      (x0 + x1) / 2,
+      WORLD.ground - 1.74,
+      (z0 + z1) / 2,
+    ]);
   };
-  // The city's own waterfront and the far shore facing it.
-  shallows(W - lip - SHALLOWS, R, N - lip - SHALLOWS, N - lip);
-  shallows(W - lip - SHALLOWS, W - lip, N - lip, R);
-  shallows(-R, R, NF + lip, NF + lip + SHALLOWS);
-  shallows(WF + lip, WF + lip + SHALLOWS, NF + lip, R);
+  // The city's own waterfront and the far shore facing it. The two near bands
+  // are butted rather than overlapped: coplanar and equally biased, an overlap
+  // is two gradients arguing over the same pixels at the headland corner.
+  shallows(W - lip, R, N - lip - SHALLOWS, N - lip, "z", -1);
+  shallows(W - lip - SHALLOWS, W - lip, N - lip - SHALLOWS, R, "x", -1);
+  shallows(-R, R, NF + lip, NF + lip + SHALLOWS, "z", 1);
+  shallows(WF + lip, WF + lip + SHALLOWS, NF + lip, R, "x", 1);
   // Both banks of the canal and its head, where the camera gets closest to the
   // waterline and the hard edge showed most.
-  shallows(WORLD.canalX0, WORLD.canalX0 + SHALLOWS, N, WORLD.canalEndZ);
-  shallows(WORLD.canalX1 - SHALLOWS, WORLD.canalX1, N, WORLD.canalEndZ);
-  shallows(WORLD.canalX0, WORLD.canalX1, WORLD.canalEndZ - SHALLOWS, WORLD.canalEndZ);
+  shallows(WORLD.canalX0, WORLD.canalX0 + SHALLOWS, N, WORLD.canalEndZ, "x", 1);
+  shallows(WORLD.canalX1 - SHALLOWS, WORLD.canalX1, N, WORLD.canalEndZ, "x", -1);
+  shallows(WORLD.canalX0, WORLD.canalX1, WORLD.canalEndZ - SHALLOWS, WORLD.canalEndZ, "z", -1);
 }
 
 /**

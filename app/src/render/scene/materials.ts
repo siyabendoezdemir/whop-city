@@ -400,10 +400,15 @@ export function applySurfaceDetail(): void {
   M.water.needsUpdate = true;
   shimmering = shimmer;
 
-  // How far a wave can drag the swell sideways, in metres. Enough to see the
-  // crests work; much more and the water starts to boil.
-  flow(M.water, 0.85);
-  flow(M.shallows, 0.85);
+  // How far a wave can drag the swell sideways, in metres.
+  //
+  // Enough to see the crests work and no more. At the eighty-five centimetres
+  // this started at, the displacement stopped reading as a surface moving and
+  // started reading as one being smeared — a reviewer called it gloopy, like a
+  // distortion brush dragged over the picture, which is a fair description of
+  // what stretching a texture too far looks like.
+  flow(M.water, 0.5);
+  flow(M.shallows, 0.5);
 
   // Walls.
   assign(M.brick, brickTex);

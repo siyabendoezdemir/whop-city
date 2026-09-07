@@ -336,14 +336,17 @@ export function waterRipples(): THREE.CanvasTexture {
   // The swell: a handful of long crests with their troughs, at four to eight
   // metres once it is on the water. This is the structure that still reads when
   // the whole bay is thirty pixels tall.
+  // Kept a shade under what reads best on the water alone. The bay is the one
+  // busy surface in a flat-shaded world of plain roofs and plain roads, and at
+  // full contrast it pulls the eye off the city it is supposed to sit behind.
   for (let i = 0; i < 5; i++) {
     const at = rng.next() * size;
-    swell(at, 26 + rng.next() * 22, CREST, 0.5, 2, 5 + rng.next() * 4);
-    swell(at + 22, 30 + rng.next() * 26, TROUGH, 0.3, 2, 5 + rng.next() * 4);
+    swell(at, 26 + rng.next() * 22, CREST, 0.42, 2, 5 + rng.next() * 4);
+    swell(at + 22, 30 + rng.next() * 26, TROUGH, 0.28, 2, 5 + rng.next() * 4);
   }
   // Ripples over the top, for when the camera is down among the quays.
   for (let i = 0; i < 16; i++) {
-    swell(rng.next() * size, 5 + rng.next() * 9, CREST, 0.24 + rng.next() * 0.2, 3, 3 + rng.next() * 4);
+    swell(rng.next() * size, 5 + rng.next() * 9, CREST, 0.2 + rng.next() * 0.17, 3, 3 + rng.next() * 4);
   }
   for (let i = 0; i < 10; i++) {
     swell(rng.next() * size, 6 + rng.next() * 10, TROUGH, 0.16 + rng.next() * 0.12, 3, 3 + rng.next() * 4);
