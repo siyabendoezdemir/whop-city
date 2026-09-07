@@ -65,6 +65,14 @@ export const M = {
   dirtDry: standard("#bda57f", 0.99),
   grass: standard("#7fa860", 0.92),
   water: standard("#4d90b8", 0.28, 0.1),
+  /**
+   * Disturbed water behind the ferry.
+   *
+   * The wake was `sidewalk` — an opaque paving colour — which put a nine-metre
+   * pale slab on the bay wherever the boat was, hard-edged and reading as a
+   * pontoon rather than as water. Foam is white and it is mostly transparent.
+   */
+  foam: standard("#e9f2f7", 0.92, 0, { transparent: true, opacity: 0.34 }),
   gravel: standard("#948d80", 0.98),
 
   // ------------------------------------------------------------- farmland

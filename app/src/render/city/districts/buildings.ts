@@ -316,14 +316,15 @@ function parapetDeck(
   h: number,
   wallH: number,
   deck: THREE.Material = M.roofFelt,
+  cz = 0,
 ): void {
   const t = 0.32;
-  b.add(deck, box(w + t, 0.16, d + t), [0, h + 0.08, 0]);
+  b.add(deck, box(w + t, 0.16, d + t), [0, h + 0.08, cz]);
   const walls: Array<[number, number, number, number]> = [
-    [w + t * 2, t, 0, (d + t) / 2],
-    [w + t * 2, t, 0, -(d + t) / 2],
-    [t, d + t * 2, (w + t) / 2, 0],
-    [t, d + t * 2, -(w + t) / 2, 0],
+    [w + t * 2, t, 0, cz + (d + t) / 2],
+    [w + t * 2, t, 0, cz - (d + t) / 2],
+    [t, d + t * 2, (w + t) / 2, cz],
+    [t, d + t * 2, -(w + t) / 2, cz],
   ];
   for (const [sx, sz, px, pz] of walls) {
     b.add(skin.trim, box(sx, wallH, sz), [px, h + wallH / 2, pz]);
@@ -488,9 +489,26 @@ export function roofOf(
   } else if (kind === "stepped") {
     parapetDeck(b, skin, w, d, h, 0.5);
     const upper = 2.2;
-    b.add(skin.body, bevelBox(w * 0.7, upper, d * 0.6, 0.1), [0, h + upper / 2, -d * 0.12]);
-    b.add(skin.trim, box(w * 0.76, 0.36, d * 0.64), [0, h + upper, -d * 0.12]);
-    b.add(skin.glass, box(w * 0.56, 1.2, 0.08), [0, h + 1.0, -d * 0.12 + d * 0.3]);
+    const uw = w * 0.7;
+    const ud = d * 0.6;
+    const uz = -d * 0.12;
+    b.add(skin.body, bevelBox(uw, upper, ud, 0.1), [0, h + upper / 2, uz]);
+    // The step gets a roof, not a lid.
+    //
+    // This was one slab of `skin.trim` three quarters of the plan across, and
+    // in three of the five core palettes `trim` is `fascia` or `aluminium` —
+    // the two palest materials in the file. At a camera looking down at
+    // thirty-one that made the top of every stepped block the largest and
+    // brightest plane on it, with nothing whatever on it: a sheet of paper
+    // laid over the building. A setback storey has a deck behind a parapet
+    // like any other flat roof, and something standing on it.
+    parapetDeck(b, skin, uw - 0.5, ud - 0.5, h + upper - 0.1, 0.34, M.roofFelt, uz);
+    b.add(M.steelPainted, bevelBox(uw * 0.3, 0.66, ud * 0.34, 0.06), [-uw * 0.22, h + upper + 0.4, uz]);
+    b.add(M.aluminium, box(uw * 0.26, 0.06, ud * 0.28), [-uw * 0.22, h + upper + 0.76, uz]);
+    for (const ox of [0.18, 0.36]) {
+      b.add(M.ironDark, post(0.17, 0.7, 6), [uw * ox, h + upper + 0.42, uz + ud * 0.16]);
+    }
+    b.add(skin.glass, box(w * 0.56, 1.2, 0.08), [0, h + 1.0, uz + d * 0.3]);
   } else if (kind === "monitor") {
     parapetDeck(b, skin, w, d, h, 0.5);
     b.add(skin.body, box(w * 0.46, 1.2, d * 0.4), [0, h + 0.75, 0]);
@@ -577,6 +595,20 @@ export function roofOf(
         const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.2, bevelEnabled: false });
         geo.translate(0, 0, z - 0.1);
         b.add(skin.body, geo);
+        // A flashing along the rake, so the tooth ends in a roof edge.
+        //
+        // Bare, the upstand is a two-hundred-millimetre triangle of render
+        // standing on edge against a slate pitch — the palest thing on the
+        // shed, with the darkest thing on the shed (the north light) running
+        // underneath it. Six of them in a row read as a comb of cardboard
+        // spikes rather than as the gable of a factory. The capping is what
+        // ties each triangle back to the sheeting it closes.
+        b.add(
+          deck,
+          box(len, 0.14, 0.36),
+          [(s * (xa + xb)) / 2, h + rise / 2 + 0.08, z + s * 0.02],
+          [0, 0, s * Math.atan2(rise, bayW)],
+        );
       }
       b.add(M.aluminium, box(0.24, 0.16, d), [s * xa, h + 0.04, 0]);
     }
@@ -825,9 +857,14 @@ function roofItem(
   if (kind === "stair") {
     // Lift and stair overrun: the one thing every roof of this size really has.
     const sw = rng.range(1.9, 2.5);
+    const face = z + (sw * 0.86) / 2;
     b.add(skin.body, bevelBox(sw, 2.2, sw * 0.86, 0.08), [x, h + 1.3, z]);
     b.add(M.roofZinc, wedge(sw + 0.3, 0.45, sw * 0.86 + 0.3), [x, h + 2.62, z]);
-    b.add(M.ironDark, box(sw * 0.42, 1.5, 0.1), [x, h + 0.95, z + (sw * 0.86) / 2 + 0.06]);
+    // A painted door in a dark frame, not a dark panel. On a north-facing wall
+    // in shade, one `ironDark` rectangle is indistinguishable from a hole cut
+    // in the overrun, and every flat roof in the city has one of these.
+    b.add(M.ironDark, box(sw * 0.5, 1.62, 0.1), [x, h + 1.0, face + 0.05]);
+    b.add(M.steelPainted, box(sw * 0.38, 1.4, 0.09), [x, h + 0.96, face + 0.11]);
   } else if (kind === "tank") {
     b.add(M.steel, post(0.06, 1.0, 5), [x - 0.55, h + 0.7, z - 0.55]);
     b.add(M.steel, post(0.06, 1.0, 5), [x + 0.55, h + 0.7, z - 0.55]);

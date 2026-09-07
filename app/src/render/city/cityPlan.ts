@@ -179,10 +179,16 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
   quay(false, W, N, 130, -1);
 
   // Mooring detail on the water: a pier and a barge on each bay.
+  //
+  // The north barge lay bow-out across the middle of the bay at exactly the
+  // depth the ferry runs, and the ferry sailed through it — two hulls, two
+  // wheelhouses and a stack of containers occupying the same water, which from
+  // the headland was the most broken thing in the frame. Moored is moored:
+  // alongside the quay, parallel to it, out of the fairway.
   buildPier(b, kit, [-20, WORLD.ground, N], 0);
-  buildBarge(b, [22, WORLD.ground, N - 13], 0.22);
+  buildBarge(b, [24, WORLD.ground, N - 6], Math.PI / 2 + 0.06);
   buildPier(b, kit, [W, WORLD.ground, 6], Math.PI / 2);
-  buildBarge(b, [W - 12, WORLD.ground, 26], Math.PI / 2 + 0.14);
+  buildBarge(b, [W - 6, WORLD.ground, 30], 0.05);
 
   // ----------------------------------------------------------- canal inlet
   const cw = WORLD.canalX1 - WORLD.canalX0;
@@ -1051,9 +1057,9 @@ export function buildWaterLife(): Rig[] {
 
   const hull = b.build("ferry");
 
-  // Wake: two flat wedges that stretch with speed, so the boat looks driven.
+  // Wake: a flat wedge that stretches with speed, so the boat looks driven.
   const wake = new PartsBuilder();
-  wake.add(M.sidewalk, wedge(9, 0.06, 16), [0, y - 1.72, -11], [0, Math.PI, 0]);
+  wake.add(M.foam, wedge(7.4, 0.05, 15), [0, y - 1.71, -11.5], [0, Math.PI, 0]);
   const wakeMesh = wake.build("ferry-wake");
   wakeMesh.children.forEach((c) => {
     if (c instanceof THREE.Mesh) {
@@ -1066,8 +1072,12 @@ export function buildWaterLife(): Rig[] {
   group.add(hull, wakeMesh);
 
   // Fixed route across the north bay, looping with a pause at each end.
-  const a = new THREE.Vector3(-4, 0, WORLD.northShore - 9);
-  const c = new THREE.Vector3(96, 0, WORLD.northFar + 22);
+  //
+  // Out in the fairway rather than nine metres off the quay. A bay this narrow
+  // only has room for one lane of moving water and one line of moorings, and
+  // the old route put the ferry in both.
+  const a = new THREE.Vector3(-4, 0, WORLD.northShore - 16);
+  const c = new THREE.Vector3(96, 0, WORLD.northFar + 14);
   const period = 46;
 
   return [
@@ -1203,22 +1213,38 @@ export function buildSurroundings(seed: number): THREE.Group {
   const b = new PartsBuilder();
   const bodies = [M.brick, M.renderCream, M.renderTeal, M.plaster, M.brickDark, M.renderClay];
 
-  type Blk = { x: number; z: number; w: number; d: number; h: number };
+  type Blk = { x: number; z: number; w: number; d: number; h: number; far?: boolean };
   const blocks: Blk[] = [];
 
-  const rowX = (z: number, from: number, to: number, hMin: number, hMax: number, depth: number) => {
+  const rowX = (
+    z: number,
+    from: number,
+    to: number,
+    hMin: number,
+    hMax: number,
+    depth: number,
+    far = false,
+  ) => {
     let cursor = from;
     while (cursor < to) {
       const w = rng.range(9, 18);
-      blocks.push({ x: cursor + w / 2, z, w, d: depth, h: rng.range(hMin, hMax) });
+      blocks.push({ x: cursor + w / 2, z, w, d: depth, h: rng.range(hMin, hMax), far });
       cursor += w + rng.range(1.4, 3.6);
     }
   };
-  const rowZ = (x: number, from: number, to: number, hMin: number, hMax: number, depth: number) => {
+  const rowZ = (
+    x: number,
+    from: number,
+    to: number,
+    hMin: number,
+    hMax: number,
+    depth: number,
+    far = false,
+  ) => {
     let cursor = from;
     while (cursor < to) {
       const d = rng.range(9, 18);
-      blocks.push({ x, z: cursor + d / 2, w: depth, d, h: rng.range(hMin, hMax) });
+      blocks.push({ x, z: cursor + d / 2, w: depth, d, h: rng.range(hMin, hMax), far });
       cursor += d + rng.range(1.4, 3.6);
     }
   };
@@ -1236,12 +1262,13 @@ export function buildSurroundings(seed: number): THREE.Group {
   rowX(46, -58, -40, 4.5, 7.0, 14);
   // West side, behind the forge and running off the left edge.
   rowX(82, -58, 4, 4.5, 7.5, 14);
-  // Far bank north.
-  rowX(WORLD.northFar - 12, -260, 320, 9, 20, 20);
-  rowX(WORLD.northFar - 34, -260, 320, 12, 30, 24);
+  // Far bank north. Across thirty metres of water and behind everything, so
+  // these are marked as backdrop and detailed accordingly.
+  rowX(WORLD.northFar - 12, -260, 320, 9, 20, 20, true);
+  rowX(WORLD.northFar - 34, -260, 320, 12, 30, 24, true);
   // Far bank west.
-  rowZ(WORLD.westFar - 12, -150, 260, 8, 18, 20);
-  rowZ(WORLD.westFar - 34, -150, 260, 11, 28, 24);
+  rowZ(WORLD.westFar - 12, -150, 260, 8, 18, 20, true);
+  rowZ(WORLD.westFar - 34, -150, 260, 11, 28, 24, true);
 
   for (const blk of blocks) {
     const base = 0.15;
@@ -1288,19 +1315,53 @@ export function buildSurroundings(seed: number): THREE.Group {
         // chimney balanced on it, and buried the gutter along the ridge. Every
         // low block in the foreground row, which is most of the bottom of the
         // default frame. Pinned by a test in `geom.test.ts`.
-        const rise = Math.min(3.2, Math.max(1.7, blk.d * 0.17));
+        const rise = Math.min(3.6, Math.max(2.0, blk.d * 0.21));
         const ridgeZ = blk.z + (turn ? -1 : 1) * ((blk.d + 0.7) / 2 - 0.24);
         const eavesZ = blk.z + (turn ? 1 : -1) * ((blk.d + 0.7) / 2);
         b.add(slate, wedge(blk.w + 0.7, rise, blk.d + 0.7), [blk.x, base + blk.h + rise / 2, blk.z], [0, turn, 0]);
         b.add(M.roofZincWorn, box(blk.w + 0.8, 0.24, 0.48), [blk.x, base + blk.h + rise + 0.02, ridgeZ]);
         b.add(M.fascia, box(blk.w + 0.8, 0.22, 0.24), [blk.x, base + blk.h + 0.06, eavesZ]);
+        // Seams down the fall. A fifteen-by-fifteen slope is the largest plane
+        // in the near foreground of the default framing and it was one flat
+        // colour, so the row of them along the bottom of the frame read as
+        // grey paper folded over boxes. Four strips per roof is the difference
+        // between a plane and a covering.
+        // Turned wedges ridge at -z and unturned at +z, and a plate lies in
+        // the slope only when its high end is the same end as the roof's.
+        const lie = (turn ? 1 : -1) * Math.atan2(rise, blk.d + 0.7);
+        for (let i = 1; i < 5; i++) {
+          b.add(
+            M.roofZincWorn,
+            box(0.14, 0.09, blk.d + 0.4),
+            [blk.x - blk.w / 2 + (blk.w / 5) * i, base + blk.h + rise / 2 + 0.08, blk.z],
+            [lie, 0, 0],
+          );
+        }
         const stackX = blk.x + rng.range(-blk.w * 0.3, blk.w * 0.3);
         b.add(M.brickDark, box(1.0, 1.9, 0.9), [stackX, base + blk.h + rise + 0.55, ridgeZ]);
         b.add(M.fascia, box(1.18, 0.2, 1.08), [stackX, base + blk.h + rise + 1.6, ridgeZ]);
       } else {
+        // The flat quarter of the low row, which is the other thing a shed can
+        // be. It was a white kerb, a grey tray and one box on it — three
+        // rectangles, no shadow anywhere inside the parapet, and next to the
+        // pitched ones it read as the unfinished version of the same building.
+        // What a single-storey deck this size actually carries is a plant run,
+        // a rooflight strip and a way up, and all three cast across the tray.
         b.add(M.fascia, box(blk.w + 0.4, 0.3, blk.d + 0.4), [blk.x, base + blk.h + 0.1, blk.z]);
         b.add(M.gravel, box(blk.w - 0.3, 0.22, blk.d - 0.3), [blk.x, base + blk.h + 0.2, blk.z]);
-        b.add(slate, box(blk.w * 0.3, 0.7, blk.d * 0.4), [blk.x + blk.w * 0.24, base + blk.h + 0.55, blk.z]);
+        const deck = base + blk.h + 0.3;
+        b.add(body, box(blk.w * 0.22, 1.5, blk.d * 0.3), [blk.x + blk.w * 0.3, deck + 0.75, blk.z - blk.d * 0.12]);
+        b.add(M.fascia, box(blk.w * 0.26, 0.18, blk.d * 0.34), [blk.x + blk.w * 0.3, deck + 1.55, blk.z - blk.d * 0.12]);
+        // A run of rooflights down the middle, in pale kerbs.
+        const lights = Math.max(2, Math.round(blk.w / 5));
+        for (let i = 0; i < lights; i++) {
+          const lx = blk.x - blk.w * 0.28 + ((blk.w * 0.5) / Math.max(1, lights - 1)) * i;
+          b.add(M.kerb, box(2.0, 0.3, blk.d * 0.3), [lx, deck + 0.12, blk.z + blk.d * 0.1]);
+          b.add(M.glassRoof, box(1.5, 0.16, blk.d * 0.24), [lx, deck + 0.3, blk.z + blk.d * 0.1]);
+        }
+        for (const oz of [-0.34, 0.24]) {
+          b.add(M.steelPainted, bevelBox(1.7, 0.7, 1.3, 0.06), [blk.x - blk.w * 0.3, deck + 0.35, blk.z + blk.d * oz]);
+        }
       }
     } else {
       b.add(M.fascia, box(blk.w + 0.3, 0.34, blk.d + 0.3), [blk.x, base + blk.h + 0.08, blk.z]);
@@ -1312,14 +1373,48 @@ export function buildSurroundings(seed: number): THREE.Group {
     // Storey lines. Two boxes per floor serve all four elevations, and the
     // spandrel behind them is what stops pale glass on a pale body reading as
     // a smudge — the same fix the authored blocks needed.
+    //
+    // Four boxes a floor is the right detail for the blocks the ring road runs
+    // past, and it is most of the geometry in the city for the ones that stand
+    // across thirty metres of water. There are roughly a hundred and twenty of
+    // those, they are behind everything, and at that distance a storey band is
+    // under two pixels — so the far bank gets the elevation that faces the
+    // city and nothing else. Worth about a fifth of the whole scene.
     const floors = Math.max(1, Math.floor((blk.h - 1.6) / 2.7));
+    const alongX = blk.w >= blk.d;
     for (let f = 0; f < floors; f++) {
       const y = base + 2.0 + f * 2.7;
       if (y > base + blk.h - 0.9) break;
+      if (blk.far) {
+        if (alongX) {
+          b.add(M.ironDark, box(blk.w * 0.84, 1.34, blk.d + 0.02), [blk.x, y, blk.z]);
+          b.add(M.glassDim, box(blk.w * 0.8, 1.1, blk.d + 0.06), [blk.x, y, blk.z]);
+        } else {
+          b.add(M.ironDark, box(blk.w + 0.02, 1.34, blk.d * 0.84), [blk.x, y, blk.z]);
+          b.add(M.glassDim, box(blk.w + 0.06, 1.1, blk.d * 0.8), [blk.x, y, blk.z]);
+        }
+        continue;
+      }
       b.add(M.ironDark, box(blk.w * 0.84, 1.34, blk.d + 0.02), [blk.x, y, blk.z]);
       b.add(M.ironDark, box(blk.w + 0.02, 1.34, blk.d * 0.84), [blk.x, y, blk.z]);
       b.add(M.glassDim, box(blk.w * 0.8, 1.1, blk.d + 0.06), [blk.x, y, blk.z]);
       b.add(M.glassDim, box(blk.w + 0.06, 1.1, blk.d * 0.8), [blk.x, y, blk.z]);
+    }
+
+    // A shopfront reads as a shopfront because of what is over it.
+    //
+    // A single-storey block gets exactly one band of glazing, and with five
+    // metres of blank body above and below it that band was a dark slot cut
+    // into a plain box. These stand along the bottom of the default frame, so
+    // it is the near foreground of the city that was made of plain boxes. A
+    // signboard on the fascia and a cill under the glass is the whole of a
+    // parade of shops, and it costs four boxes.
+    if (low && floors >= 1) {
+      const head = base + 2.0 + 0.75;
+      b.add(M.fascia, box(blk.w + 0.12, 0.62, blk.d + 0.12), [blk.x, head + 0.31, blk.z]);
+      b.add(M.signBoard, box(blk.w * 0.5, 0.4, blk.d + 0.2), [blk.x, head + 0.3, blk.z]);
+      b.add(M.signBoard, box(blk.w + 0.2, 0.4, blk.d * 0.5), [blk.x, head + 0.3, blk.z]);
+      b.add(M.kerb, box(blk.w + 0.1, 0.16, blk.d + 0.1), [blk.x, base + 1.26, blk.z]);
     }
     if (!low && rng.chance(0.6)) {
       // Overrun and plant, not a plain slab.
