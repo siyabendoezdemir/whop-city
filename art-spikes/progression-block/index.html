@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Offer Forge — progression block</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; background: #0d1117; }
+      #stage { position: fixed; inset: 0; display: grid; place-items: center; }
+      canvas { display: block; }
+
+      /* Spike-only state switcher. Hidden during capture via ?bare=1 so the
+         proof frames contain nothing but the world. */
+      #switcher {
+        position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+        display: flex; gap: 6px; padding: 6px;
+        background: rgba(12, 17, 24, 0.72); border-radius: 12px;
+        font: 500 13px/1 ui-sans-serif, system-ui, sans-serif;
+        backdrop-filter: blur(10px);
+      }
+      #switcher button {
+        appearance: none; border: 0; border-radius: 8px; cursor: pointer;
+        padding: 9px 14px; color: #b9c4d4; background: transparent; font: inherit;
+      }
+      #switcher button[aria-pressed="true"] { background: #f0f4fa; color: #0d1117; }
+      body[data-bare="1"] #switcher { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="switcher"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
