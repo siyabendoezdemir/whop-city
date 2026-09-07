@@ -49,6 +49,28 @@ twelve pixels across and a canopy sways two or three, so at a glance the city
 reads more still than it is. That is a composition question about the default
 zoom rather than a bug, and it is worth a decision rather than a silent tweak.
 
+A later review made the same complaint but named the water, and that one was
+right. Every moving thing in the city was an object with a position — the
+ferry, the traffic, the walkers, the steam — which left the bay, about a third
+of the frame, perfectly still next to a boat under way. Calm water beside a
+moving hull does not read as calm; it reads as a bug.
+
+The ripple map had been drawn strong enough to scroll and never scrolled: the
+texture's own comment says "a texture you cannot see is a texture you cannot
+animate", and the animation was never wired to it. It scrolls now, off the
+terrain tick that every caller already drives, so the live loop, the plot
+sheets and the film all get it. No mesh, no material, no triangle, no draw
+call — the numbers below are unchanged.
+
+The direction is the whole trick. `waterRipples` lays its streaks as
+full-width bands along `u`, so the first attempt, which travelled mostly in
+`u`, slid every streak along its own length and moved the map five metres to
+no visible effect whatsoever. Frames captured before and after differed by
+36dB either way, which is the trap: the pixels change, and nothing reads as
+motion. The travel is in `v` now, across the bands, at about half a metre a
+second. `tests/geom.test.ts` pins the axes for the same reason the wedge
+orientation is pinned — no screenshot catches it being wrong.
+
 ## The round (`pnpm capture:round`)
 
 A recorded playthrough of the release build. Every scenario named below is a
