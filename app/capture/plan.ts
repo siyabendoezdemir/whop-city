@@ -21,7 +21,7 @@
  *   pnpm plan
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { PARCELS, ROADS } from "../src/render/city/cityPlan";
@@ -37,16 +37,33 @@ import {
 const PAD = 24;
 const SCALE = 5;
 
+/**
+ * Points where `pnpm probe` found something lying on a carriageway.
+ *
+ * Optional, because the plan is useful on its own and the probe needs a
+ * running preview server. When it is there, it fills in everything the
+ * authored tables cannot see: the promenade, the quaysides and the backdrop
+ * blocks are all built procedurally, and the only way to catch one of those
+ * sitting on a road is to go and look at the built scene.
+ */
+function coverage(): { x: number; z: number; was: string }[] {
+  if (!existsSync("artifacts/road-cover.json")) return [];
+  return JSON.parse(readFileSync("artifacts/road-cover.json", "utf8")).covered;
+}
+
 function draw(): string {
-  // Framed on the plots, not on the network. Two roads run off to the edge of
-  // the world, and letting them set the extent shrinks the part worth reading
-  // into a corner.
+  // Framed on the plots and on anything the probe flagged, not on the network.
+  // Two roads run off to the edge of the world, and letting them set the
+  // extent shrinks the part worth reading into a corner.
+  const marks = coverage();
   const plots = PARCELS.map(footprint);
   const margin = 40;
-  const minX = Math.min(...plots.map((r) => r.x0)) - margin;
-  const maxX = Math.max(...plots.map((r) => r.x1)) + margin;
-  const minZ = Math.min(...plots.map((r) => r.z0)) - margin;
-  const maxZ = Math.max(...plots.map((r) => r.z1)) + margin;
+  const xs = [...plots.flatMap((r) => [r.x0, r.x1]), ...marks.map((m) => m.x)];
+  const zs = [...plots.flatMap((r) => [r.z0, r.z1]), ...marks.map((m) => m.z)];
+  const minX = Math.min(...xs) - margin;
+  const maxX = Math.max(...xs) + margin;
+  const minZ = Math.min(...zs) - margin;
+  const maxZ = Math.max(...zs) + margin;
 
   const w = (maxX - minX) * SCALE + PAD * 2;
   const h = (maxZ - minZ) * SCALE + PAD * 2;
@@ -80,13 +97,24 @@ function draw(): string {
 
   for (const clash of clashes) parts.push(box(clash.area, "url(#clash)", "#ff2d55", 'stroke-width="1.5"'));
 
+  for (const mark of marks) {
+    parts.push(
+      `<circle cx="${px(mark.x).toFixed(1)}" cy="${pz(mark.z).toFixed(1)}" r="3.2" ` +
+        `fill="#ff2d55" fill-opacity="0.9"><title>${mark.was}</title></circle>`,
+    );
+  }
+
+  const said = [
+    clashes.length
+      ? `${clashes.length} plot/carriageway overlaps — worst ${clashes[0].depth.toFixed(1)}m (${clashes[0].parcel} on ${clashes[0].road})`
+      : `no plot stands on a carriageway`,
+    marks.length
+      ? `${marks.length} points of road covered by ${[...new Set(marks.map((m) => m.was))].join(", ")}`
+      : `nothing is lying on a carriageway`,
+  ];
   parts.push(
-    `<text x="${PAD}" y="${(h - 10).toFixed(0)}" fill="${clashes.length ? "#ff8fa5" : "#8fe0ab"}" ` +
-      `font-family="monospace" font-size="13">` +
-      (clashes.length
-        ? `${clashes.length} plot/carriageway overlaps — worst ${clashes[0].depth.toFixed(1)}m (${clashes[0].parcel} on ${clashes[0].road})`
-        : `no plot stands on a carriageway`) +
-      `</text>`,
+    `<text x="${PAD}" y="${(h - 28).toFixed(0)}" fill="${clashes.length ? "#ff8fa5" : "#8fe0ab"}" font-family="monospace" font-size="13">${said[0]}</text>`,
+    `<text x="${PAD}" y="${(h - 10).toFixed(0)}" fill="${marks.length ? "#ff8fa5" : "#8fe0ab"}" font-family="monospace" font-size="13">${said[1]}</text>`,
     "</svg>",
   );
   return parts.join("\n");

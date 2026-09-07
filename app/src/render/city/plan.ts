@@ -72,6 +72,35 @@ export function intersect(a: Rect, b: Rect): Rect | null {
   return x1 - x0 > 0.01 && z1 - z0 > 0.01 ? { x0, x1, z0, z1 } : null;
 }
 
+/**
+ * Ground a vehicle may legitimately find under its wheels.
+ *
+ * `kerb` and `grass` are on the list because a boulevard has a planted central
+ * reservation, which is grass in the middle of a road on purpose. Everything
+ * else lying at wheel height on a carriageway is a mistake — and the way to
+ * tell the two apart is not the material, it is whether the road is a
+ * boulevard, so callers check the grade as well.
+ */
+export const ROAD_SURFACES: ReadonlySet<string> = new Set([
+  "asphalt",
+  "asphaltPatched",
+  "roadLine",
+  "concreteDeck",
+  "kerb",
+]);
+
+/** What the reservation down the middle of a boulevard is allowed to be. */
+export const MEDIAN_SURFACES: ReadonlySet<string> = new Set(["grass", "kerb", "dirt"]);
+
+/**
+ * Head height, for deciding what counts as covering a road.
+ *
+ * A tree beside a carriageway puts its canopy over the asphalt and should; so
+ * does a balcony, an awning and a bridge. Only the things down where a vehicle
+ * actually travels are in the way.
+ */
+export const WHEEL_HEIGHT = 1.5;
+
 export type Trespass = {
   readonly parcel: string;
   readonly road: string;
@@ -101,6 +130,35 @@ export function trespasses(
     }
   }
   return out.sort((a, b) => b.depth - a.depth);
+}
+
+export type Spot = { readonly road: string; readonly x: number; readonly z: number };
+
+/**
+ * Points to ask "what is lying on the road here".
+ *
+ * Three lines across each carriageway, every two metres along it — fine enough
+ * to catch anything bigger than a kerbstone. A road's gaps are skipped: that is
+ * where it hands over to a bridge deck, so the surface is deliberately not
+ * asphalt and the question does not apply.
+ */
+export function carriagewaySamples(roads: readonly Road[]): Spot[] {
+  const out: Spot[] = [];
+  for (const road of roads) {
+    const r = carriageway(road);
+    const alongX = road.axis === "x";
+    const from = alongX ? r.x0 : r.z0;
+    const to = alongX ? r.x1 : r.z1;
+    const spanned = (t: number) => (road.gaps ?? []).some(([a, b]) => t > a && t < b);
+    for (let t = from + 1; t < to - 1; t += 2) {
+      if (spanned(t)) continue;
+      for (const f of [0.2, 0.5, 0.8]) {
+        const across = alongX ? r.z0 + (r.z1 - r.z0) * f : r.x0 + (r.x1 - r.x0) * f;
+        out.push({ road: road.id, x: alongX ? t : across, z: alongX ? across : t });
+      }
+    }
+  }
+  return out;
 }
 
 /**

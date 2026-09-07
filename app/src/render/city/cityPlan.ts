@@ -68,26 +68,61 @@ export const REACH = 460;
  * town and run out into the fog.
  */
 /**
- * How far a road runs past the junction at its end.
+ * Just past a road's outer kerb face.
  *
- * Where two roads both *end* at the same crossroads — the four corners of the
- * ring — the one that gives way has its carriageway cut out of the junction,
- * and the one laid through stopped dead on the other's centre line. That left
- * a five-by-ten-metre rectangle of bare ground at each outside corner of the
- * network, and a vehicle turning there had its nose over grass. The through
- * road runs on to the far kerb instead. The overrun is inside the crossing
- * road's own width, so nothing new is visible except the corner being paved.
+ * How far another road has to run to cover the whole junction rather than
+ * stopping halfway across it.
  */
-const CORNER_OVERRUN = 4.5;
+function kerbReach(road: Road): number {
+  return road.width / 2 + 0.17 + 0.34;
+}
 
-export const ROADS: Road[] = [
+/**
+ * Runs every road on to the far kerb of whatever it ends at.
+ *
+ * The table below is authored centre line to centre line, which is how anyone
+ * would draw a street plan and is half a junction short of how one is built. A
+ * road that stops on another's centre line leaves the far quarter of the
+ * junction unpaved, and the road it meets has already cut its own carriageway
+ * out of the crossing to avoid laying two surfaces on the same plane — so
+ * nothing covers that quarter at all and the land slab shows through. Bare
+ * ground, which in this city is grass, in the middle of a junction, with the
+ * traffic driving over it.
+ *
+ * Two roads used to carry a hand-written overrun for exactly this reason. Every
+ * other one in the table needed it too, and doing it here from the width of the
+ * road actually being met is both correct at every junction and impossible to
+ * forget at the next one.
+ */
+function pave(roads: readonly Road[]): Road[] {
+  const meeting = (road: Road, end: number) =>
+    roads.find(
+      (other) =>
+        other !== road &&
+        other.axis !== road.axis &&
+        Math.abs(other.at - end) < 0.01 &&
+        other.from <= road.at &&
+        road.at <= other.to,
+    );
+  return roads.map((road) => {
+    const head = meeting(road, road.from);
+    const tail = meeting(road, road.to);
+    return {
+      ...road,
+      from: head ? road.from - kerbReach(head) : road.from,
+      to: tail ? road.to + kerbReach(tail) : road.to,
+    };
+  });
+}
+
+const PLANNED_ROADS: Road[] = [
   // North quay road, running the length of the headland and over the canal.
   {
     id: "quay-north",
     axis: "x",
     at: WORLD.bridgeZ,
-    from: -66 - CORNER_OVERRUN,
-    to: 128 + CORNER_OVERRUN,
+    from: -66,
+    to: 128,
     width: 10,
     grade: "street",
     gaps: [[WORLD.canalX0 - 6.5, WORLD.canalX1 + 6.5]],
@@ -112,14 +147,16 @@ export const ROADS: Road[] = [
     id: "ring-south",
     axis: "x",
     at: 66,
-    from: -66 - CORNER_OVERRUN,
-    to: 128 + CORNER_OVERRUN,
+    from: -66,
+    to: 128,
     width: 10,
     grade: "street",
   },
   // The road south, out of town and over the hill.
   { id: "highway-south", axis: "z", at: 88, from: 66, to: REACH, width: 10, grade: "street", open: "to" },
 ];
+
+export const ROADS: Road[] = pave(PLANNED_ROADS);
 
 const KERB_H = 0.15;
 /**
@@ -132,6 +169,18 @@ const KERB_H = 0.15;
 const MARKING_W = 0.3;
 
 /** Terrain, both bays, the canal, the bridge and the whole road network. */
+/**
+ * The gap between a shoreline and the outer kerb of the road behind it.
+ *
+ * Derived rather than written down, so that moving a road or changing its
+ * width cannot quietly put the quay paving back in the carriageway.
+ */
+function kerbFrom(shore: number, roadId: string): number {
+  const road = ROADS.find((r) => r.id === roadId);
+  if (!road) return 2.6;
+  return Math.max(0.8, Math.abs(road.at - shore) - kerbReach(road) - 0.1);
+}
+
 export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
   const rng = new Rng(seed).fork("city-ground");
   const b = new PartsBuilder();
@@ -141,12 +190,23 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
   buildLand(b);
 
   // -------------------------------------------------------------- quays
+  /**
+   * A quay wall with its coping and walkway.
+   *
+   * `walk` is how far the walkway reaches back from the wall, and it is a
+   * parameter because the two quays have different amounts of room. It used to
+   * be a shared 4.6 metres, which put both of them over the kerb and about a
+   * metre and a half into the carriageway running behind — the entire length
+   * of both quay roads, not a corner or a junction. Pavement on a road reads
+   * as a wide pavement until a car drives down it.
+   */
   const quay = (
     alongX: boolean,
     at: number,
     from: number,
     to: number,
     outward: number,
+    walk: number,
   ) => {
     const len = to - from;
     const mid = (from + to) / 2;
@@ -164,19 +224,21 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
       WORLD.ground + 0.07,
       cope[2],
     ]);
-    const walk = pos(-outward * 2.2);
-    b.add(M.sidewalk, box(alongX ? len : 4.6, 0.2, alongX ? 4.6 : len), [
-      walk[0],
+    const paving = pos(-outward * (0.1 + walk / 2));
+    b.add(M.sidewalk, box(alongX ? len : walk, 0.2, alongX ? walk : len), [
+      paving[0],
       WORLD.ground + 0.06,
-      walk[2],
+      paving[2],
     ]);
     for (let t = from + 4; t < to; t += 7) {
       const p = alongX ? [t, WORLD.ground, at - outward * 1.1] : [at - outward * 1.1, WORLD.ground, t];
       kit.place("bollard", p as [number, number, number], 0, 1.25);
     }
   };
-  quay(true, N, -74, 130, -1);
-  quay(false, W, N, 130, -1);
+  // Each reaches back from its wall to the outer kerb of the road behind it,
+  // and stops.
+  quay(true, N, -74, 130, -1, kerbFrom(N, "quay-north"));
+  quay(false, W, N, 130, -1, kerbFrom(W, "quay-west"));
 
   // Mooring detail on the water: a pier and a barge on each bay.
   //
@@ -603,19 +665,41 @@ function buildHeadland(b: PartsBuilder, kit: InstanceKit, rng: Rng): void {
   const N = WORLD.northShore;
   const y = WORLD.ground;
 
-  // Promenade lawn and paving between the quay road and the water.
-  b.add(M.grass, box(48, 0.14, 8.5), [-38, y + 0.13, N + 12.5]);
-  b.add(M.sidewalk, box(48, 0.1, 3.0), [-38, y + 0.16, N + 6.6]);
+  // The promenade, on a quay apron standing in the water.
+  //
+  // It used to be laid between N + 6.6 and N + 13.5, which reads like the
+  // water side and is the opposite of it. The shoreline is at N and the quay
+  // road runs from N + 3 to N + 13, so every one of those offsets landed on
+  // the carriageway: a cross-section through here found one metre of a
+  // ten-metre road still showing, with paving over three metres of it and lawn
+  // over five. That is why traffic appeared to be driving across a lawn, and
+  // it survived two rounds of screenshots because grass on a road looks like
+  // grass beside a road until you notice the car in the middle of it.
+  //
+  // There is nowhere to put it on the landward side — the road corridor ends
+  // exactly where the first row of plots begins — so it goes where a
+  // waterfront promenade belongs: out over the water, on an apron reaching
+  // about as far as the ferry pontoon already did, and well short of the
+  // fairway the ferry runs in.
+  const apronZ0 = N - 12.5;
+  const apronZ1 = N + 0.4;
+  b.add(M.concrete, box(52, 3.4, apronZ1 - apronZ0), [-39, y - 1.7, (apronZ0 + apronZ1) / 2]);
+  b.add(M.grass, box(48, 0.14, 8.5), [-38, y + 0.13, N - 7.4]);
+  b.add(M.sidewalk, box(48, 0.1, 3.0), [-38, y + 0.16, N - 1.6]);
   for (let i = 0; i < 8; i++) {
     const x = -60 + i * 6.2;
-    Prop.tree(kit, [x, y + 0.2, N + 13.5], rng.range(0, 6.2), rng.range(0.95, 1.25));
+    Prop.tree(kit, [x, y + 0.2, N - 9.6], rng.range(0, 6.2), rng.range(0.95, 1.25));
   }
-  for (const x of [-52, -40, -28]) Prop.bench(kit, [x, y + 0.2, N + 9.2], Math.PI);
-  for (const x of [-56, -34, -22]) Prop.planter(kit, [x, y + 0.2, N + 8.0], 0);
+  for (const x of [-52, -40, -28]) Prop.bench(kit, [x, y + 0.2, N - 4.2], Math.PI);
+  for (const x of [-56, -34, -22]) Prop.planter(kit, [x, y + 0.2, N - 3.0], 0);
 
   // Ferry terminal: a shed with a big canopy, on a raised deck at the water.
+  //
+  // Out past the kerb for the same reason. Its deck is eleven metres front to
+  // back and was centred four and a half metres inland of the shore, which put
+  // seven of them on the carriageway.
   const tx = -8;
-  const tz = N + 4.5;
+  const tz = N - 3.5;
   b.add(M.concrete, box(20, 0.5, 11), [tx, y + 0.05, tz]);
   b.add(M.plaster, box(13.5, 5.2, 8.2), [tx, y + 2.9, tz]);
   b.add(M.concreteDark, box(13.9, 0.7, 8.6), [tx, y + 0.65, tz]);
@@ -641,10 +725,13 @@ function buildHeadland(b: PartsBuilder, kit: InstanceKit, rng: Rng): void {
   // tilted the other way, hanging below the deck it left and floating above
   // the pontoon it landed on.
   const deckEdge = tz - 5.5;
-  const pontoonZ = tz - 19.2;
-  const walkway = 11.5;
+  const pontoonZ = tz - 11.2;
+  const walkway = 5.7;
   b.add(M.timberDark, box(9.0, 0.5, 4.4), [tx + 3, y - 1.05, pontoonZ]);
-  b.add(M.ironDark, box(3.4, 0.24, walkway), [tx + 3, y - 0.25, deckEdge - walkway / 2], [-0.096, 0, 0]);
+  // Same metre and a bit of fall over half the run, so the pitch doubles. The
+  // pontoon stays where it was — the ferry's fairway did not move, and the
+  // terminal walking out to meet it is what shortened the gangway.
+  b.add(M.ironDark, box(3.4, 0.24, walkway), [tx + 3, y - 0.25, deckEdge - walkway / 2], [-0.193, 0, 0]);
   b.add(M.ironDark, box(9.2, 0.1, 0.1), [tx + 3, y - 0.2, pontoonZ - 2.2]);
   for (let i = 0; i <= 6; i++) b.add(M.ironDark, post(0.05, 0.8, 4), [tx - 1.4 + i * 1.5, y - 0.6, pontoonZ - 2.2]);
   kit.place("bollard", [tx - 1.5, y - 0.75, pontoonZ + 1.8], 0, 1.1);
@@ -1281,6 +1368,26 @@ export function buildSurroundings(seed: number): THREE.Group {
   type Blk = { x: number; z: number; w: number; d: number; h: number; far?: boolean };
   const blocks: Blk[] = [];
 
+  /**
+   * How far each block's paved forecourt reaches past its own walls.
+   *
+   * It is laid below as `blk.w + 7` by `blk.d + 7`, so three and a half metres
+   * on every side, and a row has to stop that much short of its limit or the
+   * paving carries on past it.
+   */
+  const FORECOURT = 3.5;
+
+  /**
+   * A run of blocks between two coordinates.
+   *
+   * `to` is where the row ends, forecourt included. It used to be only the
+   * point past which no *new* block was started, which is a different thing
+   * entirely: the last block of every row began inside the limit and then
+   * extended up to its own full width beyond it, with its paving beyond that.
+   * Rows are aimed at the ring road, so what they overshot into was a
+   * carriageway — forty-eight sample points of building and a hundred of
+   * pavement, sitting in the road, with the traffic driving through them.
+   */
   const rowX = (
     z: number,
     from: number,
@@ -1290,9 +1397,10 @@ export function buildSurroundings(seed: number): THREE.Group {
     depth: number,
     far = false,
   ) => {
-    let cursor = from;
-    while (cursor < to) {
+    let cursor = from + FORECOURT;
+    for (;;) {
       const w = rng.range(9, 18);
+      if (cursor + w + FORECOURT > to) break;
       blocks.push({ x: cursor + w / 2, z, w, d: depth, h: rng.range(hMin, hMax), far });
       cursor += w + rng.range(1.4, 3.6);
     }
@@ -1306,9 +1414,10 @@ export function buildSurroundings(seed: number): THREE.Group {
     depth: number,
     far = false,
   ) => {
-    let cursor = from;
-    while (cursor < to) {
+    let cursor = from + FORECOURT;
+    for (;;) {
       const d = rng.range(9, 18);
+      if (cursor + d + FORECOURT > to) break;
       blocks.push({ x, z: cursor + d / 2, w: depth, d, h: rng.range(hMin, hMax), far });
       cursor += d + rng.range(1.4, 3.6);
     }
@@ -1318,12 +1427,18 @@ export function buildSurroundings(seed: number): THREE.Group {
   rowZ(74, -80, -26, 8, 15, 16);
   rowZ(98, -80, -26, 10, 22, 17);
   rowX(-56, 68, 122, 8, 17, 15);
-  rowX(-30, 68, 122, 7, 14, 15);
+  // Held back off the boulevard. Centred at -30 with fifteen metres of depth
+  // this row's forecourt reached -19, and the boulevard's carriageway starts
+  // at -24.5: nineteen sample points of pavement in the road.
+  rowX(-38, 68, 122, 7, 14, 12);
   // Between the boulevard and the southern street, east of the quarter.
   rowX(8, 92, 122, 6, 11, 15);
   // South of the ring road: held low, so nothing stands in front of the
   // Creator Quarter in the foreground.
-  rowX(82, 20, 122, 4.5, 7.5, 14);
+  // In two runs, because the road south passes between them. As one run from
+  // 20 to 122 it laid blocks straight across the highway's carriageway.
+  rowX(82, 20, 79, 4.5, 7.5, 14);
+  rowX(82, 97, 122, 4.5, 7.5, 14);
   rowX(46, -58, -40, 4.5, 7.0, 14);
   // West side, behind the forge and running off the left edge.
   rowX(82, -58, 4, 4.5, 7.5, 14);

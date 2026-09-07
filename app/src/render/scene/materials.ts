@@ -254,6 +254,17 @@ export const M = {
 
 export type MaterialKey = keyof typeof M;
 
+/**
+ * Every surface says what it is.
+ *
+ * Costs nothing and pays for itself the first time something is in the wrong
+ * place: geometry here is merged aggressively, so a mesh in the inspector is a
+ * whole district's worth of boxes and tells you nothing about which one you are
+ * looking at. A named material lets a raycast answer "what is lying on this
+ * road" with a word instead of a hex colour to go and look up.
+ */
+for (const [key, material] of Object.entries(M)) material.name = key;
+
 /** The ripple map, held so the bay can be made to move. Null before boot. */
 let drifting: THREE.Texture | null = null;
 
