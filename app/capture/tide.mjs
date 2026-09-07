@@ -15,7 +15,7 @@ import { artOut, framesDir, launchOptions, openCity } from "./env.mjs";
  * its crossing, and the traffic on the quay.
  */
 
-const SECONDS = Number(process.env.TIDE_SECONDS ?? 10);
+const SECONDS = Number(process.env.TIDE_SECONDS ?? 6);
 const FPS = Number(process.env.TIDE_FPS ?? 24);
 const START = Number(process.env.TIDE_START ?? 26);
 
@@ -36,6 +36,20 @@ await page.addStyleTag({
 
 const clip = await page.locator("canvas").boundingBox();
 const total = Math.round(SECONDS * FPS);
+
+// Let the founding sweep finish before the first frame is kept.
+//
+// The sweep raises its level cap on a React interval, and with the render loop
+// stopped for capture those updates only flush when something asks for a
+// frame. On a normal visit it is four seconds; in here it is however many
+// frames it takes, and the first attempt at this shot spent half its length
+// watching the city grow behind a camera that was supposed to be showing the
+// water.
+// The last of these also settles the frustum: the very first framed render
+// after boot comes out a touch wider than every one after it.
+for (let i = 0; i < 32; i++) {
+  await page.evaluate(([at]) => window.__city.frame(at, 0), ["commerce-core"]);
+}
 
 for (let i = 0; i < total; i++) {
   // Start well past the founding sweep, which runs on wall time rather than

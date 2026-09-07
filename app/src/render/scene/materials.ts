@@ -9,6 +9,7 @@ import {
   renderGrain,
   roofRibs,
   turfGrain,
+  waterNormals,
   waterRipples,
 } from "./textures";
 
@@ -256,6 +257,9 @@ export type MaterialKey = keyof typeof M;
 /** The ripple map, held so the bay can be made to move. Null before boot. */
 let drifting: THREE.Texture | null = null;
 
+/** The shimmer on top of it, which travels at its own rate. Null before boot. */
+let shimmering: THREE.Texture | null = null;
+
 /**
  * Attaches procedural detail to the palette.
  *
@@ -322,6 +326,17 @@ export function applySurfaceDetail(): void {
   assign(M.water, ripples, { rough: false, roughness: 0.24 });
   drifting = ripples;
 
+  // The second layer. Its own repeat and its own angle, so that when the two
+  // scroll at different rates the crossing pattern shifts instead of sliding.
+  const shimmer = waterNormals();
+  shimmer.repeat.set(0.031, 0.031);
+  shimmer.center.set(0.5, 0.5);
+  shimmer.rotation = 0.72;
+  M.water.normalMap = shimmer;
+  M.water.normalScale.set(0.5, 0.5);
+  M.water.needsUpdate = true;
+  shimmering = shimmer;
+
   // Walls.
   assign(M.brick, brickTex);
   assign(M.brickDark, brickTex);
@@ -371,6 +386,8 @@ export function applySurfaceDetail(): void {
 export function driftWater(t: number): void {
   const [u, v] = waterOffset(t);
   if (drifting) drifting.offset.set(u, v);
+  const [su, sv] = waterSheenOffset(t);
+  if (shimmering) shimmering.offset.set(su, sv);
 }
 
 /**
@@ -385,11 +402,31 @@ export function driftWater(t: number): void {
  * a screenshot would catch, so the axes are pinned in `geom.test.ts`.
  *
  * `u` is not zero only so the current runs at a slight angle to the bands and
- * does not read as marching scanlines. One tile spans about forty-four metres,
- * putting this near half a metre a second: a current, not a conveyor.
+ * does not read as marching scanlines.
+ *
+ * One tile spans about forty-four metres, putting the rate below near a metre
+ * a second. Half that was the first honest attempt and it failed a viewing
+ * test: at the framing the game is played at the bay is a couple of pixels per
+ * metre, so half a metre a second is two pixels a second of very low-contrast
+ * streak, which video compression removes entirely. A metre a second is about
+ * a fifth of the ferry's speed — still plainly a current rather than a rapid,
+ * but fast enough to survive the zoom and the encoder.
  */
 export function waterOffset(t: number): [u: number, v: number] {
-  return [t * 0.0026, t * 0.0115];
+  return [t * 0.0054, t * 0.024];
+}
+
+/**
+ * Where the shimmer sits at `t`, in tiles.
+ *
+ * Deliberately not a multiple of the ripple rate, and crossing it rather than
+ * following it: two layers travelling the same way at the same speed are one
+ * layer, and the point of the second is that the surface should not move all
+ * of a piece. Slower, because the swell carries the current and this only has
+ * to keep the light from sitting still.
+ */
+export function waterSheenOffset(t: number): [u: number, v: number] {
+  return [t * -0.0031, t * 0.0162];
 }
 
 /** Used by the README stats pass. */

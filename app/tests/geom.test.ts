@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { PartsBuilder, bevelBox, box, post, slab, wedge } from "../src/render/lib/geom";
-import { waterOffset } from "../src/render/scene/materials";
+import { waterOffset, waterSheenOffset } from "../src/render/scene/materials";
 
 function centre(geometry: THREE.BufferGeometry): THREE.Vector3 {
   geometry.computeBoundingBox();
@@ -106,6 +106,15 @@ describe("geometry kit", () => {
     const metresPerSecond = (v / 10) * 44.4;
     expect(metresPerSecond).toBeGreaterThan(0.25);
     expect(metresPerSecond).toBeLessThan(1.2);
+
+    // The shimmer has to disagree with the swell. One map can only slide, and
+    // a second one following it at the same rate is just a thicker first one:
+    // it is the difference between the two that stops the bay moving all of a
+    // piece. Crossing it, and slower.
+    const [su, sv] = waterSheenOffset(10);
+    expect(Math.sign(su)).toBe(-Math.sign(u));
+    expect(Math.abs(sv)).toBeLessThan(Math.abs(v));
+    expect(Math.abs(sv - v)).toBeGreaterThan(Math.abs(v) * 0.15);
   });
 
   it("keeps the placement when a composed part is baked into another builder", () => {

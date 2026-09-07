@@ -67,9 +67,25 @@ full-width bands along `u`, so the first attempt, which travelled mostly in
 `u`, slid every streak along its own length and moved the map five metres to
 no visible effect whatsoever. Frames captured before and after differed by
 36dB either way, which is the trap: the pixels change, and nothing reads as
-motion. The travel is in `v` now, across the bands, at about half a metre a
-second. `tests/geom.test.ts` pins the axes for the same reason the wedge
-orientation is pinned — no screenshot catches it being wrong.
+motion. The travel is in `v` now, across the bands. `tests/geom.test.ts` pins
+the axes for the same reason the wedge orientation is pinned — no screenshot
+catches it being wrong.
+
+The speed took a second pass too. Half a metre a second is right for a bay and
+wrong for a screen: at the framing the game is played at the water is two or
+three pixels a metre, so the streaks crossed about two pixels a second, and a
+reviewer watching ten seconds of held camera reported the surface as
+"completely static" — correctly, as far as the eye goes. The measurement
+agreed with them and with the code at once: the water region of two frames
+five seconds apart differed, but by 35dB, which is change without motion. It
+runs at about a metre a second now, a fifth of the ferry's speed, which
+survives both the zoom and the encoder.
+
+`waterfront_in_motion.mp4` is the check — camera locked, clock advancing, so
+everything that moves is the world. It also has to warm up before it records:
+the founding sweep raises its cap on a React interval, and with the render
+loop stopped for capture those updates only flush when a frame is asked for,
+so the first version of the shot spent half its length watching the city grow.
 
 ## The round (`pnpm capture:round`)
 
