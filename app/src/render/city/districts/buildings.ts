@@ -667,10 +667,24 @@ function pitchedRoof(b: PartsBuilder, skin: Skin, w: number, d: number, h: numbe
   // thing on the plot, and the first one the eye found. A wall carrying a
   // coping is the correct detail either way, and it reads as the edge of a
   // building whatever is on the other side of it.
+  // A wall has to start at the ground, and this one started at the roof.
+  //
+  // Swapping the board for a wall fixed the material and left the geometry:
+  // still a six-hundred-millimetre bar riding the slope, and still centred
+  // sixty past the bay line, so a third of its width hung over the neighbour's
+  // pitch. Bays in this run step a storey or two off each other, so that third
+  // is over a roof that is lower — a brick bar and a pale coping with open air
+  // under them, which is the floating cap two readers came back with. The
+  // wall now stands on the bay line and runs down the flank to the ground, so
+  // there is nothing to float over: the flank below the eaves, the triangle
+  // under the rake, then the upstand that carries the coping. Standing on the
+  // line also puts something solid over the seam where two bays' roofs meet.
   for (const sx of [-1, 1]) {
-    const px = (sx * (w + 0.62)) / 2;
-    b.add(skin.body, box(0.34, 0.66, d + 0.62), [px, h + rise / 2 + 0.22, 0], [lie, 0, 0]);
-    b.add(M.fascia, box(0.46, 0.16, d + 0.74), [px, h + rise / 2 + 0.61, 0], [lie, 0, 0]);
+    const px = (sx * (w + 0.5)) / 2;
+    b.add(skin.body, box(0.34, h, d), [px, h / 2, 0]);
+    b.add(skin.body, wedge(0.34, rise, run), [px, h + rise / 2, 0], [0, Math.PI, 0]);
+    b.add(skin.body, box(0.34, 0.34, run), [px, h + rise / 2 + 0.17, 0], [lie, 0, 0]);
+    b.add(M.fascia, box(0.44, 0.16, run + 0.08), [px, h + rise / 2 + 0.42, 0], [lie, 0, 0]);
   }
   // Gutter and fascia at the low edge.
   b.add(M.fascia, box(w + 0.62, 0.2, 0.2), [0, h + 0.1, d / 2 + 0.3]);

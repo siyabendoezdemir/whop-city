@@ -1152,6 +1152,10 @@ export function buildCreatorQuarter(ctx: Ctx): void {
     const units = Math.max(2, Math.round((runX1 - runX0) / 6));
     const unitW = (runX1 - runX0) / units;
 
+    // The roof plane of the first unit, so the exposed end of the run can be
+    // trimmed to the roof it actually meets rather than to a guessed height.
+    let endHead = 0;
+
     for (let i = 0; i < units; i++) {
       const cx = runX0 + unitW * (i + 0.5);
       const h = rng.range(3.4, 4.6);
@@ -1162,7 +1166,19 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       // rooflight used to be level while the roof was not, so it read from
       // above as a white sticker floating off the tiles.
       const fall = -0.17;
-      local.add(M.roofZinc, box(unitW - 0.1, 0.16, mewsD + 0.7), [cx, y + h + 0.42, mewsZ], [fall, 0, 0]);
+      // The plate lands on a wall, and the wall has to be cut to the pitch.
+      //
+      // A level box with a falling plate over it can only be right at one
+      // point along the run. This one was right near the middle, so the plate
+      // sliced down into the wall head at the back — a dithered band where the
+      // two faces met at the same depth — and lifted a metre and a half clear
+      // of it at the front. `head` is the roof plane where it crosses the
+      // range's centre line, and everything on the roof is placed off it.
+      const pitch = Math.tan(-fall);
+      const head = y + h + (pitch * mewsD) / 2;
+      if (i === 0) endHead = head;
+      local.add(body, wedge(unitW - 0.4, pitch * mewsD, mewsD), [cx, head, mewsZ]);
+      local.add(M.roofZinc, box(unitW - 0.1, 0.16, mewsD + 0.7), [cx, head + 0.08, mewsZ], [fall, 0, 0]);
       // Two rooflights, in a pale kerb.
       //
       // These have now been wrong three times. First emissive, which lit them
@@ -1177,7 +1193,7 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       // workshop roof, not the darkest. Pale frame, smaller glass inside it,
       // and the light is a light.
       const lightZ = mewsD * 0.16;
-      const lightY = y + h + 0.5 - Math.tan(fall) * lightZ;
+      const lightY = head + 0.16 - Math.tan(fall) * lightZ;
       for (const ox of [-unitW * 0.19, unitW * 0.19]) {
         local.add(M.kerb, box(unitW * 0.29, 0.16, mewsD * 0.29), [cx + ox, lightY, mewsZ + lightZ], [fall, 0, 0]);
         local.add(
@@ -1208,16 +1224,27 @@ export function buildCreatorQuarter(ctx: Ctx): void {
       local.add(M.ironDark, box(0.32, 0.22, 0.3), [cx + unitW * 0.3, y + h - 0.35, backFace - 0.08]);
       // Party wall upstand between units, so the range reads as a row rather
       // than one long shed with lines drawn on it.
+      // The head follows the pitch, and the wall goes to the ground.
+      //
+      // Level, it stood a metre proud where the roof had fallen away and
+      // disappeared under the plate where the roof had not, so what showed was
+      // a brick wedge tapering out of the tiles with a pale bar riding it and
+      // nothing underneath — the floating cap two readers came back with. A
+      // party wall is a wall: it starts on the ground, it is cut to the pitch,
+      // and it stands the same height proud along the whole run.
       if (i > 0) {
-        local.add(M.brickDark, box(0.28, h + 0.75, mewsD + 0.5), [cx - unitW / 2, y + (h + 0.75) / 2, mewsZ]);
-        local.add(M.fascia, box(0.42, 0.18, mewsD + 0.62), [cx - unitW / 2, y + h + 0.78, mewsZ]);
+        const px = cx - unitW / 2;
+        const wallD = mewsD + 0.5;
+        local.add(M.brickDark, box(0.28, h, wallD), [px, y + h / 2, mewsZ]);
+        local.add(M.brickDark, wedge(0.28, pitch * wallD, wallD), [px, head, mewsZ]);
+        local.add(M.brickDark, box(0.28, 0.62, wallD), [px, head + 0.36, mewsZ], [fall, 0, 0]);
+        local.add(M.fascia, box(0.42, 0.16, mewsD + 0.62), [px, head + 0.75, mewsZ], [fall, 0, 0]);
       }
     }
     // The exposed end of the run: a verge board down the roof line, the plinth
     // returned round the corner, and a downpipe.
     {
-      const endH = 4.6;
-      local.add(M.fascia, box(0.22, 0.26, mewsD + 0.8), [runX0 - 0.1, y + endH * 0.72, mewsZ], [-0.17, 0, 0]);
+      local.add(M.fascia, box(0.22, 0.26, mewsD + 0.8), [runX0 - 0.1, endHead + 0.2, mewsZ], [-0.17, 0, 0]);
       local.add(M.ironDark, post(0.1, 3.6, 5), [runX0 - 0.1, y + 1.8, mewsZ + mewsD * 0.34]);
       local.add(M.concreteDark, box(0.5, 0.44, mewsD + 0.24), [runX0 - 0.05, y + 0.22, mewsZ]);
     }
