@@ -6,11 +6,13 @@ import { Rng } from "../src/render/lib/rng";
 import {
   DRIVEN_ROADS,
   LANE_OFFSET,
+  PARCELS,
   ROADS,
   buildTraffic,
   layPath,
   sample,
 } from "../src/render/city/cityPlan";
+import { corridor, footprint, intersect, trespasses } from "../src/render/city/plan";
 import {
   buildRoadGraph,
   crossingsOn,
@@ -350,5 +352,54 @@ describe("two vehicles are never in the same place", () => {
     }
 
     expect(worst, `closest approach at ${where}`).toBeGreaterThan(4);
+  });
+});
+
+describe("nothing is built on a road", () => {
+  /**
+   * The fault behind two separate reports.
+   *
+   * A plot boundary is not a thing that gets rendered, so this was invisible
+   * to every other check: each piece of geometry was built exactly as
+   * authored, and the pieces were authored on top of each other. Six plots
+   * stood on a running carriageway, `forge-hero` by twelve and a half metres.
+   *
+   * `buildParcelGround` lays the plot surface at the parcel's full extent with
+   * no inset, so the overlap was painted straight over the asphalt — that is
+   * the grass that kept appearing on the road — and anything standing in the
+   * overlap is something the traffic drives through.
+   *
+   * `pnpm plan` draws this and prints what each offending plot would have to
+   * be. This is the same check with a failure attached.
+   */
+  it("keeps every plot off every carriageway", () => {
+    const over = trespasses(PARCELS, ROADS);
+    expect(
+      over.map((clash) => `${clash.parcel} is ${clash.depth.toFixed(1)}m onto ${clash.road}`),
+    ).toEqual([]);
+  });
+
+  it("keeps every plot behind its kerb, footway and all", () => {
+    // A boundary flush with the asphalt is not enough. A parcel draws its kerb
+    // outward from its own edge, so a plot that stops at the carriageway lays
+    // its kerb on the running surface.
+    const over = trespasses(PARCELS, ROADS, corridor);
+    expect(
+      over.map((clash) => `${clash.parcel} is ${clash.depth.toFixed(1)}m onto ${clash.road}'s footway`),
+    ).toEqual([]);
+  });
+
+  it("does not stack two plots on the same ground", () => {
+    // The Offer Forge block is twenty-nine metres deep and the two plots
+    // authored into it asked for fifty-four, so they overlapped each other as
+    // well as the boulevard.
+    const clashes: string[] = [];
+    for (let i = 0; i < PARCELS.length; i++) {
+      for (let j = i + 1; j < PARCELS.length; j++) {
+        const shared = intersect(footprint(PARCELS[i]), footprint(PARCELS[j]));
+        if (shared) clashes.push(`${PARCELS[i].id} overlaps ${PARCELS[j].id}`);
+      }
+    }
+    expect(clashes).toEqual([]);
   });
 });

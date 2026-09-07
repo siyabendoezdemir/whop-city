@@ -1549,12 +1549,33 @@ const FACE_NORTH = Math.PI;
  * a rear lane; Creator Quarter is a fine-grained run of small plots in the
  * foreground.
  */
+/**
+ * On these numbers.
+ *
+ * Eight of them were corrected in one pass, and the correction was measured
+ * rather than eyeballed: `pnpm plan` draws the carriageways, the footways and
+ * the plot boundaries flat, marks every place they overlap, and prints what
+ * each offending plot would have to be to stand behind its kerb. That is where
+ * these came from.
+ *
+ * They were badly wrong. Six plots stood on a running carriageway — `forge-hero`
+ * by twelve and a half metres, which is most of the boulevard's width — and
+ * because `buildParcelGround` lays the plot surface at the parcel's full extent
+ * with no inset, the overlap was painted straight over the asphalt. That is the
+ * grass that was showing up on the road, and the buildings standing in the
+ * overlap are what the traffic was driving through.
+ *
+ * The Offer Forge plots lost the most, and had to: the block between the
+ * boulevard and the southern street is twenty-nine metres deep and the two
+ * plots authored into it asked for fifty-four. They were never going to fit,
+ * and were overlapping each other as well as the roads.
+ */
 export const PARCELS: Parcel[] = [
   // ------------------------------------------------- Commerce Core (headland)
   {
     id: "core-landmark",
-    centre: { x: 20, z: -62 },
-    width: 28,
+    centre: { x: 23.1, z: -62 },
+    width: 21.8,
     depth: 22,
     yaw: FACE_SOUTH,
     edges: E("street", "street", "street", "street"),
@@ -1562,27 +1583,27 @@ export const PARCELS: Parcel[] = [
   },
   {
     id: "core-north",
-    centre: { x: -12, z: -64 },
-    width: 26,
-    depth: 26,
+    centre: { x: -14.6, z: -63.4 },
+    width: 20.8,
+    depth: 24.8,
     yaw: FACE_SOUTH,
     edges: E("street", "street", "street", "street"),
     level: 0.21,
   },
   {
     id: "core-east",
-    centre: { x: 20, z: -34 },
-    width: 28,
-    depth: 18,
+    centre: { x: 23.1, z: -36 },
+    width: 21.8,
+    depth: 14,
     yaw: FACE_NORTH,
     edges: E("boulevard", "street", "street", "street"),
     level: 0.21,
   },
   {
     id: "core-southeast",
-    centre: { x: -14, z: -34 },
-    width: 22,
-    depth: 18,
+    centre: { x: -14.6, z: -36 },
+    width: 20.8,
+    depth: 14,
     yaw: FACE_NORTH,
     edges: E("boulevard", "street", "street", "street"),
     level: 0.21,
@@ -1592,8 +1613,8 @@ export const PARCELS: Parcel[] = [
   // Rotated: frontage looks west at the quay road, service lane behind.
   {
     id: "forge-hero",
-    centre: { x: -46, z: -8 },
-    width: 32,
+    centre: { x: -46, z: 0.5 },
+    width: 15,
     depth: 20,
     yaw: FACE_WEST,
     edges: E("street", "alley", "neighbour", "street"),
@@ -1610,8 +1631,8 @@ export const PARCELS: Parcel[] = [
   },
   {
     id: "forge-south",
-    centre: { x: -46, z: 22 },
-    width: 22,
+    centre: { x: -46, z: 16.6 },
+    width: 11.2,
     depth: 20,
     yaw: FACE_WEST,
     edges: E("street", "alley", "neighbour", "street"),
@@ -1621,8 +1642,8 @@ export const PARCELS: Parcel[] = [
   // ------------------------------------------------ Creator Quarter (near)
   {
     id: "creator-park",
-    centre: { x: -14, z: 8 },
-    width: 26,
+    centre: { x: -14.7, z: 8 },
+    width: 21,
     depth: 26,
     yaw: FACE_NORTH,
     edges: E("boulevard", "street", "street", "park"),
@@ -1630,8 +1651,8 @@ export const PARCELS: Parcel[] = [
   },
   {
     id: "creator-terrace",
-    centre: { x: 18, z: 8 },
-    width: 24,
+    centre: { x: 21.1, z: 8 },
+    width: 17.8,
     depth: 26,
     yaw: FACE_NORTH,
     edges: E("boulevard", "street", "park", "street"),
