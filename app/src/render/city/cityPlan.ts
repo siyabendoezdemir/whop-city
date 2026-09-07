@@ -633,12 +633,22 @@ function buildHeadland(b: PartsBuilder, kit: InstanceKit, rng: Rng): void {
   b.add(M.steelPainted, box(19.5, 0.3, 0.34), [tx, y + 4.75, tz - 6.6]);
   b.add(M.glassDim, box(19.5, 0.12, 5.6), [tx, y + 4.9, tz - 4.2], [-0.05, 0, 0]);
   // Gangway and pontoon out over the water.
-  b.add(M.ironDark, box(3.4, 0.24, 7.0), [tx + 3, y - 0.3, tz - 9.6], [0.09, 0, 0]);
-  b.add(M.timberDark, box(9.0, 0.5, 4.4), [tx + 3, y - 1.05, tz - 14.2]);
-  b.add(M.ironDark, box(9.2, 0.1, 0.1), [tx + 3, y - 0.2, tz - 16.3]);
-  for (let i = 0; i <= 6; i++) b.add(M.ironDark, post(0.05, 0.8, 4), [tx - 1.4 + i * 1.5, y - 0.6, tz - 16.3]);
-  kit.place("bollard", [tx - 1.5, y - 0.75, tz - 12.4], 0, 1.1);
-  kit.place("bollard", [tx + 7.4, y - 0.75, tz - 12.4], 0, 1.1);
+  //
+  // The pontoon reaches the fairway now, because the ferry's lane moved out to
+  // clear the moorings and a berth the ferry stops five metres short of is not
+  // a berth. Deck top and pontoon top are a metre and a bit apart over eleven
+  // and a half of run, and the gangway is pitched to join them: it used to be
+  // tilted the other way, hanging below the deck it left and floating above
+  // the pontoon it landed on.
+  const deckEdge = tz - 5.5;
+  const pontoonZ = tz - 19.2;
+  const walkway = 11.5;
+  b.add(M.timberDark, box(9.0, 0.5, 4.4), [tx + 3, y - 1.05, pontoonZ]);
+  b.add(M.ironDark, box(3.4, 0.24, walkway), [tx + 3, y - 0.25, deckEdge - walkway / 2], [-0.096, 0, 0]);
+  b.add(M.ironDark, box(9.2, 0.1, 0.1), [tx + 3, y - 0.2, pontoonZ - 2.2]);
+  for (let i = 0; i <= 6; i++) b.add(M.ironDark, post(0.05, 0.8, 4), [tx - 1.4 + i * 1.5, y - 0.6, pontoonZ - 2.2]);
+  kit.place("bollard", [tx - 1.5, y - 0.75, pontoonZ + 1.8], 0, 1.1);
+  kit.place("bollard", [tx + 7.4, y - 0.75, pontoonZ + 1.8], 0, 1.1);
 }
 
 /**
@@ -1076,8 +1086,15 @@ export function buildWaterLife(): Rig[] {
   // Out in the fairway rather than nine metres off the quay. A bay this narrow
   // only has room for one lane of moving water and one line of moorings, and
   // the old route put the ferry in both.
-  const a = new THREE.Vector3(-4, 0, WORLD.northShore - 16);
-  const c = new THREE.Vector3(96, 0, WORLD.northFar + 14);
+  //
+  // Twenty-one metres off rather than sixteen. At sixteen the hulls cleared by
+  // two and a half metres, which is a miss in the model and a hit on the
+  // screen: this camera looks down at thirty-five degrees, so five metres of
+  // depth is a few pixels of gap and two boats that never touch read as one
+  // sailing through the other. Clearance has to be legible at the framing the
+  // game is played at, not merely true. The berth follows the lane out.
+  const a = new THREE.Vector3(-4, 0, WORLD.northShore - 21);
+  const c = new THREE.Vector3(96, 0, WORLD.northFar + 9);
   const period = 46;
 
   return [
