@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-import { PartsBuilder, bevelBox, box, post, slab, wedge } from "../lib/geom";
+import { PartsBuilder, bevelBox, box, post, sheet, slab, wedge } from "../lib/geom";
 import { Rng } from "../lib/rng";
 import { ACTOR_SURFACE, M } from "../scene/materials";
 import { Prop, type InstanceKit } from "./props";
@@ -715,6 +715,33 @@ function buildLand(b: PartsBuilder): void {
   bank(W - 1.2, W + 1.2, N, R);
   bank(-R, R, NF - 1.2, NF + 1.2);
   bank(WF - 1.2, WF + 1.2, NF, R);
+
+  /**
+   * Shallows, at the foot of every wall and bank.
+   *
+   * Without them the water plane stops dead against the masonry on a line one
+   * pixel wide, which is the single clearest tell that it is a plane and not a
+   * body of water: nothing about the edge says the water has a bottom. A pale
+   * band reads as depth for free, and it is what the eye is looking for.
+   *
+   * In the water's own plane, not above it. `M.shallows` carries the depth bias
+   * that settles which of the two coplanar surfaces is drawn.
+   */
+  const SHALLOWS = 1.9;
+  const lip = 1.2;
+  const shallows = (x0: number, x1: number, z0: number, z1: number) => {
+    b.add(M.shallows, sheet(x1 - x0, z1 - z0), [(x0 + x1) / 2, WORLD.ground - 1.74, (z0 + z1) / 2]);
+  };
+  // The city's own waterfront and the far shore facing it.
+  shallows(W - lip - SHALLOWS, R, N - lip - SHALLOWS, N - lip);
+  shallows(W - lip - SHALLOWS, W - lip, N - lip, R);
+  shallows(-R, R, NF + lip, NF + lip + SHALLOWS);
+  shallows(WF + lip, WF + lip + SHALLOWS, NF + lip, R);
+  // Both banks of the canal and its head, where the camera gets closest to the
+  // waterline and the hard edge showed most.
+  shallows(WORLD.canalX0, WORLD.canalX0 + SHALLOWS, N, WORLD.canalEndZ);
+  shallows(WORLD.canalX1 - SHALLOWS, WORLD.canalX1, N, WORLD.canalEndZ);
+  shallows(WORLD.canalX0, WORLD.canalX1, WORLD.canalEndZ - SHALLOWS, WORLD.canalEndZ);
 }
 
 /**

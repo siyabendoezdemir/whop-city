@@ -110,6 +110,24 @@ export function slab(w: number, h: number, d: number, chamfer = 0.03): THREE.Buf
   return bevelBox(w, h, d, chamfer);
 }
 
+/**
+ * A single horizontal face, laid flat. Two triangles and no sides.
+ *
+ * For anything that sits *in* another surface rather than on top of it. A very
+ * thin box looks identical from above and brings four side walls with it, which
+ * is harmless right up until the material carries a depth bias to settle which
+ * of two coplanar surfaces wins: the bias applies to every face, so those side
+ * walls win too and trace a dark hairline round the whole shape. The shallows
+ * at the waterline did exactly that.
+ */
+export function sheet(w: number, d: number): THREE.BufferGeometry {
+  return prototype(`sh:${w}:${d}`, () => {
+    const geometry = new THREE.PlaneGeometry(w, d);
+    geometry.rotateX(-Math.PI / 2);
+    return geometry;
+  });
+}
+
 /** Thin cylinder: bollards, posts, pipes, tree trunks. */
 export function post(radius: number, height: number, sides = 8): THREE.BufferGeometry {
   return prototype(

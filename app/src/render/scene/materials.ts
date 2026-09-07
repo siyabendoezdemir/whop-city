@@ -83,6 +83,30 @@ export const M = {
    * whole of it.
    */
   water: standard("#63b1d6", 0.42, 0, { envMapIntensity: 0.2 }),
+
+  /**
+   * The foot of every quay wall and bank.
+   *
+   * Water met the land on a razor line: the plane simply stopped against the
+   * masonry with no shallows, no foam and no change of tone, which is the tell
+   * that gives away a flat plane pretending to be a body of water. Real water
+   * against a wall is paler where it is shallow and breaking, and the eye reads
+   * that band as depth even when there is none.
+   *
+   * A shade of the water rather than white, and narrow. Wide and bright, it
+   * stops being shallows and becomes a stripe painted round the coast.
+   */
+  shallows: standard("#8ec9e2", 0.44, 0, {
+    envMapIntensity: 0.2,
+    // Laid in the same plane as the water rather than a few centimetres proud
+    // of it. Standing it proud is the obvious way to win the depth test and it
+    // leaves the strip's own side wall poking above the surface — a hairline of
+    // shadow tracing the whole coast, and the more visible the closer the
+    // camera gets. A depth bias wins the same argument without the step.
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  }),
   /**
    * Disturbed water behind the ferry.
    *
@@ -352,6 +376,11 @@ export function applySurfaceDetail(): void {
   // be in metres rather than picked as a number.
   ripples.repeat.setScalar(2 / RIPPLE_TILE);
   assign(M.water, ripples, { rough: false });
+  // The shallows carry the same swell as the water they are part of. Sharing
+  // the texture object rather than a copy is the point: one offset moves both,
+  // so the band at the wall can never drift out of step with the bay.
+  M.shallows.map = ripples;
+  M.shallows.needsUpdate = true;
   drifting = ripples;
 
   // The second layer. Its own repeat and its own angle, so that when the two
@@ -361,6 +390,8 @@ export function applySurfaceDetail(): void {
   shimmer.center.set(0.5, 0.5);
   shimmer.rotation = 0.72;
   M.water.normalMap = shimmer;
+  M.shallows.normalMap = shimmer;
+  M.shallows.normalScale.set(0.3, 0.3);
   // Swept against the render rather than guessed. Half of this turned the bay
   // into a dark, blown-out, oil-slick sea; a fifth of it was invisible and the
   // surface went back to sliding as one rigid sheet. This is the band where
