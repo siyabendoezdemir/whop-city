@@ -126,21 +126,61 @@ glazing, which is dark because that is what a window looks like from outside.
 Laid flat under the sky it read as a hole in the deck. `M.glassRoof` is its own
 pale, matte, sky-lit material now.
 
+### The wall that started at the roof
+
+Two readers came back off the film with the same note — pale caps floating
+over the Creator Quarter's low roofs — and both explained it as the pitches
+still being reversed and the build being stale. Neither was true, and it is
+worth writing down how that was settled, because "the artefact is old" is
+cheap to say and expensive to chase. The timeline the fly-through records is a
+pure function of time, so `frame(at, clock)` reproduces any frame of it
+exactly. Rebuilding from `HEAD` and re-shooting `frame("offer-forge", 7)` gave
+a frame that matched the film at 39.5 dB across the world, against 24.6 dB over
+the full image — the whole difference being a HUD panel the still does not open.
+39.5 dB is H.264 at CRF 18 and nothing else. The build was current; the
+geometry was not.
+
+What was floating is the party wall, and the readers were pointing at something
+real. `capture/eye.mjs` on `creator-terrace`, with the wall and its coping
+temporarily painted magenta, put it beyond argument in one frame: the magenta
+was the artefact.
+
+A level wall under a level coping cannot carry a plate that falls at 0.17. It
+is right at one point along the run and wrong everywhere else, and this one was
+right near the middle — the plate cut down into the wall head at the back and
+lifted a metre and a half clear of it at the front, so what showed was a brick
+wedge tapering out of the tiles with a pale bar riding it and open air
+underneath. The plate now lands on a wall cut to the pitch, and the wall runs
+to the ground and stands the same height proud along the whole range.
+
+The terrace bays in `pitchedRoof` had the same fault waiting behind a dice
+roll. The wall there was a 0.66 bar centred 0.06 outside the bay line, so a
+third of its width overhung the neighbour — and bays in that run deliberately
+step a storey off each other, so the overhang was over a lower roof. It stands
+on the line now, with the flank below the eaves and the triangle under the rake.
+
+Three of the six things flagged did not reproduce at close range: the
+rooflights are pale and kerbed and seated in the slope, the sawtooth verges
+carry their coping, and the ferry passes the moored barge in clear water. The
+dithered band on the mews roofs is the shadow map's edge at 4096 over a 236m
+extent, about 5.8cm a texel, which is the documented cost of welding the
+shadow rig to the world so it does not crawl under the camera.
+
 ### Renderer, after the pass
 
 | Scenario | Draw calls | Triangles |
 | --- | --- | --- |
-| balanced | 193 | 172,288 |
-| launch | 174 | 141,070 |
-| thriving | 195 | 172,468 |
-| struggling | 198 | 172,716 |
+| balanced | 193 | 172,452 |
+| launch | 174 | 141,238 |
+| thriving | 195 | 172,752 |
+| struggling | 198 | 172,920 |
 | unavailable | 143 | 130,298 |
-| every plot at level 5 | 207 | 219,472 |
+| every plot at level 5 | 207 | 219,636 |
 
 The last row is the one that matters and the one nothing used to measure. No
 fixture stands every plot at the top of its ladder, but a player who grows the
 whole board does, and that world came in at 261,000 triangles against the
 250,000 ceiling. `bevelBox` falling back to a plain box under 1.6m, cheaper
 bollards, octahedron canopies on distant trees and single-sided window bands on
-the far bank brought it to 219,472. `tests/browser/world.spec.ts` holds it
-there.
+the far bank brought it to 219,472. Cutting the party walls to the pitch put
+164 back. `tests/browser/world.spec.ts` holds it there.
