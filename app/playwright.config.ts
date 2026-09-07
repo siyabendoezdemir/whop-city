@@ -29,7 +29,12 @@ export default defineConfig({
     : {
         command: "pnpm preview --port 4173",
         url: "http://localhost:4173/api/city/snapshot",
-        reuseExistingServer: true,
+        // Never borrow a server someone else started. `vite preview` loads the
+        // server bundle into memory at boot, so a reused process keeps serving
+        // whichever build it was started against — which is how a production
+        // privacy run once passed while pointed at a fixtures server. If the
+        // port is busy the run fails loudly, which is the correct outcome.
+        reuseExistingServer: false,
         timeout: 120_000,
       },
 });

@@ -11,6 +11,18 @@
 import { createStartHandler, defaultStreamHandler } from "@tanstack/react-start/server";
 import { createServerEntry } from "@tanstack/react-start/server-entry";
 
+import {
+  AUTH_CALLBACK,
+  AUTH_LOGOUT,
+  AUTH_START,
+  AUTH_VIEW,
+  handleAuthCallback,
+  handleAuthLogout,
+  handleAuthStart,
+  handleAuthView,
+} from "./server/oauth";
+import { LIVE_PATH, handleLiveRequest } from "./server/liveRoute";
+import { PROFILE_PATH, handleProfileRequest } from "./server/profileRoute";
 import { SNAPSHOT_PATH, handleSnapshotRequest } from "./server/snapshotRoute";
 import { resolveEnv } from "./server/env";
 
@@ -36,6 +48,21 @@ export default createServerEntry({
     if (pathname === SNAPSHOT_PATH) {
       return handleSnapshotRequest(request, await resolveEnv());
     }
+
+    // The small, frequent read: current figures and the sales behind them.
+    // Owner-only, and a visitor gets a flat refusal rather than zeroes.
+    if (pathname === LIVE_PATH) return handleLiveRequest(request, await resolveEnv());
+
+    // Who is signed in. Owner-only, and a visitor cannot tell the difference
+    // between "nobody is signed in" and "you are not them".
+    if (pathname === PROFILE_PATH) return handleProfileRequest(request, await resolveEnv());
+
+    // Sign in with Whop. Four fixed paths, matched by equality like the
+    // snapshot is: still no dispatcher and still nothing a caller can steer.
+    if (pathname === AUTH_START) return handleAuthStart(request, await resolveEnv());
+    if (pathname === AUTH_CALLBACK) return handleAuthCallback(request, await resolveEnv());
+    if (pathname === AUTH_LOGOUT) return handleAuthLogout(request);
+    if (pathname === AUTH_VIEW) return handleAuthView(request, await resolveEnv());
 
     if (pathname === SERVER_FN_PREFIX || pathname.startsWith(`${SERVER_FN_PREFIX}/`)) {
       return new Response(null, { status: 404 });

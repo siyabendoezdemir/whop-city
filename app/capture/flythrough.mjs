@@ -48,7 +48,10 @@ const TIMELINE = [
   { kind: "hold", at: "offer-forge", seconds: 1.5 },
   { kind: "fly", from: "offer-forge", at: "creator-quarter", seconds: 1.2, select: "creator-quarter" },
   { kind: "hold", at: "creator-quarter", seconds: 1.5 },
-  { kind: "fly", from: "creator-quarter", at: "city", seconds: 1.2, select: "city" },
+  // Back out to the wide shot by pressing the district that is already open.
+  // There is no "city" button on the rail; `goToDistrict` toggles, so the way
+  // a player returns to the whole island is the same button again.
+  { kind: "fly", from: "creator-quarter", at: "city", seconds: 1.2, select: "creator-quarter" },
   { kind: "hold", at: "city", seconds: 0.9 },
 ];
 const DURATION = TIMELINE.reduce((total, step) => total + step.seconds, 0);
@@ -75,7 +78,7 @@ const started = Date.now();
 for (const step of TIMELINE) {
   if (step.select) {
     // The product interaction: opens the panel and marks the button pressed.
-    await page.click(`.city-jump button[data-district="${step.select}"]`);
+    await page.click(`.rail button[data-district="${step.select}"]`);
   }
 
   const steps = Math.round(step.seconds * FPS);

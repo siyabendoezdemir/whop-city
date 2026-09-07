@@ -36,6 +36,22 @@ export const MIN_SEED_SECRET_LENGTH = 16;
 export const ANONYMOUS_SEED = "0000000000000000";
 
 /**
+ * A distinct inert seed per fixture scenario.
+ *
+ * Fixtures are different invented businesses, so they must not share a seed:
+ * the browser keys the player's saved city on it, and one seed for all of them
+ * meant loading `thriving` after `blank` showed `blank`'s empty city with
+ * `thriving`'s figures. Obviously fake — it is the anonymous seed with the
+ * scenario's initials written into the low bytes — and unreachable from a
+ * deployable build, where the fixture branch does not exist.
+ */
+export function fixtureSeed(scenario: string): string {
+  let hash = 0;
+  for (let i = 0; i < scenario.length; i++) hash = (Math.imul(hash, 131) + scenario.charCodeAt(i)) >>> 0;
+  return `00000000${hash.toString(16).padStart(8, "0")}`;
+}
+
+/**
  * Raised when an account-bound seed is asked for without a usable key.
  *
  * Callers must treat this as "cannot serve this business" and fall back to the

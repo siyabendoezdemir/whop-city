@@ -20,6 +20,10 @@ type Info = {
 const BUDGET = { drawCalls: 220, triangles: 250_000 };
 
 async function open(page: import("@playwright/test").Page, scenario?: string) {
+  // Reduced motion, which is how the product itself skips the founding sweep.
+  // Without it these would sample a city that is still going up, and a world
+  // measured halfway through being built is not a world.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const params = new URLSearchParams({ capture: "1", ss: "1" });
   if (scenario) params.set("scenario", scenario);
   await page.goto(`/?${params}`, { waitUntil: "load" });
@@ -48,6 +52,9 @@ async function worldFingerprint(page: import("@playwright/test").Page): Promise<
   });
 }
 
+/** Vertices in the built scene, out of the fingerprint. */
+const vertexCount = (fingerprint: string) => Number(fingerprint.split(":")[1]);
+
 test("each projection state builds a different world", async ({ page }) => {
   const seen = new Map<string, { fingerprint: string; info: Info }>();
 
@@ -62,10 +69,27 @@ test("each projection state builds a different world", async ({ page }) => {
     fingerprints.length,
   );
 
-  // And the difference is real geometry, not a rounding artefact.
-  const thriving = seen.get("thriving")!.info;
-  const struggling = seen.get("struggling")!.info;
-  expect(thriving.triangles).toBeGreaterThan(struggling.triangles * 1.2);
+  // And the difference is real geometry, not a rounding artefact: a projection
+  // with nothing in it builds a fraction of the world a working one does.
+  //
+  // Only that comparison, and deliberately. This also asserted that thriving
+  // built fifteen per cent more geometry than struggling, which is not how the
+  // game works and was not true: levels are what the business earned and kept,
+  // so a business going wrong still has the city it built — the eleven plots
+  // stand at 138.1 metres of total height thriving against 136.9 struggling,
+  // and what separates them is the skin, the props and the markers, not the
+  // massing. It passed on luck, and the comment it carried already conceded
+  // the measure was unreliable (past six storeys the glazing switches from
+  // punched openings to bands, so the taller tower is often the cheaper one).
+  //
+  // The relationship it was reaching for is real and is tested where it is
+  // real: `game.spec.ts` stands a business with nothing sold on empty ground
+  // and one with a lot under a skyline. What separates two *built* states is
+  // pixels, which "a state change rebuilds the pixels, not just the text"
+  // covers below.
+  expect(vertexCount(seen.get("struggling")!.fingerprint)).toBeGreaterThan(
+    vertexCount(seen.get("unavailable")!.fingerprint) * 1.15,
+  );
 });
 
 /**
@@ -128,6 +152,25 @@ test("every state stays inside the render budget", async ({ page }) => {
     expect(measured.drawCalls, `${scenario} draw calls`).toBeLessThanOrEqual(BUDGET.drawCalls);
     expect(measured.triangles, `${scenario} triangles`).toBeLessThanOrEqual(BUDGET.triangles);
   }
+});
+
+test("a fully grown city stays inside the render budget", async ({ page }) => {
+  // The scenarios above are the cities the fixtures earn, and none of them
+  // stands every plot at the top of its ladder. A player who grows the whole
+  // board does, and that is the heaviest world the renderer can be asked for —
+  // so it is the one the budget has to hold at. It did not: the fixtures came
+  // in around 160k while eleven plots at level five came in at 261k against a
+  // ceiling of 250k, and nothing measured it.
+  await open(page, "thriving");
+  await page.evaluate(() => {
+    const city = window.__city!;
+    city.setLevels(Object.fromEntries(city.plotIds.map((id) => [id, 5])));
+  });
+  await page.waitForTimeout(300);
+
+  const measured = await info(page);
+  expect(measured.drawCalls, "grown draw calls").toBeLessThanOrEqual(BUDGET.drawCalls);
+  expect(measured.triangles, "grown triangles").toBeLessThanOrEqual(BUDGET.triangles);
 });
 
 test("rebuilding does not leak GPU resources", async ({ page }) => {

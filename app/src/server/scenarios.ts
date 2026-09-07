@@ -10,6 +10,7 @@
  */
 
 export const FIXTURE_SCENARIOS = [
+  "blank",
   "balanced",
   "launch",
   "thriving",

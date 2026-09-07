@@ -60,7 +60,7 @@ async function record(page, label) {
 for (const [district, file] of DISTRICTS) {
   const page = await openCity(browser, { ss: SS });
   // The product interaction, not the capture hook: this is what a visitor does.
-  await page.click(`.city-jump button[data-district="${district}"]`);
+  await page.click(`.rail button[data-district="${district}"]`);
   await page.waitForSelector(`.city-place[data-district="${district}"]`, { timeout: 15_000 });
   await page.evaluate((t) => window.__city.renderFrame(t), CLOCK);
   await shoot(page, file);

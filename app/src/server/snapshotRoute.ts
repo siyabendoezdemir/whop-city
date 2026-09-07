@@ -25,13 +25,15 @@
  */
 
 import { serializeProjection, unavailableProjection } from "../city/projection";
-import { fixtureSnapshot } from "./fixtures";
+import { fixtureSnapshot, fixtureStats } from "./fixtures";
 import { DEFAULT_SCENARIO, resolveScenario } from "./scenarios";
-import { toPublicProjection } from "./project";
-import { ANONYMOUS_SEED, deriveLayoutSeed, isUsableSeedSecret } from "./seed";
+import { toPublicProjection, type Audience } from "./project";
+import { readStats } from "./stats";
+import { viewerFor } from "./viewer";
+import { ANONYMOUS_SEED, deriveLayoutSeed, fixtureSeed, isUsableSeedSecret } from "./seed";
 import { captureSnapshot } from "./snapshot";
 import { withSingleFlight } from "./snapshotCache";
-import { apiOrigin, type Env } from "./whop-client";
+import { apiOrigin, boundAppId, type Env } from "./whop-client";
 import type { PublicCityProjection } from "../city/projection";
 
 export const SNAPSHOT_PATH = "/api/city/snapshot";
@@ -90,7 +92,7 @@ export function deploymentKey(env: Env, source: string): string {
   const parts = [
     source,
     typeof env.WHOP_API_ORIGIN === "string" ? env.WHOP_API_ORIGIN : "",
-    typeof env.APP_ID === "string" ? env.APP_ID : "",
+    boundAppId(env) ?? "",
     typeof env.WHOP_ACCOUNT_ID === "string" ? env.WHOP_ACCOUNT_ID : "",
   ];
   return parts.join("|");
@@ -118,7 +120,12 @@ function jsonResponse(body: string, status = 200): Response {
  * value is safe to share between coalesced callers and safe to retain for the
  * cache's short window.
  */
-async function buildProjection(env: Env, scenario: string | null): Promise<PublicCityProjection> {
+async function buildProjection(
+  env: Env,
+  scenario: string | null,
+  audience: Audience = "public",
+  viewing: string | null = null,
+): Promise<PublicCityProjection> {
   const source = resolveSource(env);
 
   if (source === "none") return unavailableProjection(ANONYMOUS_SEED);
@@ -129,7 +136,20 @@ async function buildProjection(env: Env, scenario: string | null): Promise<Publi
   // branch is dead in a deployable build and delete `fixtures.ts` with it.
   if (__CITY_FIXTURES_BUILD__ && source === "fixture") {
     // Not account-bound, so no key is needed and none is used.
-    return toPublicProjection(fixtureSnapshot(resolveScenario(scenario), now), ANONYMOUS_SEED, now);
+    // Fixtures are invented data with no business behind them, so there is
+    // nothing to withhold and the game is fully playable in dev. This branch
+    // cannot exist in a production build — see the compile-time guard above.
+    const picked = resolveScenario(scenario);
+    return toPublicProjection(
+      fixtureSnapshot(picked, now),
+      // A seed of its own per scenario: the browser keys the saved city on it,
+      // and one shared seed meant every fixture business inherited the last
+      // one's city.
+      fixtureSeed(picked),
+      now,
+      "owner",
+      fixtureStats(picked),
+    );
   }
   if (source === "fixture") return unavailableProjection(ANONYMOUS_SEED);
 
@@ -150,7 +170,13 @@ async function buildProjection(env: Env, scenario: string | null): Promise<Publi
     return unavailableProjection(ANONYMOUS_SEED);
   }
 
-  return toPublicProjection(capture.snapshot, seed, now);
+  // The stats read is what the game runs on, and it is separate from the
+  // snapshot on purpose: a business with no products still has traffic, and a
+  // stats node that will not answer should cost that one figure rather than
+  // the whole city. It is only performed for a viewer entitled to the numbers,
+  // and it names the business rather than letting the credential pick one.
+  const stats = audience === "owner" ? await readStats(env, viewing ?? accountId) : undefined;
+  return toPublicProjection(capture.snapshot, seed, now, audience, stats);
 }
 
 export async function handleSnapshotRequest(request: Request, env: Env): Promise<Response> {
@@ -166,9 +192,17 @@ export async function handleSnapshotRequest(request: Request, env: Env): Promise
     const scenario =
       source === "fixture" ? resolveScenario(new URL(request.url).searchParams.get("scenario")) : null;
 
+    // Who is asking decides whether the figures cross. Public unless Whop
+    // vouches for an admin of this very business.
+    const viewer = await viewerFor(request, env);
+    const audience = viewer.audience;
+
     const projection = await withSingleFlight(
-      `${deploymentKey(env, source)}|${scenario ?? ""}`,
-      () => buildProjection(env, scenario),
+      // The audience and the business being read are both part of the key: an
+      // owner's city and a visitor's city are different documents, and so are
+      // two owners' cities, and none of them may share a cache entry.
+      `${deploymentKey(env, source)}|${scenario ?? ""}|${audience}|${viewer.viewing ?? ""}`,
+      () => buildProjection(env, scenario, audience, viewer.viewing),
       // An unavailable city is a failure with a face on it. Keeping it for the
       // window would pin a transient upstream problem in place; the next
       // request retries, while callers already waiting share this attempt.

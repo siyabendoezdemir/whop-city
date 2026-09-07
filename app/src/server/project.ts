@@ -1,3 +1,6 @@
+import type { CityMetrics } from "../city/projection";
+import { NO_STATS, statsReadable, type BusinessStats } from "./stats";
+
 /**
  * The privacy boundary.
  *
@@ -5,11 +8,17 @@
  * `PublicCityProjection` comes out. Nothing else in the app is allowed to move
  * data across.
  *
- * Everything here answers "what does this place look like", never "how much".
- * The inputs — member counts, prices, titles, ids, timestamps — are read to
- * decide a bucket and then dropped on the floor. No count, no rate and no date
- * survives into the return value, which is why the return type has no numeric
- * field other than two small bounded renderer integers.
+ * What crosses, and what does not. Titles, ids, prices, timestamps and any
+ * trace of an individual are read to decide a bucket and then dropped on the
+ * floor; none of them survives into the return value.
+ *
+ * Counts do survive, and only counts: how many customers, products, ways to
+ * buy, affiliate programmes, and the best rate. They are the game's resources
+ * — a building's next level costs five customers, not five invented credits —
+ * and they are bounded integers, whitelisted one field at a time in
+ * `sealMetrics`. Because they are the business's real figures they are the
+ * owner's: the public route serves them zeroed, and only a viewer Whop has
+ * verified as an admin of this business gets them for real.
  *
  * On honesty: there is no history store, so this never claims a trend it cannot
  * see. A district with nothing in it is `dormant`, not `struggling`; a district
@@ -20,6 +29,11 @@
 
 import {
   DISTRICT_IDS,
+  PARCELS_MAX,
+  PARCELS_MIN,
+  PROJECTION_SCHEMA,
+  VARIANT_MAX,
+  ZERO_METRICS,
   type Direction,
   type DistrictId,
   type DistrictState,
@@ -27,10 +41,6 @@ import {
   type PublicCityProjection,
   type PublicDistrict,
   type Signal,
-  PARCELS_MAX,
-  PARCELS_MIN,
-  PROJECTION_SCHEMA,
-  VARIANT_MAX,
 } from "../city/projection";
 import { seedStream } from "./seed";
 import type { BusinessSnapshot } from "./snapshot";
@@ -186,10 +196,49 @@ function freshnessFor(snapshot: BusinessSnapshot, now: number): Freshness {
  *   the account id it came from, which is why it takes the seed rather than
  *   the snapshot's `accountId`.
  */
+/**
+ * Who is going to read this.
+ *
+ * The default is `public`, and it is the default on purpose: the counts are
+ * the business's own figures, so a caller has to *ask* for the owner's view,
+ * having already proved the viewer is an admin of this business. Forgetting to
+ * pass anything withholds them.
+ */
+export type Audience = "public" | "owner";
+
+/**
+ * The business, as the game's four resources and its health signals.
+ *
+ * Straight off the stats read. A figure Whop could not give us comes through
+ * as zero here and the interface says so separately — the seal is what reports
+ * whether the read worked, not the numbers.
+ */
+export function metricsFrom(stats: BusinessStats): CityMetrics {
+  // A read that answered nothing is not a business with nothing in it. Saying
+  // so is what stops an owner staring at four noughts and concluding the game
+  // is broken when the truth is that Whop refused the question.
+  if (!statsReadable(stats)) return { ...ZERO_METRICS, source: "unreadable" };
+  const whole = (value: number | null | undefined) => Math.max(0, Math.round(value ?? 0));
+  return {
+    gold: whole(stats.revenue?.now),
+    goldBefore: whole(stats.revenue?.before),
+    recurring: whole(stats.recurring?.now),
+    citizens: whole(stats.members?.now),
+    traffic: whole(stats.traffic?.now),
+    trafficBefore: whole(stats.traffic?.before),
+    churn: whole((stats.churn ?? 0) * 100),
+    refunds: whole((stats.refundRate ?? 0) * 100),
+    joined: whole(stats.newMembers?.now),
+    source: "owner",
+  };
+}
+
 export function toPublicProjection(
   snapshot: BusinessSnapshot,
   seed: string,
   now: number = Date.now(),
+  audience: Audience = "public",
+  stats: BusinessStats = NO_STATS,
 ): PublicCityProjection {
   const next = seedStream(seed);
 
@@ -208,6 +257,7 @@ export function toPublicProjection(
   });
 
   return {
+    metrics: audience === "owner" ? metricsFrom(stats) : ZERO_METRICS,
     schema: PROJECTION_SCHEMA,
     freshness: freshnessFor(snapshot, now),
     seed,

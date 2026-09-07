@@ -63,16 +63,28 @@ export function parcelMatrix(parcel: Parcel): THREE.Matrix4 {
   );
 }
 
-/** Bakes a locally-authored builder into a world-space one. */
-export function emitLocal(target: PartsBuilder, local: PartsBuilder, matrix: THREE.Matrix4): void {
+/**
+ * Bakes a locally-authored builder into a world-space one.
+ *
+ * Returns the highest point of what was emitted. That number is not decoration:
+ * the attention marker that floats over a plot is placed from it, so the marker
+ * clears the actual roof rather than a height somebody predicted. Predicting it
+ * is what made markers sit inside chimneys and behind fly towers.
+ */
+export function emitLocal(target: PartsBuilder, local: PartsBuilder, matrix: THREE.Matrix4): number {
   const group = local.build("local");
   group.applyMatrix4(matrix);
   group.updateMatrixWorld(true);
+  let top = Number.NEGATIVE_INFINITY;
   group.traverse((child) => {
     if (child instanceof THREE.Mesh) {
-      target.add(child.material as THREE.Material, child.geometry.clone().applyMatrix4(child.matrixWorld));
+      const placed = child.geometry.clone().applyMatrix4(child.matrixWorld);
+      placed.computeBoundingBox();
+      if (placed.boundingBox) top = Math.max(top, placed.boundingBox.max.y);
+      target.add(child.material as THREE.Material, placed);
     }
   });
+  return Number.isFinite(top) ? top : 0;
 }
 
 /** Places an instanced prop given in parcel-local coordinates. */
@@ -113,6 +125,8 @@ export function buildParcelGround(
   kit: InstanceKit,
   parcel: Parcel,
   surface: THREE.Material = M.concrete,
+  /** Storeys standing here. A party wall belongs to a building, not to a field. */
+  storeys = 1,
 ): void {
   const local = new PartsBuilder();
   const matrix = parcelMatrix(parcel);
@@ -184,13 +198,50 @@ export function buildParcelGround(
         y - 0.02,
         cz + nz * 0.8,
       ]);
-    } else {
-      // Neighbour: a party wall, blind.
-      local.add(M.brickDark, box(alongZ ? 0.35 : length, 3.4, alongZ ? length : 0.35), [
-        cx + nx * 0.17,
-        y + 1.7,
-        cz + nz * 0.17,
-      ]);
+    } else if (storeys > 0) {
+      // Neighbour: the boundary wall along a party line.
+      //
+      // It only exists because two plots meet here, so an empty one does not
+      // get one — a blind brick slab standing alone in a gravelled site was the
+      // most conspicuous thing in a city that had not been built yet.
+      //
+      // And it is a yard wall, not a gable. It used to be a single unrelieved
+      // plane thirty metres long, which at this camera angle is the largest
+      // flat surface anywhere in the district and read as a missing texture. A
+      // buttressed wall with a coping is the same object, costs a box every
+      // four metres, and reads as masonry.
+      // Rendered blockwork, not facing brick.
+      //
+      // It was a 3.2m wall in `brickDark` with `brick` piers standing proud of
+      // it — the two most saturated warm colours in the palette, alternating
+      // every four metres, along the full twenty-six metres of a foreground
+      // plot. Two of these stand back to back where the venue meets the
+      // struggling lot, and from the default framing they read as a pair of
+      // bright red hoardings in front of the buildings they are supposed to
+      // separate. A boundary wall is background: it should be the quietest
+      // vertical surface on the plot, not the loudest.
+      const wallH = 2.75;
+      const thick = 0.42;
+      const side = (a: number, b: number): [number, number, number] => [
+        cx + nx * 0.25 + (alongZ ? 0 : a),
+        y + b,
+        cz + nz * 0.25 + (alongZ ? a : 0),
+      ];
+      const span = (a: number, b: number): [number, number, number] =>
+        alongZ ? [b, 0, a] : [a, 0, b];
+      const [sx, , sz] = span(length, thick);
+      local.add(M.concreteDark, box(sx, wallH, sz), side(0, wallH / 2));
+      // A brick plinth course, so the wall is standing on something.
+      const [bx, , bz] = span(length, thick + 0.16);
+      local.add(M.brickDark, box(bx, 0.55, bz), side(0, 0.275));
+      const [cxs, , czs] = span(length, thick + 0.26);
+      local.add(M.kerb, box(cxs, 0.2, czs), side(0, wallH + 0.1));
+      const piers = Math.max(2, Math.round(length / 4.5));
+      const [px, , pz] = span(0.7, thick + 0.3);
+      for (let i = 0; i <= piers; i++) {
+        const t = -length / 2 + (length / piers) * i;
+        local.add(M.concreteDark, box(px, wallH + 0.3, pz), side(t, (wallH + 0.3) / 2));
+      }
     }
   }
 

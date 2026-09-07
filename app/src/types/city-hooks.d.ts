@@ -20,6 +20,8 @@ export type CityInfo = {
 export type CityHooks = {
   ready: boolean;
   framings: string[];
+  /** Every parcel in the plan, so a caller can stand all of them up at once. */
+  plotIds: string[];
   frame: (key: string, t?: number, zoom?: number) => void;
   frameAt: (focus: [number, number, number], height: number, t: number) => void;
   flyTo: (to: string, from: string, progress: number, t: number) => void;
@@ -31,8 +33,20 @@ export type CityHooks = {
     right: [number, number, number];
     up: [number, number, number];
   }>;
+  plotPoint: (plotId: string) => { x: number; y: number } | null;
+  plotGround: (plotId: string) => { x: number; y: number } | null;
   shadowRig: () => number[];
   silhouette: (on: boolean) => void;
+  /** Rebuilds the plots at explicit levels, for reviewing every state. */
+  setLevels: (levels: Record<string, number>) => void;
+  /** Steps the terrain to `t` if given, then reports what moved. No render. */
+  actors: (t?: number) => Array<{
+    name: string;
+    visible: boolean;
+    x: number;
+    y: number;
+    z: number;
+  }>;
   info: () => CityInfo;
   scene: THREE.Scene;
 };
