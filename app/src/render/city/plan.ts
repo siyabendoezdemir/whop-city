@@ -132,6 +132,44 @@ export function trespasses(
   return out.sort((a, b) => b.depth - a.depth);
 }
 
+/** Somewhere a plot has been built on ground that is not its own. */
+export type Encroachment = {
+  readonly parcel: string;
+  readonly onto: string;
+  readonly area: Rect;
+  /** How far in it reaches, in metres. */
+  readonly depth: number;
+};
+
+/**
+ * Plots standing on ground that belongs to something else.
+ *
+ * The same question `trespasses` asks of the carriageways, asked of anything
+ * with a boundary — the canal and its quaysides, to begin with. Worth having
+ * separately because the roads are a table of centre lines and widths and the
+ * water is not.
+ */
+export function encroachments(
+  parcels: readonly Parcel[],
+  places: readonly { readonly id: string; readonly area: Rect }[],
+): Encroachment[] {
+  const out: Encroachment[] = [];
+  for (const parcel of parcels) {
+    const plot = footprint(parcel);
+    for (const place of places) {
+      const over = intersect(plot, place.area);
+      if (!over) continue;
+      out.push({
+        parcel: parcel.id,
+        onto: place.id,
+        area: over,
+        depth: Math.min(over.x1 - over.x0, over.z1 - over.z0),
+      });
+    }
+  }
+  return out.sort((a, b) => b.depth - a.depth);
+}
+
 export type Spot = { readonly road: string; readonly x: number; readonly z: number };
 
 /**

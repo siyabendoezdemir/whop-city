@@ -6,6 +6,7 @@ import { ACTOR_SURFACE, M } from "../scene/materials";
 import { Prop, type InstanceKit } from "./props";
 import { makePerson, type Rig } from "./actors";
 import type { EdgeKind, Parcel } from "./parcel";
+import type { Rect } from "./plan";
 import {
   crossingsOn,
   deckHeight,
@@ -158,6 +159,44 @@ const PLANNED_ROADS: Road[] = [
 
 export const ROADS: Road[] = pave(PLANNED_ROADS);
 
+/**
+ * How far the canal's quayside reaches from the water on each side.
+ *
+ * The wall sits 0.45 off the water, the footway's near edge 2.0 past that, and
+ * the footway is 3.2 wide — see the canal inlet in `buildCityGround`, which is
+ * where these come from.
+ */
+const CANAL_QUAY = 0.45 + 2.0 + 3.2 / 2;
+
+/** How far the stepped head runs back from the end of the water. */
+const CANAL_HEAD = 5 * 1.2;
+
+/**
+ * Water, and the ground that belongs to it.
+ *
+ * The roads are not the only public surface a plot can be authored on top of,
+ * and the canal was the proof: two plots in the Commerce Core ran to x = 34
+ * when the water starts at 32, so they covered the west quay wall, the whole
+ * west footway and two metres of the canal itself. A section across it found
+ * grass from 22 all the way to 33 — no wall, no pavement, no railing, nothing
+ * — against a complete quayside on the eastern bank.
+ *
+ * It is listed here for the same reason the carriageways are: so the plan
+ * drawing marks it and a test fails on it, rather than it being noticed in a
+ * screenshot two rounds later.
+ */
+export const WATERWAYS: readonly { readonly id: string; readonly area: Rect }[] = [
+  {
+    id: "canal",
+    area: {
+      x0: WORLD.canalX0 - CANAL_QUAY,
+      x1: WORLD.canalX1 + CANAL_QUAY,
+      z0: WORLD.northShore,
+      z1: WORLD.canalEndZ + CANAL_HEAD,
+    },
+  },
+];
+
 const KERB_H = 0.15;
 /**
  * Carriageway marking width.
@@ -253,6 +292,9 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
   buildBarge(b, [W - 6, WORLD.ground, 30], 0.05);
 
   // ----------------------------------------------------------- canal inlet
+  //
+  // Wall, coping and footway on each side. The reach of that quayside is
+  // CANAL_QUAY, which is what keeps anything else off it.
   const cw = WORLD.canalX1 - WORLD.canalX0;
   const cx = (WORLD.canalX0 + WORLD.canalX1) / 2;
   const clen = WORLD.canalEndZ - N;
@@ -268,10 +310,32 @@ export function buildCityGround(kit: InstanceKit, seed: number): THREE.Group {
       Prop.lamp(kit, [wx + side * 3.2, WORLD.ground + 0.05, z], side > 0 ? -Math.PI / 2 : Math.PI / 2);
     }
   }
-  // Stepped head, so the canal terminates rather than stopping.
+  // The head, so the canal terminates rather than stopping.
+  //
+  // There were five steps here already and four of them were underground. They
+  // ran from canalEndZ *southward*, rising as they went — out of the water and
+  // onto the land, which begins at exactly canalEndZ and whose slab top is a
+  // hand's breadth above where the fourth step finished. So the canal ran into
+  // a grass verge with a single lip of concrete showing, and the whole west
+  // bank was buried under a plot on top of that: no wall, no pavement, no
+  // railing, nothing.
+  //
+  // A canal head is a wall across the end with the quayside carried round it,
+  // and steps going the other way — down into the water, where steps into a
+  // canal go.
+  const headZ = WORLD.canalEndZ;
+  b.add(M.concreteDark, box(cw + 1.8, 3.2, 1.4), [cx, WORLD.ground - 1.5, headZ + 0.7]);
+  b.add(M.kerb, slab(cw + 1.8, 0.16, 1.3, 0.04), [cx, WORLD.ground + 0.06, headZ + 0.65]);
+  b.add(M.sidewalk, box(cw + 2 * CANAL_QUAY - 1.9, 0.18, 3.2), [cx, WORLD.ground + 0.05, headZ + 3.0]);
   for (let i = 0; i < 5; i++) {
-    b.add(M.concrete, box(cw + 2.2, 0.34, 1.2), [cx, WORLD.ground - 1.6 + i * 0.36, WORLD.canalEndZ + i * 1.2]);
+    b.add(M.concrete, box(4.4, 0.34, 1.1), [
+      cx - 2.2,
+      WORLD.ground - 0.35 - i * 0.36,
+      headZ - 0.6 - i * 1.1,
+    ]);
   }
+  for (const x of [cx - 5.1, cx + 5.1]) kit.place("bollard", [x, WORLD.ground, headZ + 1.4], 0, 1.1);
+  Prop.lamp(kit, [cx, WORLD.ground + 0.05, headZ + 3.4], 0);
 
   buildBridge(b, kit);
   buildHeadland(b, kit, rng);
@@ -1689,8 +1753,8 @@ export const PARCELS: Parcel[] = [
   // ------------------------------------------------- Commerce Core (headland)
   {
     id: "core-landmark",
-    centre: { x: 23.1, z: -62 },
-    width: 21.8,
+    centre: { x: 20, z: -62 },
+    width: 15.6,
     depth: 22,
     yaw: FACE_SOUTH,
     edges: E("street", "street", "street", "street"),
@@ -1707,8 +1771,8 @@ export const PARCELS: Parcel[] = [
   },
   {
     id: "core-east",
-    centre: { x: 23.1, z: -36 },
-    width: 21.8,
+    centre: { x: 20, z: -36 },
+    width: 15.6,
     depth: 14,
     yaw: FACE_NORTH,
     edges: E("boulevard", "street", "street", "street"),

@@ -24,11 +24,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { PARCELS, ROADS } from "../src/render/city/cityPlan";
+import { PARCELS, ROADS, WATERWAYS } from "../src/render/city/cityPlan";
 import {
   behindTheKerb,
   carriageway,
   corridor,
+  encroachments,
   footprint,
   trespasses,
   type Rect,
@@ -85,6 +86,7 @@ function draw(): string {
 
   for (const road of ROADS) parts.push(box(corridor(road), "#2a3340"));
   for (const road of ROADS) parts.push(box(carriageway(road), "#39424f"));
+  for (const water of WATERWAYS) parts.push(box(water.area, "#1e3a52", "#3d7ba8", 'stroke-width="1.5"'));
 
   for (const parcel of PARCELS) {
     const r = footprint(parcel);
@@ -96,6 +98,9 @@ function draw(): string {
   }
 
   for (const clash of clashes) parts.push(box(clash.area, "url(#clash)", "#ff2d55", 'stroke-width="1.5"'));
+  for (const over of encroachments(PARCELS, WATERWAYS)) {
+    parts.push(box(over.area, "url(#clash)", "#ff2d55", 'stroke-width="1.5"'));
+  }
 
   for (const mark of marks) {
     parts.push(
@@ -104,10 +109,20 @@ function draw(): string {
     );
   }
 
+  const wet = encroachments(PARCELS, WATERWAYS);
   const said = [
-    clashes.length
-      ? `${clashes.length} plot/carriageway overlaps — worst ${clashes[0].depth.toFixed(1)}m (${clashes[0].parcel} on ${clashes[0].road})`
-      : `no plot stands on a carriageway`,
+    clashes.length || wet.length
+      ? [
+          clashes.length
+            ? `${clashes.length} plot/carriageway overlaps — worst ${clashes[0].depth.toFixed(1)}m (${clashes[0].parcel} on ${clashes[0].road})`
+            : "",
+          wet.length
+            ? `${wet.length} onto water — worst ${wet[0].depth.toFixed(1)}m (${wet[0].parcel} on ${wet[0].onto})`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("; ")
+      : `no plot stands on a carriageway or a quayside`,
     marks.length
       ? `${marks.length} points of road covered by ${[...new Set(marks.map((m) => m.was))].join(", ")}`
       : `nothing is lying on a carriageway`,
@@ -125,6 +140,12 @@ for (const clash of clashes) {
   console.log(
     `${clash.parcel.padEnd(18)} on ${clash.road.padEnd(14)} ${clash.depth.toFixed(1)}m ` +
       `[x ${clash.area.x0.toFixed(1)}..${clash.area.x1.toFixed(1)}, z ${clash.area.z0.toFixed(1)}..${clash.area.z1.toFixed(1)}]`,
+  );
+}
+for (const over of encroachments(PARCELS, WATERWAYS)) {
+  console.log(
+    `${over.parcel.padEnd(18)} on ${over.onto.padEnd(14)} ${over.depth.toFixed(1)}m ` +
+      `[x ${over.area.x0.toFixed(1)}..${over.area.x1.toFixed(1)}, z ${over.area.z0.toFixed(1)}..${over.area.z1.toFixed(1)}]`,
   );
 }
 console.log(clashes.length === 0 ? "clear: no plot stands on a carriageway" : `${clashes.length} overlaps`);
