@@ -400,6 +400,11 @@ export function applySurfaceDetail(): void {
   M.water.needsUpdate = true;
   shimmering = shimmer;
 
+  // How far a wave can drag the swell sideways, in metres. Enough to see the
+  // crests work; much more and the water starts to boil.
+  flow(M.water, 0.85);
+  flow(M.shallows, 0.85);
+
   // Walls.
   assign(M.brick, brickTex);
   assign(M.brickDark, brickTex);
@@ -475,6 +480,43 @@ export function driftWater(t: number): void {
  * a fifth of the ferry's speed — still plainly a current rather than a rapid,
  * but fast enough to survive the zoom and the encoder.
  */
+/**
+ * Let the wave field push the swell around instead of only carrying it.
+ *
+ * Two scrolling maps are still two translations, and a viewer sees straight
+ * through that: however many layers slide, if each one only slides then the
+ * whole surface is a printed sheet on a conveyor. It survived a review twice,
+ * described both times as a pattern moving as one locked unit — which it was.
+ *
+ * So the colour is looked up through the normal map rather than beside it. The
+ * wave slope at a point displaces where that point samples the swell, and
+ * because the two maps scroll at different rates and angles, the displacement
+ * field drifts across the crests rather than with them. Lines bulge, thin and
+ * knit back together instead of marching. It is also roughly what water does
+ * to what you see through it, which is presumably why it reads.
+ *
+ * One extra texture fetch on one material, no geometry and no draw call. The
+ * alternative — averaging a second sample of the swell — evolves just as well
+ * and costs the contrast that makes a crest a crest.
+ */
+function flow(material: THREE.MeshStandardMaterial, metres: number): void {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <map_fragment>",
+      `
+      #ifdef USE_MAP
+        vec2 swellUv = vMapUv;
+        #ifdef USE_NORMALMAP
+          swellUv += ( texture2D( normalMap, vNormalMapUv ).xy - 0.5 ) * ${(metres / RIPPLE_TILE).toFixed(5)};
+        #endif
+        diffuseColor *= texture2D( map, swellUv );
+      #endif
+      `,
+    );
+  };
+  material.needsUpdate = true;
+}
+
 /**
  * Metres across one tile of the ripple map.
  *
