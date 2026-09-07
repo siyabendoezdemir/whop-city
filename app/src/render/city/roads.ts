@@ -277,7 +277,33 @@ export type Circuit = {
   readonly points: ReadonlyArray<{ x: number; z: number }>;
   /** The road each leg runs along, for lane widths and deck heights. */
   readonly legs: readonly Road[];
+  /**
+   * Graph edges the circuit drives, so the next one can be told to keep off.
+   *
+   * A run of road holds two lanes and one circuit fills both — it is laid
+   * forwards and again in reverse. Anything else routed down the same run is
+   * therefore driving in an occupied lane.
+   */
+  readonly edges: readonly number[];
+  /**
+   * Junctions the circuit passes through.
+   *
+   * Keeping circuits off each other's runs stops two vehicles sharing a lane,
+   * but it does not stop two of them arriving at the same crossroads in the
+   * same instant, and with no signals and no yielding they drive through each
+   * other when they do. There is nowhere to put the state a yielding model
+   * would need — the film and the plot sheets render arbitrary clock values in
+   * any order, so a vehicle's position has to stay a pure function of `t` —
+   * so the crossing is designed out instead: a junction belongs to one
+   * circuit.
+   */
+  readonly nodes: readonly string[];
 };
+
+/** Edges are stored in forward/back pairs. */
+function twinOf(index: number): number {
+  return index % 2 === 0 ? index + 1 : index - 1;
+}
 
 /**
  * A closed route through the network.
@@ -288,24 +314,39 @@ export type Circuit = {
  * quickly and always returns a genuine cycle — which is what lets a vehicle
  * drive forever without a single teleport.
  */
-export function findCircuit(graph: RoadGraph, rng: Rng, minLegs = 4): Circuit | null {
-  const ids = [...graph.nodes.keys()];
+export function findCircuit(
+  graph: RoadGraph,
+  rng: Rng,
+  minLegs = 4,
+  taken: ReadonlySet<number> = new Set(),
+  takenNodes: ReadonlySet<string> = new Set(),
+): Circuit | null {
+  const ids = [...graph.nodes.keys()].filter((id) => !takenNodes.has(id));
   if (ids.length === 0) return null;
+  const free = (index: number) =>
+    !taken.has(index) &&
+    !taken.has(twinOf(index)) &&
+    !takenNodes.has(graph.edges[index].b) &&
+    !takenNodes.has(graph.edges[index].a);
 
   for (let attempt = 0; attempt < 24; attempt++) {
     const start = graph.nodes.get(rng.pick(ids))!;
     const path: GraphNode[] = [start];
     const legs: Road[] = [];
+    const used: number[] = [];
     const seen = new Map<string, number>([[start.id, 0]]);
     let previous = -1;
 
     for (let step = 0; step < ids.length + 2; step++) {
       const here = path[path.length - 1];
-      const options = here.out.filter((i) => {
-        const back = i % 2 === 0 ? i + 1 : i - 1;
-        return previous === -1 || back !== previous;
-      });
-      const choices = options.length > 0 ? options : here.out;
+      // Never an edge another circuit already drives, and never one this walk
+      // has driven itself: a run of road carries two lanes, one each way, and
+      // the caller lays both from a single circuit. A second circuit down the
+      // same run puts a second vehicle in a lane that is already occupied,
+      // which is how two cars end up inside one another.
+      const open = here.out.filter(free);
+      const options = open.filter((i) => previous === -1 || twinOf(i) !== previous);
+      const choices = options.length > 0 ? options : open;
       if (choices.length === 0) break;
       const index = rng.pick(choices);
       const edge = graph.edges[index];
@@ -313,12 +354,21 @@ export function findCircuit(graph: RoadGraph, rng: Rng, minLegs = 4): Circuit | 
       if (!next) break;
       previous = index;
       legs.push(edge.road);
+      used.push(index);
 
       const earlier = seen.get(next.id);
       if (earlier !== undefined) {
-        const points = path.slice(earlier).map((n) => ({ x: n.x, z: n.z }));
+        const cycle = path.slice(earlier);
+        const points = cycle.map((n) => ({ x: n.x, z: n.z }));
         const cycleLegs = legs.slice(earlier);
-        if (points.length >= minLegs) return { points, legs: cycleLegs };
+        if (points.length >= minLegs) {
+          return {
+            points,
+            legs: cycleLegs,
+            edges: used.slice(earlier),
+            nodes: cycle.map((n) => n.id),
+          };
+        }
         break;
       }
       seen.set(next.id, path.length);

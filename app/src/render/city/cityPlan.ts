@@ -920,9 +920,22 @@ export function buildTraffic(seed: number): Rig[] {
   const rigs: Rig[] = [];
 
   const routes: Path[] = [];
+  // Circuits used to be drawn independently, which on a graph this size meant
+  // they shared runs of road — and a shared run is a shared lane, because one
+  // circuit already fills both sides of it. Two vehicles then drive the same
+  // strip of asphalt at their own speeds and pass straight through each other.
+  // Each circuit now claims its edges and the next one is routed around them.
+  const claimed = new Set<number>();
+  const held = new Set<string>();
   for (let i = 0; i < 6; i++) {
-    const circuit = findCircuit(graph, rng, 4);
+    // Four legs makes the handsomest loop and the network only holds so many
+    // once they may share neither a run of road nor a junction. The later ones
+    // are allowed to be triangles, which is a real circuit and keeps the far
+    // side of the city in traffic rather than leaving it to one loop downtown.
+    const circuit = findCircuit(graph, rng, i < 2 ? 4 : 3, claimed, held);
     if (!circuit) continue;
+    for (const edge of circuit.edges) claimed.add(edge);
+    for (const node of circuit.nodes) held.add(node);
     // Both sides of the road: the same loop driven each way, offset right.
     routes.push(layPath(circuit, LANE_OFFSET, surfaceHeight));
     routes.push(layPath(reverse(circuit), LANE_OFFSET, surfaceHeight));
@@ -932,13 +945,34 @@ export function buildTraffic(seed: number): Rig[] {
   const front = new THREE.Vector3();
   const rear = new THREE.Vector3();
   for (const [index, path] of routes.entries()) {
-    // Long circuits carry more traffic than short ones, as they would.
-    const count = Math.max(1, Math.min(4, Math.round(path.length / 150)));
+    // Long circuits carry more traffic than short ones, as they would. The
+    // spacing used to be one vehicle per hundred and fifty metres, which was
+    // as much as the old arrangement could hold without vehicles running into
+    // each other; at a shared pace on an evenly spaced loop nothing can close
+    // on anything, so the streets can carry the traffic a city would.
+    const count = Math.max(2, Math.min(12, Math.round(path.length / 44)));
+    /**
+     * One speed for everything on this lane.
+     *
+     * Vehicles used to pick their own, which on a closed loop is a promise
+     * that the quick ones will eventually reach the slow ones and, with no
+     * notion of following, drive through them. There is nowhere to overtake
+     * to — the other lane is oncoming — so a convoy at a common speed is both
+     * what the road would do and the only arrangement that cannot collide.
+     *
+     * It has to stay a pure function of the clock as well: the film and the
+     * plot sheets render arbitrary times in any order, so nothing here may
+     * accumulate state between frames the way a real following model would.
+     */
+    const pace = rng.range(6.5, 9.5);
     for (let i = 0; i < count; i++) {
       const kind: VehicleKind = rng.pick(["car", "hatch", "hatch", "car", "pickup", "bus", "truck"]);
       const group = vehicleGeometry(kind, rng.pick(PAINTS));
-      const speed = rng.range(6.5, 9.5) * (kind === "bus" || kind === "truck" ? 0.8 : 1);
-      const start = path.length * ((i + rng.range(0.02, 0.3)) / count) + index * 11;
+      const speed = pace;
+      // Evenly spaced round the loop. Jitter used to be added here, which on a
+      // short circuit could seat two vehicles within a body length of each
+      // other before either had moved.
+      const start = (path.length * i) / count + index * 11;
       // Half the wheelbase. A vehicle used to be put at one point on its lane
       // and turned to that point's tangent, which is fine on a straight and
       // wrong on a corner: a junction turn is a seven-metre arc, and a rigid
@@ -977,7 +1011,15 @@ const AXLES: Record<VehicleKind, number> = {
 };
 
 function reverse(circuit: Circuit): Circuit {
-  return { points: [...circuit.points].reverse(), legs: [...circuit.legs].reverse() };
+  return {
+    points: [...circuit.points].reverse(),
+    legs: [...circuit.legs].reverse(),
+    // The same runs of road and the same junctions, driven the other way.
+    // Already claimed by the forward pass, and carried only so the shape stays
+    // a Circuit.
+    edges: [...circuit.edges].reverse(),
+    nodes: [...circuit.nodes].reverse(),
+  };
 }
 
 /**

@@ -3,7 +3,14 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 
 import { Rng } from "../src/render/lib/rng";
-import { DRIVEN_ROADS, LANE_OFFSET, ROADS, layPath, sample } from "../src/render/city/cityPlan";
+import {
+  DRIVEN_ROADS,
+  LANE_OFFSET,
+  ROADS,
+  buildTraffic,
+  layPath,
+  sample,
+} from "../src/render/city/cityPlan";
 import {
   buildRoadGraph,
   crossingsOn,
@@ -188,11 +195,7 @@ describe("circuits", () => {
     const core = drivableCore(buildRoadGraph(ROADS));
     const circuit = findCircuit(core, new Rng("sides"), 4)!;
     const forward = layPath(circuit, 3, () => 0);
-    const backward = layPath(
-      { points: [...circuit.points].reverse(), legs: [...circuit.legs].reverse() },
-      3,
-      () => 0,
-    );
+    const backward = layPath(reversed(circuit), 3, () => 0);
     // Sample both and check no point of one lands on top of a point of the
     // other: same lane in both directions would be a head-on collision.
     let closest = Infinity;
@@ -223,7 +226,12 @@ function clearance(x: number, z: number): number {
 }
 
 function reversed(circuit: Circuit): Circuit {
-  return { points: [...circuit.points].reverse(), legs: [...circuit.legs].reverse() };
+  return {
+    points: [...circuit.points].reverse(),
+    legs: [...circuit.legs].reverse(),
+    edges: [...circuit.edges].reverse(),
+    nodes: [...circuit.nodes].reverse(),
+  };
 }
 
 describe("what the traffic actually drives over", () => {
@@ -289,5 +297,58 @@ describe("what the traffic actually drives over", () => {
   it("keeps traffic off the service lanes, which are too narrow for it", () => {
     expect(DRIVEN_ROADS.every((road) => road.grade !== "lane")).toBe(true);
     expect(ROADS.some((road) => road.grade === "lane")).toBe(true);
+  });
+});
+
+describe("two vehicles are never in the same place", () => {
+  /**
+   * The reported fault, as a number.
+   *
+   * Three things used to guarantee it. Circuits were drawn independently, so
+   * on a graph this size they shared runs of road — and a shared run is a
+   * shared lane, because one circuit already fills both sides of it. Vehicles
+   * on a lane each picked their own speed, so on a closed loop the quick ones
+   * were promised an eventual rendezvous with the slow ones, and there is no
+   * following model to stop them. And two circuits could meet at a crossroads
+   * with nothing to decide who goes first.
+   *
+   * None of that could be fixed by simulating, because a vehicle's position
+   * has to stay a pure function of the clock: the film and the plot sheets
+   * render arbitrary times in any order, so there is nowhere to keep the state
+   * a yielding model needs. It is designed out instead — a run of road and a
+   * junction each belong to one circuit, and everything on a lane travels at
+   * one pace, evenly spaced.
+   *
+   * Measured before the fix, this bottomed out at 0.01m: two vehicles at the
+   * same point. The floor now is two lane offsets, which is opposing traffic
+   * passing, and that is as close as anything ever comes.
+   */
+  it("keeps a body length between every pair, on every seed", () => {
+    const front = new THREE.Vector3();
+    let worst = Infinity;
+    let where = "nowhere";
+
+    for (let s = 0; s < 12; s++) {
+      const rigs = buildTraffic(4_000 + s * 7_919);
+      expect(rigs.length, "a city with no traffic in it").toBeGreaterThan(8);
+      // Past a full cycle of the longest loop, so a slow convergence has time
+      // to happen rather than being missed between samples.
+      for (let t = 0; t < 200; t += 0.5) {
+        for (const rig of rigs) rig.update(t);
+        for (let i = 0; i < rigs.length; i++) {
+          for (let j = i + 1; j < rigs.length; j++) {
+            const a = rigs[i].group.position;
+            front.copy(rigs[j].group.position);
+            const gap = Math.hypot(a.x - front.x, a.z - front.z);
+            if (gap < worst) {
+              worst = gap;
+              where = `seed ${s}, t=${t}`;
+            }
+          }
+        }
+      }
+    }
+
+    expect(worst, `closest approach at ${where}`).toBeGreaterThan(4);
   });
 });
