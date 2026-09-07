@@ -71,21 +71,49 @@ motion. The travel is in `v` now, across the bands. `tests/geom.test.ts` pins
 the axes for the same reason the wedge orientation is pinned — no screenshot
 catches it being wrong.
 
-The speed took a second pass too. Half a metre a second is right for a bay and
-wrong for a screen: at the framing the game is played at the water is two or
-three pixels a metre, so the streaks crossed about two pixels a second, and a
-reviewer watching ten seconds of held camera reported the surface as
-"completely static" — correctly, as far as the eye goes. The measurement
-agreed with them and with the code at once: the water region of two frames
-five seconds apart differed, but by 35dB, which is change without motion. It
-runs at about a metre a second now, a fifth of the ferry's speed, which
-survives both the zoom and the encoder.
+Then a reviewer watching ten seconds of held camera called the water
+"completely static" anyway, and a second one agreed, and both were right about
+what they saw while the code was also right. The offset was checked at runtime
+against the live material: at t=250 it read 6.0 tiles, exactly the rate times
+the clock, on the same texture instance the bay was drawing. The map was
+travelling whole tiles past the material and the bay was not moving.
 
-`waterfront_in_motion.mp4` is the check — camera locked, clock advancing, so
-everything that moves is the world. It also has to warm up before it records:
-the founding sweep raises its cap on a React interval, and with the render
-loop stopped for capture those updates only flush when a frame is asked for,
-so the first version of the shot spent half its length watching the city grow.
+The texture was the answer. It is stretched over about forty-four metres and
+the bay sits at two or three pixels a metre, so a 256px tile lands on roughly
+150 screen pixels — and the old map was built almost entirely from bands two
+to seven pixels tall. Sub-pixel by the time they were on screen, mipmapping
+and anisotropy averaged them into flat colour, and flat colour scrolls
+invisibly however fast it goes. Two thirds of that texture was also white
+drawn on a white base, which contributes nothing at any scale.
+
+So the map is broad soft bands now, six to thirteen metres across, at two
+scales, drawn a tile above and below as well as in place so they wrap. A
+clipped band is a seam, and a seam is invisible on a still texture right up
+until the moment it starts marching.
+
+That got it moving and introduced the last problem: one map can only slide. A
+single texture translating across a flat plane moves as a rigid sheet however
+well it is drawn, and the tell was where it passed under the pier and the quay
+walls, sliding on with no acknowledgement of them. The fix is a second layer
+disagreeing with the first — a normal map, crossing the swell at its own angle
+and its own slower rate, so the two beat against each other and the highlights
+change shape as they travel instead of merely moving. It costs no mesh, no
+draw call and no triangle: it is a second sampler on a material already being
+drawn.
+
+Its strength came off a sweep rather than a guess, because `normalScale` is a
+uniform and can be walked through several values in one browser session. At
+0.5 the bay was a dark, blown-out, oil-slick sea. At 0.11 it was imperceptible
+and the surface went back to sliding in one piece. 0.26 is the band where the
+light moves on the water and the day still reads as a bright one.
+
+`waterfront_in_motion.mp4` and `bay_current_2x.mp4` are the check — camera
+locked, clock advancing, so everything that moves is the world. The shot has
+to warm up before it records: the founding sweep raises its cap on a React
+interval, and with the render loop stopped for capture those updates only
+flush when a frame is asked for, so the first version spent half its length
+watching the city grow. The first framed render after boot also comes out at a
+slightly wider frustum than every one after it, and is discarded.
 
 ## The round (`pnpm capture:round`)
 
