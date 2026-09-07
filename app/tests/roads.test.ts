@@ -8,11 +8,18 @@ import {
   LANE_OFFSET,
   PARCELS,
   ROADS,
+  WATERWAYS,
   buildTraffic,
   layPath,
   sample,
 } from "../src/render/city/cityPlan";
-import { corridor, footprint, intersect, trespasses } from "../src/render/city/plan";
+import {
+  corridor,
+  encroachments,
+  footprint,
+  intersect,
+  trespasses,
+} from "../src/render/city/plan";
 import {
   buildRoadGraph,
   crossingsOn,
@@ -393,6 +400,18 @@ describe("nothing is built on a road", () => {
     const over = trespasses(PARCELS, ROADS, corridor);
     expect(
       over.map((clash) => `${clash.parcel} is ${clash.depth.toFixed(1)}m onto ${clash.road}'s footway`),
+    ).toEqual([]);
+  });
+
+  it("keeps every plot off the water and its quaysides", () => {
+    // The roads are not the only public surface a plot can be authored onto.
+    // Two Commerce Core plots ran to x = 34 when the canal water starts at 32,
+    // so they covered the west quay wall, the whole west footway and two
+    // metres of the canal. A section across it found grass from 22 to 33 —
+    // no wall, no pavement, nothing — beside a complete eastern bank.
+    const over = encroachments(PARCELS, WATERWAYS);
+    expect(
+      over.map((e) => `${e.parcel} is ${e.depth.toFixed(1)}m onto the ${e.onto}`),
     ).toEqual([]);
   });
 
