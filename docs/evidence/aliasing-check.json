@@ -1,0 +1,16 @@
+{
+  "url": "http://localhost:4173",
+  "supersample": 2,
+  "crop": {
+    "x": 300,
+    "y": 640,
+    "w": 340,
+    "h": 120
+  },
+  "steps": 8,
+  "meanSwing": 0.021150250000374626,
+  "worstStepFlipShare": 0.0036274509803921567,
+  "pixels": 40800,
+  "threshold": 0.02,
+  "pass": true
+}
