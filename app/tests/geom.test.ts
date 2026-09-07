@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { PartsBuilder, bevelBox, box, post, slab, wedge } from "../src/render/lib/geom";
+import { waterOffset } from "../src/render/scene/materials";
 
 function centre(geometry: THREE.BufferGeometry): THREE.Vector3 {
   geometry.computeBoundingBox();
@@ -78,6 +79,33 @@ describe("geometry kit", () => {
     }
     expect(tallEnd).toBeCloseTo(1, 5);
     expect(thinEnd).toBeCloseTo(-1, 5);
+  });
+
+  it("drifts the water across its bands rather than along them", () => {
+    // The bay is the largest single surface in the frame and the only large one
+    // with nothing on it that moves, so it scrolls its ripple map. The catch is
+    // that `waterRipples` draws its streaks as full-width bands along `u`: drift
+    // the map in `u` and every streak slides along its own length, leaving the
+    // water visibly, measurably, provably still. The first version did exactly
+    // that and moved the texture five metres to no effect whatsoever.
+    //
+    // No screenshot catches this — the frames differ, they just differ in a way
+    // no eye reads as motion — so the axes are pinned here instead.
+    const [u, v] = waterOffset(10);
+    expect(Math.abs(v)).toBeGreaterThan(Math.abs(u) * 3);
+
+    // Linear in `t`, so a still captured at a given clock is that same still
+    // every time. The film and the plot sheets depend on it.
+    const [u2, v2] = waterOffset(20);
+    expect(u2).toBeCloseTo(u * 2, 10);
+    expect(v2).toBeCloseTo(v * 2, 10);
+    expect(waterOffset(0)).toEqual([0, 0]);
+
+    // A tile is about forty-four metres. Slower than this and twelve seconds of
+    // film shows nothing; faster and a calm bay turns into a conveyor belt.
+    const metresPerSecond = (v / 10) * 44.4;
+    expect(metresPerSecond).toBeGreaterThan(0.25);
+    expect(metresPerSecond).toBeLessThan(1.2);
   });
 
   it("keeps the placement when a composed part is baked into another builder", () => {

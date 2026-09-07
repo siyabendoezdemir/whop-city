@@ -253,6 +253,9 @@ export const M = {
 
 export type MaterialKey = keyof typeof M;
 
+/** The ripple map, held so the bay can be made to move. Null before boot. */
+let drifting: THREE.Texture | null = null;
+
 /**
  * Attaches procedural detail to the palette.
  *
@@ -317,6 +320,7 @@ export function applySurfaceDetail(): void {
   // actually be seen to move.
   ripples.repeat.set(0.045, 0.045);
   assign(M.water, ripples, { rough: false, roughness: 0.24 });
+  drifting = ripples;
 
   // Walls.
   assign(M.brick, brickTex);
@@ -345,6 +349,47 @@ export function applySurfaceDetail(): void {
     material.map = panes;
     material.needsUpdate = true;
   }
+}
+
+/**
+ * Sets the bay moving.
+ *
+ * Everything else in the city that lives — the ferry, the traffic, the walkers,
+ * the steam — is an object with a position, so the water was the last large
+ * surface with nothing happening on it. Sat next to a moving ferry, a mirror-
+ * still bay reads as a bug rather than as calm, and it is the largest single
+ * area on screen: a third of the frame doing nothing drags the whole picture
+ * toward diorama.
+ *
+ * A scrolling map rather than a new mesh or a shader, because the water is
+ * already one box per stretch of the plane and this adds no triangle, no draw
+ * call and no material to it. One tile spans about forty-four metres, so the
+ * rate below works out at a sixth of a metre a second — a current, not a
+ * conveyor. Deterministic in `t`, so a still captured at a given clock is the
+ * same still every time.
+ */
+export function driftWater(t: number): void {
+  const [u, v] = waterOffset(t);
+  if (drifting) drifting.offset.set(u, v);
+}
+
+/**
+ * Where the ripple map sits at `t`, in tiles.
+ *
+ * Split out from the drift itself so the one fact that matters here can be
+ * asserted without a canvas: the travel is mostly in `v`, across the grain.
+ * `waterRipples` draws its streaks as full-width bands along `u`, so a map
+ * scrolled in `u` slides every streak along its own length and the surface
+ * sits perfectly still no matter how fast the number climbs — which is exactly
+ * what the first version of this did. Getting it backwards costs nothing that
+ * a screenshot would catch, so the axes are pinned in `geom.test.ts`.
+ *
+ * `u` is not zero only so the current runs at a slight angle to the bands and
+ * does not read as marching scanlines. One tile spans about forty-four metres,
+ * putting this near half a metre a second: a current, not a conveyor.
+ */
+export function waterOffset(t: number): [u: number, v: number] {
+  return [t * 0.0026, t * 0.0115];
 }
 
 /** Used by the README stats pass. */

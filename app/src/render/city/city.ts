@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 import { PartsBuilder } from "../lib/geom";
 import { Rng } from "../lib/rng";
-import { M } from "../scene/materials";
+import { driftWater, M } from "../scene/materials";
 import { InstanceKit, registerProps } from "./props";
 import type { Rig } from "./actors";
 import {
@@ -181,6 +181,7 @@ export function buildTerrain(seedText: string): Terrain {
     update: (t) => {
       for (const rig of rigs) rig.update(t);
       sway(t);
+      driftWater(t);
     },
     dispose: () => disposeGroup(group),
   };
