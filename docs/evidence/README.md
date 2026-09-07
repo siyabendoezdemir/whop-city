@@ -107,3 +107,40 @@ sequence and the states, not motion quality.
 Budgets are 220 draw calls and 250,000 triangles. The desktop figures are
 unchanged from before the interface work: at the authored aspect and wider the
 projection is identical.
+
+## The building pass
+
+A survey of every plot at every level, then eye-level shots of whatever looked
+wrong, then the code behind it. `capture/plots.mjs` lays the contact sheet,
+`capture/eye.mjs` takes the follow-up close-ups and `capture/survey.mjs` walks
+the whole world.
+
+Most of what read as broken came from one mistake. `wedge` puts its tall edge
+at `+z`; every roof was authored as though the ridge were at `-z`, so ridge
+caps floated over the eaves, chimneys sat half-buried at the low end and
+gutters ran along the top. `tests/geom.test.ts` now asserts the orientation, so
+the next roof is written against a fact rather than an assumption.
+
+The second was material rather than geometry: rooflights borrowed the wall
+glazing, which is dark because that is what a window looks like from outside.
+Laid flat under the sky it read as a hole in the deck. `M.glassRoof` is its own
+pale, matte, sky-lit material now.
+
+### Renderer, after the pass
+
+| Scenario | Draw calls | Triangles |
+| --- | --- | --- |
+| balanced | 193 | 172,288 |
+| launch | 174 | 141,070 |
+| thriving | 195 | 172,468 |
+| struggling | 198 | 172,716 |
+| unavailable | 143 | 130,298 |
+| every plot at level 5 | 207 | 219,472 |
+
+The last row is the one that matters and the one nothing used to measure. No
+fixture stands every plot at the top of its ladder, but a player who grows the
+whole board does, and that world came in at 261,000 triangles against the
+250,000 ceiling. `bevelBox` falling back to a plain box under 1.6m, cheaper
+bollards, octahedron canopies on distant trees and single-sided window bands on
+the far bank brought it to 219,472. `tests/browser/world.spec.ts` holds it
+there.
