@@ -86,6 +86,26 @@ export type Quest = {
   readonly resource: Resource;
   /** Concrete things to try. General enough for any business on Whop. */
   readonly how: readonly string[];
+  /**
+   * Where the work actually happens.
+   *
+   * The card told people what to do and then left them to find it, which for
+   * anyone who does not already know Whop's dashboard by heart is most of the
+   * work. This carries them there.
+   *
+   * Only two destinations, and deliberately so. `whop.com/dashboard` and
+   * `whop.com/{route}` are the two URLs that can be confirmed to exist — the
+   * dashboard is a single-page app that answers 200 to any path under it,
+   * including `/dashboard/zzz-not-real-xyz`, so a guessed deep link cannot be
+   * told apart from a real one by asking for it, and a link that quietly lands
+   * somewhere empty is worse than no link at all.
+   *
+   * `storefront` is for the quests about what a buyer meets — the page, the
+   * checkout, the promise. Several of their steps already say "walk your own
+   * checkout", and this is that walk. Absent means the dashboard, which is
+   * where most of the work is.
+   */
+  readonly opens?: "dashboard" | "storefront";
   /** Stages this makes sense in. Absent means all of them. */
   readonly stages?: readonly Stage[];
   /**
@@ -168,6 +188,7 @@ const CORE: readonly Quest[] = [
       "Say plainly on the page who this is not for, and mean it.",
       "Put the thing people expected first, on day one, before anything else.",
     ],
+    opens: "storefront",
     done: (metrics) => metrics.refunds < REFUND_ALARM,
     progress: (metrics) => (metrics.refunds <= 0 ? 1 : ratio(REFUND_ALARM, Math.max(1, metrics.refunds))),
     rate: (metrics) => ({
@@ -205,6 +226,7 @@ const CORE: readonly Quest[] = [
       "Price it. A number you are slightly embarrassed by is still a number people can pay.",
       "Open your own checkout once and go all the way through to the payment step.",
     ],
+    { opens: "storefront" },
   ),
   rung(
     "core-hundred",
@@ -218,6 +240,7 @@ const CORE: readonly Quest[] = [
       "Cut the page down to who it is for, what they get, and what it costs.",
       "Remove every choice on the page that is not the one you want them to make.",
     ],
+    { opens: "storefront" },
   ),
   rung(
     "core-thousand",
@@ -411,6 +434,7 @@ const QUARTER: readonly Quest[] = [
     done: (metrics) => metrics.citizens >= converted(metrics.traffic),
     progress: (metrics) => ratio(metrics.citizens, converted(metrics.traffic)),
     target: (metrics) => converted(metrics.traffic),
+    opens: "storefront",
   },
   rung(
     "quarter-first-hundred",

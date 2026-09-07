@@ -4,11 +4,15 @@ import { ZERO_METRICS, type CityMetrics } from "../src/city/projection";
 import {
   ago,
   amount,
+  bank,
   freshSales,
   headline,
   mergeFeed,
   movements,
+  NO_TAKINGS,
   parseLive,
+  settle,
+  withTakings,
   type Dispatch,
   type Sale,
 } from "../src/game/live";
@@ -209,11 +213,74 @@ const ACCOUNT = "biz_xPy7WHYB7QGju5";
 const signedIn = async () =>
   `city_session=${encodeURIComponent(await mintSession("user_real", ACCOUNT, SECRET))}`;
 
-function request(cookie?: string): Request {
-  return new Request(`https://city.example${LIVE_PATH}`, {
+function request(cookie?: string, path: string = LIVE_PATH): Request {
+  return new Request(`https://city.example${path}`, {
     headers: cookie ? { cookie } : {},
   });
 }
+
+// ---------------------------------------------------------------------------
+// Money the monthly rollup has not counted yet
+// ---------------------------------------------------------------------------
+
+describe("crediting a sale the rollup has not caught up with", () => {
+  const rollup = (gold: number): CityMetrics => ({ ...owner, gold });
+
+  it("moves revenue the moment the sale is seen", () => {
+    // The whole complaint this exists for: the sale is on the feed and the
+    // counter has not moved, so the building it paid for does not offer
+    // itself and the page looks broken until it is reloaded.
+    let takings = settle(NO_TAKINGS, 6_200);
+    expect(withTakings(rollup(6_200), takings).gold).toBe(6_200);
+
+    takings = bank(takings, [sale({ key: "a", cents: 4_900 })]);
+    expect(withTakings(rollup(6_200), takings).gold).toBe(6_249);
+  });
+
+  it("does not count the same sale twice once the rollup absorbs it", () => {
+    let takings = bank(settle(NO_TAKINGS, 6_200), [sale({ key: "a", cents: 4_900 })]);
+    expect(withTakings(rollup(6_200), takings).gold).toBe(6_249);
+
+    // The rollup catches up and reports the money itself. Keeping the credit
+    // on top of it would show the same $49 twice.
+    takings = settle(takings, 6_249);
+    expect(withTakings(rollup(6_249), takings).gold).toBe(6_249);
+  });
+
+  it("keeps the credit while the rollup has only absorbed part of it", () => {
+    let takings = settle(NO_TAKINGS, 6_200);
+    takings = bank(takings, [sale({ key: "a", cents: 4_900 }), sale({ key: "b", cents: 10_000 })]);
+    expect(withTakings(rollup(6_200), takings).gold).toBe(6_349);
+
+    // It took the first sale and not the second. There is no way to know which
+    // one it took, so re-anchoring here would drop the other on the floor.
+    takings = settle(takings, 6_249);
+    expect(withTakings(rollup(6_249), takings).gold).toBe(6_349);
+  });
+
+  it("starts again when the month does", () => {
+    let takings = bank(settle(NO_TAKINGS, 6_200), [sale({ key: "a", cents: 4_900 })]);
+    // A monthly figure that went backwards is a new month, not a correction.
+    // Last month's takings are not this month's.
+    takings = settle(takings, 40);
+    expect(takings).toEqual({ anchor: 40, cents: 0 });
+    expect(withTakings(rollup(40), takings).gold).toBe(40);
+  });
+
+  it("never shows less than the rollup", () => {
+    const takings = bank(settle(NO_TAKINGS, 6_200), [sale({ key: "a", cents: 100 })]);
+    // A rollup that jumped ahead on its own — a sale the payments list never
+    // showed us, or one outside its day-long window.
+    expect(withTakings(rollup(9_000), takings).gold).toBe(9_000);
+  });
+
+  it("leaves a visitor's zeroed figures alone", () => {
+    const takings = bank(settle(NO_TAKINGS, 0), [sale({ key: "a", cents: 4_900 })]);
+    // Nothing may put a business's revenue in front of somebody who is not
+    // entitled to it, least of all a number this file worked out itself.
+    expect(withTakings(ZERO_METRICS, takings)).toEqual(ZERO_METRICS);
+  });
+});
 
 describe("GET /api/city/live", () => {
   beforeEach(() => resetSnapshotCache());
@@ -265,6 +332,63 @@ describe("GET /api/city/live", () => {
     // Seven stats metrics, one payments list, and the access check that decided
     // the caller was allowed to ask.
     expect(paths.length).toBeLessThanOrEqual(10);
+  });
+
+  it("reads one upstream list when only the sales are asked for", async () => {
+    // The point of the split. The sales poll is the one that decides how long
+    // a sale sits in Whop before the city hears about it, so it runs several
+    // times a minute — and it can only do that if it is not dragging seven
+    // stats metrics along behind it.
+    const paths: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      paths.push(url.pathname);
+      return new Response(JSON.stringify({ access_level: "admin", data: [] }), { status: 200 });
+    });
+
+    const env = {
+      WHOP_API_ORIGIN: "https://api.whop.com",
+      CITY_SEED_SECRET: SECRET,
+      CITY_SESSION_SECRET: SECRET,
+      WHOP_ACCOUNT_ID: ACCOUNT,
+    };
+    const response = await handleLiveRequest(
+      request(await signedIn(), `${LIVE_PATH}?parts=sales`),
+      env,
+    );
+
+    expect(paths.some((path) => path.includes("/stats/"))).toBe(false);
+    expect(paths.filter((path) => path.includes("/payments")).length).toBe(1);
+
+    // Sales, and no figures at all — an absent `metrics` leaves the last good
+    // ones on screen, where a zeroed one would blank the city every four
+    // seconds.
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body.live).toBe(true);
+    expect("metrics" in body).toBe(false);
+    expect(Array.isArray(body.sales)).toBe(true);
+  });
+
+  it("does not serve a sales-only read from the full read's cache", async () => {
+    // Same viewer, same business, different answers. One key for both would
+    // hand the fast poll a stale full body or, worse, hand the full poll a
+    // body with no figures in it.
+    vi.stubGlobal("fetch", async () =>
+      new Response(JSON.stringify({ access_level: "admin", data: [] }), { status: 200 }),
+    );
+    const env = {
+      WHOP_API_ORIGIN: "https://api.whop.com",
+      CITY_SEED_SECRET: SECRET,
+      CITY_SESSION_SECRET: SECRET,
+      WHOP_ACCOUNT_ID: ACCOUNT,
+    };
+    const cookie = await signedIn();
+
+    const sales = await handleLiveRequest(request(cookie, `${LIVE_PATH}?parts=sales`), env);
+    const all = await handleLiveRequest(request(cookie, LIVE_PATH), env);
+
+    expect("metrics" in ((await sales.json()) as object)).toBe(false);
+    expect("metrics" in ((await all.json()) as object)).toBe(true);
   });
 
   it("refuses a session signed with somebody else's secret", async () => {

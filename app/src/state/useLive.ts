@@ -2,12 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CityMetrics } from "../city/projection";
 import {
+  bank,
   freshSales,
   mergeFeed,
   movements,
+  NO_TAKINGS,
   parseLive,
+  settle,
+  withTakings,
   type Dispatch,
   type Sale,
+  type Takings,
 } from "../game/live";
 
 /**
@@ -37,8 +42,27 @@ import {
  */
 
 const ENDPOINT = "/api/city/live";
-/** Fast enough that a sale lands while you are still looking at the city. */
-export const LIVE_POLL_MS = 15_000;
+/**
+ * Fast enough that a sale lands while you are still looking at the city.
+ *
+ * This is the cheap half of the endpoint — one upstream request for the
+ * payments list — so it can run at a pace that makes a sale feel like it just
+ * happened. The old fifteen seconds was set by the expensive half, and with a
+ * server-side reuse window on top of it a sale could be twenty seconds old
+ * before the city heard about it, which is long enough to go and check whether
+ * the page is broken.
+ */
+export const LIVE_POLL_MS = 4_000;
+
+/**
+ * How often the figures are re-read.
+ *
+ * Seven upstream requests, one per metric, and they move slowly by nature:
+ * these are whole-month rollups. Polling them hard bought nothing, which is
+ * why the sales credit exists — revenue moves off the sale itself and this
+ * read only has to arrive eventually to confirm it.
+ */
+export const STATS_POLL_MS = 24_000;
 
 export type Live = {
   /** The freshest figures, or null if none have arrived. */
@@ -56,10 +80,15 @@ export type Live = {
   readonly dismiss: (id: string) => void;
 };
 
-function endpointUrl(): string {
-  if (typeof location === "undefined") return ENDPOINT;
-  const scenario = new URLSearchParams(location.search).get("scenario");
-  return scenario ? `${ENDPOINT}?scenario=${encodeURIComponent(scenario)}` : ENDPOINT;
+function endpointUrl(parts: "all" | "sales"): string {
+  const query = new URLSearchParams();
+  if (parts === "sales") query.set("parts", "sales");
+  if (typeof location !== "undefined") {
+    const scenario = new URLSearchParams(location.search).get("scenario");
+    if (scenario) query.set("scenario", scenario);
+  }
+  const search = query.toString();
+  return search ? `${ENDPOINT}?${search}` : ENDPOINT;
 }
 
 export function useLive(enabled: boolean): Live {
@@ -72,6 +101,8 @@ export function useLive(enabled: boolean): Live {
   const seen = useRef<Set<string>>(new Set());
   const primed = useRef(false);
   const previous = useRef<CityMetrics | null>(null);
+  /** Sales the monthly rollup has not caught up with. See `bank`/`settle`. */
+  const takings = useRef<Takings>(NO_TAKINGS);
 
   const announce = useCallback((entry: Dispatch) => {
     setFeed((current) => mergeFeed(current, [entry], Date.now()));
@@ -86,9 +117,11 @@ export function useLive(enabled: boolean): Live {
     let alive = true;
     let timer = 0;
 
-    const poll = async () => {
+    const poll = async (parts: "all" | "sales") => {
       try {
-        const response = await fetch(endpointUrl(), { headers: { accept: "application/json" } });
+        const response = await fetch(endpointUrl(parts), {
+          headers: { accept: "application/json" },
+        });
         if (!response.ok) return;
         const body = parseLive(await response.json());
         if (!alive || !body.live) return;
@@ -106,9 +139,14 @@ export function useLive(enabled: boolean): Live {
             for (const sale of fresh) {
               lines.push({ id: `sale-${sale.key}`, at: sale.at, kind: "sale", sale });
             }
+            // Credit them now. The rollup will confirm it in its own time, and
+            // until it does this is what moves the counter and puts the floor
+            // the sale paid for within reach.
+            takings.current = bank(takings.current, fresh);
           } else if (!primed.current) {
             // Seed the feed with what is already there, silently: it belongs on
-            // the list but it is not something that just happened.
+            // the list but it is not something that just happened. Not banked
+            // either — the rollup has had all month to count these.
             for (const sale of body.sales) {
               lines.push({ id: `sale-${sale.key}`, at: sale.at, kind: "sale", sale });
             }
@@ -116,10 +154,15 @@ export function useLive(enabled: boolean): Live {
         }
 
         if (body.metrics) {
+          takings.current = settle(takings.current, body.metrics.gold);
           if (primed.current) lines.push(...movements(previous.current, body.metrics, now));
           previous.current = body.metrics;
-          setMetrics(body.metrics);
         }
+
+        // Republished on every poll, not just the ones that carry figures: a
+        // sale banked on a cheap poll has to reach the counter without waiting
+        // for the next expensive one.
+        if (previous.current) setMetrics(withTakings(previous.current, takings.current));
 
         if (lines.length > 0) setFeed((current) => mergeFeed(current, lines, now));
         primed.current = true;
@@ -128,11 +171,21 @@ export function useLive(enabled: boolean): Live {
       }
     };
 
+    // The figures ride along with whichever sales poll comes due after their
+    // own interval, so the two never fire as separate requests in the same
+    // moment.
+    let statsAt = 0;
+    const tick = async () => {
+      const due = Date.now() - statsAt >= STATS_POLL_MS;
+      if (due) statsAt = Date.now();
+      await poll(due ? "all" : "sales");
+    };
+
     const schedule = () => {
       window.clearTimeout(timer);
       if (document.visibilityState === "hidden") return;
       timer = window.setTimeout(async () => {
-        await poll();
+        await tick();
         schedule();
       }, LIVE_POLL_MS);
     };
@@ -142,11 +195,15 @@ export function useLive(enabled: boolean): Live {
         window.clearTimeout(timer);
         return;
       }
-      void poll();
+      // Back from a background tab: read everything, because the figures have
+      // been going stale for as long as the tab was away.
+      statsAt = Date.now();
+      void poll("all");
       schedule();
     };
 
-    void poll();
+    statsAt = Date.now();
+    void poll("all");
     schedule();
     document.addEventListener("visibilitychange", onVisible);
 

@@ -33,6 +33,25 @@ export const LIVE_PATH = "/api/city/live";
 export const LIVE_METHOD = "GET";
 
 /**
+ * How much of the read the caller wants.
+ *
+ * The two halves of this endpoint cost wildly different amounts. The sales
+ * list is one upstream request; the figures are seven, one per metric. Asking
+ * for both on every poll is what forced the poll to be slow — fast enough to
+ * catch a sale meant eight reads every few seconds — and a slow poll is why a
+ * sale took the best part of half a minute to reach the city.
+ *
+ * Splitting them lets the client ask for the cheap half often and the
+ * expensive half rarely, which drops the time-to-sale and the upstream load at
+ * the same time.
+ */
+export type Parts = "all" | "sales";
+
+export function partsFrom(value: string | null): Parts {
+  return value === "sales" ? "sales" : "all";
+}
+
+/**
  * How long a live read is reused.
  *
  * Shorter than the snapshot's, because the whole point of this endpoint is
@@ -40,6 +59,16 @@ export const LIVE_METHOD = "GET";
  * seconds and a second tab doing the same do not double the upstream load.
  */
 export const LIVE_TTL_MS = 6_000;
+
+/**
+ * How long a sales-only read is reused.
+ *
+ * Shorter than a full one because it costs a single upstream request against
+ * the full read's eight, and because it is the one the player is waiting on:
+ * this is the number that decides how long a sale sits in Whop before it shows
+ * up in the city.
+ */
+export const SALES_TTL_MS = 2_500;
 
 export type LiveBody = {
   /** False for anyone the figures are not for. Nothing else is present. */
@@ -67,7 +96,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 const CLOSED: LiveBody = { live: false };
 
-async function readLive(env: Env, scenario: string | null, viewing: string | null): Promise<LiveBody> {
+async function readLive(
+  env: Env,
+  scenario: string | null,
+  viewing: string | null,
+  parts: Parts,
+): Promise<LiveBody> {
   const source = resolveSource(env);
   const now = Date.now();
 
@@ -76,7 +110,7 @@ async function readLive(env: Env, scenario: string | null, viewing: string | nul
     return {
       live: true,
       at: now,
-      metrics: metricsFrom(fixtureStats(picked)),
+      ...(parts === "all" ? { metrics: metricsFrom(fixtureStats(picked)) } : {}),
       sales: fixtureSales(picked, now),
     };
   }
@@ -93,12 +127,15 @@ async function readLive(env: Env, scenario: string | null, viewing: string | nul
   // Independent: a business whose payments the credential cannot read should
   // still get live figures, and a stats node that will not answer should not
   // cost the feed.
-  const [stats, sales] = await Promise.all([readStats(env, accountId), readSales(env, accountId)]);
+  const [stats, sales] = await Promise.all([
+    parts === "all" ? readStats(env, accountId) : null,
+    readSales(env, accountId),
+  ]);
 
   return {
     live: true,
     at: now,
-    metrics: metricsFrom(stats),
+    ...(stats ? { metrics: metricsFrom(stats) } : {}),
     // Absent rather than empty when the read failed. "No sales today" and
     // "could not read sales" are different facts and the feed says which.
     ...(sales.ok ? { sales: sales.data } : {}),
@@ -123,15 +160,15 @@ export async function handleLiveRequest(request: Request, env: Env): Promise<Res
     // to cost the business a read, let alone see what came back.
     if (!fixtures && viewer.audience !== "owner") return jsonResponse(CLOSED);
 
-    const scenario = fixtures
-      ? resolveScenario(new URL(request.url).searchParams.get("scenario"))
-      : null;
+    const query = new URL(request.url).searchParams;
+    const parts = partsFrom(query.get("parts"));
+    const scenario = fixtures ? resolveScenario(query.get("scenario")) : null;
 
     const body = await withSingleFlight(
-      `live|${deploymentKey(env, source)}|${scenario ?? ""}|${viewer.audience}|${viewer.viewing ?? ""}`,
-      () => readLive(env, scenario, viewer.viewing),
+      `live|${parts}|${deploymentKey(env, source)}|${scenario ?? ""}|${viewer.audience}|${viewer.viewing ?? ""}`,
+      () => readLive(env, scenario, viewer.viewing, parts),
       {
-        ttlMs: LIVE_TTL_MS,
+        ttlMs: parts === "sales" ? SALES_TTL_MS : LIVE_TTL_MS,
         // A closed answer is a failure with a face on it; retrying costs one
         // request and pinning it costs the player their live city.
         retain: (value) => value.live,

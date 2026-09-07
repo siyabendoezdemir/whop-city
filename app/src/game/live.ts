@@ -97,6 +97,75 @@ export function freshSales(sales: readonly Sale[], seen: ReadonlySet<string>): S
 }
 
 /**
+ * Money that has arrived but has not been counted yet.
+ *
+ * The city's revenue figure comes from Whop's stats API, which reports whole
+ * months and recomputes on its own schedule. The sales feed comes from the
+ * payments list, which knows about a payment the moment it settles. So there
+ * is a window — sometimes seconds, sometimes a good deal longer — where the
+ * game can see the sale and cannot see the money: a card lands on the feed
+ * saying $20, the revenue counter does not move, and the building that sale
+ * just paid for does not offer itself. That reads as broken, and the player is
+ * right that it is.
+ *
+ * This closes the window. `anchor` is the last rollup figure we believed, and
+ * `cents` is everything the payments list has shown us since. The rollup stays
+ * the source of truth and the credit only ever adds to it.
+ *
+ * It is not an estimate and it invents nothing: a paid payment is revenue that
+ * exists, read from the same platform, and the only claim being made is that
+ * the total has not caught up with its own parts yet.
+ */
+export type Takings = {
+  /** The rollup figure the credit below is measured from. */
+  readonly anchor: number;
+  /** Cents of settled sales seen since the anchor was set. */
+  readonly cents: number;
+};
+
+export const NO_TAKINGS: Takings = { anchor: 0, cents: 0 };
+
+/** Adds sales the rollup has not accounted for. */
+export function bank(takings: Takings, sales: readonly Sale[]): Takings {
+  if (sales.length === 0) return takings;
+  const cents = sales.reduce((sum, sale) => sum + Math.max(0, sale.cents), 0);
+  return { anchor: takings.anchor, cents: takings.cents + cents };
+}
+
+/**
+ * Reconciles the credit against a fresh rollup.
+ *
+ * Two things end a credit. The rollup catching up — once it reports at least
+ * what we were claiming, it has absorbed the sales and holding them separately
+ * would count them twice. And the rollup going backwards, which is the turn of
+ * the month: a new period starts at nothing and last month's sales are not
+ * this month's.
+ *
+ * A rollup that has absorbed *some* of the credit is left alone, because there
+ * is no way to know which sales it took, and the total still has to end up
+ * right. Anchoring to the new figure and keeping the full credit would double
+ * whatever it did absorb.
+ */
+export function settle(takings: Takings, rollup: number): Takings {
+  const claimed = takings.anchor + Math.round(takings.cents / 100);
+  if (rollup < takings.anchor || rollup >= claimed) return { anchor: rollup, cents: 0 };
+  return takings;
+}
+
+/**
+ * The figures with the uncounted money in them.
+ *
+ * Never below the rollup: this is allowed to be ahead of Whop's total, because
+ * it can see the receipts the total has not added up yet, and never behind it.
+ */
+export function withTakings(metrics: CityMetrics, takings: Takings): CityMetrics {
+  if (metrics.source !== "owner" || takings.cents === 0) return metrics;
+  const credited = takings.anchor + Math.round(takings.cents / 100);
+  if (credited <= metrics.gold) return metrics;
+  return { ...metrics, gold: credited };
+}
+
+/**
  * What changed between two readings, as feed lines.
  *
  * Only the movements a person would call news. Revenue is deliberately absent:

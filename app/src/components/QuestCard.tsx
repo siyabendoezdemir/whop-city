@@ -28,9 +28,35 @@ type Props = {
   /** Shown when the card stands in for the whole city rather than one district. */
   scope: "city" | "district";
   onGo?: () => void;
+  /**
+   * The business's Whop handle, when it is known and the viewer is entitled to
+   * it. Null for a visitor, and null for an owner whose business Whop declined
+   * to name — in both cases the storefront link is simply not offered rather
+   * than pointed at a guess.
+   */
+  route?: string | null;
 };
 
-export function QuestCard({ quest, metrics, scope, onGo }: Props) {
+/**
+ * Where a quest sends you, as a real URL.
+ *
+ * Two destinations and no third, because these are the two that can be shown
+ * to exist. Anything under `whop.com/dashboard` answers 200 whether or not it
+ * is a real screen — it is a single-page app — so a deep link to, say, a
+ * products tab cannot be verified by asking for it, and a link that lands
+ * somewhere blank is worse than one that lands somewhere general.
+ */
+export function destination(
+  quest: Pick<Quest, "opens">,
+  route: string | null | undefined,
+): { href: string; label: string } {
+  if (quest.opens === "storefront" && route) {
+    return { href: `https://whop.com/${route}`, label: "Open your page" };
+  }
+  return { href: "https://whop.com/dashboard", label: "Open Whop" };
+}
+
+export function QuestCard({ quest, metrics, scope, onGo, route }: Props) {
   const [open, setOpen] = useState(false);
   const progress = Math.max(0, Math.min(1, quest.progress(metrics)));
   const words = RESOURCE[quest.resource];
@@ -93,11 +119,25 @@ export function QuestCard({ quest, metrics, scope, onGo }: Props) {
               <li key={step}>{step}</li>
             ))}
           </ol>
-          {onGo ? (
-            <button type="button" className="press press--ghost" data-action="quest-go" onClick={onGo}>
-              Take me to {DISTRICT_NAMES[quest.district]}
-            </button>
-          ) : null}
+          <div className="quest__acts">
+            {/* The card said what to do and then left you to find it, which for
+                anyone who does not know Whop's dashboard by heart is most of
+                the work. */}
+            <a
+              className="press press--ghost"
+              data-action="quest-open"
+              href={destination(quest, route).href}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              {destination(quest, route).label}
+            </a>
+            {onGo ? (
+              <button type="button" className="press press--ghost" data-action="quest-go" onClick={onGo}>
+                Take me to {DISTRICT_NAMES[quest.district]}
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
     </aside>
