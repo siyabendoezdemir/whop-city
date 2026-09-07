@@ -65,7 +65,48 @@ export const M = {
   dirt: standard("#a98f6d", 0.98),
   dirtDry: standard("#bda57f", 0.99),
   grass: standard("#7fa860", 0.92),
-  water: standard("#4d90b8", 0.28, 0.1),
+  /**
+   * The bay, the creek and the canal.
+   *
+   * Matte and barely reflective, which is the opposite of the obvious setting
+   * and the whole reason this used to look like marble. At a roughness of a
+   * quarter with a full environment reflection, almost every pixel of the bay
+   * was sky rather than water: pale where it caught the bright part of the
+   * dome, navy where it caught the dark, and the base colour so nearly absent
+   * that changing it did not move the render. A mirror laid flat under an
+   * overcast sky is a white sheet, and that is exactly what was on screen.
+   *
+   * Dropping the environment to a fifth and taking the metalness off hands the
+   * surface back to its own colour, so the swell in the map is what you see.
+   * The sun still glints off it through the normal map — water needs that or it
+   * reads as painted concrete — but as a highlight on water rather than as the
+   * whole of it.
+   */
+  water: standard("#63b1d6", 0.42, 0, { envMapIntensity: 0.2 }),
+
+  /**
+   * The foot of every quay wall and bank.
+   *
+   * Water met the land on a razor line: the plane simply stopped against the
+   * masonry with no shallows, no foam and no change of tone, which is the tell
+   * that gives away a flat plane pretending to be a body of water. Real water
+   * against a wall is paler where it is shallow and breaking, and the eye reads
+   * that band as depth even when there is none.
+   *
+   * A shade of the water rather than white, and narrow. Wide and bright, it
+   * stops being shallows and becomes a stripe painted round the coast.
+   */
+  shallows: standard("#8ec9e2", 0.44, 0, {
+    envMapIntensity: 0.2,
+    // Laid in the same plane as the water rather than a few centimetres proud
+    // of it. Standing it proud is the obvious way to win the depth test and it
+    // leaves the strip's own side wall poking above the surface — a hairline of
+    // shadow tracing the whole coast, and the more visible the closer the
+    // camera gets. A depth bias wins the same argument without the step.
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  }),
   /**
    * Disturbed water behind the ferry.
    *
@@ -329,28 +370,45 @@ export function applySurfaceDetail(): void {
   ]) {
     assign(material, turf);
   }
-  // World UVs are baked at half a unit per metre, which makes a 256px tile two
-  // metres across — about one screen pixel on the creek at this camera. The
-  // ripple map gets its own repeat so a tile spans tens of metres and can
-  // actually be seen to move.
-  ripples.repeat.set(0.045, 0.045);
-  assign(M.water, ripples, { rough: false, roughness: 0.24 });
+  // World UVs are baked at half a unit per metre, so a repeat of 1 puts a 256px
+  // tile two metres across — one screen pixel on the creek at this camera. The
+  // water maps get their own repeat, worked back from how wide a swell should
+  // be in metres rather than picked as a number.
+  ripples.repeat.setScalar(2 / RIPPLE_TILE);
+  assign(M.water, ripples, { rough: false });
+  // The shallows carry the same swell as the water they are part of. Sharing
+  // the texture object rather than a copy is the point: one offset moves both,
+  // so the band at the wall can never drift out of step with the bay.
+  M.shallows.map = ripples;
+  M.shallows.needsUpdate = true;
   drifting = ripples;
 
   // The second layer. Its own repeat and its own angle, so that when the two
   // scroll at different rates the crossing pattern shifts instead of sliding.
   const shimmer = waterNormals();
-  shimmer.repeat.set(0.031, 0.031);
+  shimmer.repeat.setScalar(2 / SHEEN_TILE);
   shimmer.center.set(0.5, 0.5);
   shimmer.rotation = 0.72;
   M.water.normalMap = shimmer;
+  M.shallows.normalMap = shimmer;
+  M.shallows.normalScale.set(0.3, 0.3);
   // Swept against the render rather than guessed. Half of this turned the bay
   // into a dark, blown-out, oil-slick sea; a fifth of it was invisible and the
   // surface went back to sliding as one rigid sheet. This is the band where
   // the light moves on the water and the day still reads as a bright one.
-  M.water.normalScale.set(0.26, 0.26);
+  M.water.normalScale.set(0.42, 0.42);
   M.water.needsUpdate = true;
   shimmering = shimmer;
+
+  // How far a wave can drag the swell sideways, in metres.
+  //
+  // Enough to see the crests work and no more. At the eighty-five centimetres
+  // this started at, the displacement stopped reading as a surface moving and
+  // started reading as one being smeared — a reviewer called it gloopy, like a
+  // distortion brush dragged over the picture, which is a fair description of
+  // what stretching a texture too far looks like.
+  flow(M.water, 0.5);
+  flow(M.shallows, 0.5);
 
   // Walls.
   assign(M.brick, brickTex);
@@ -427,8 +485,76 @@ export function driftWater(t: number): void {
  * a fifth of the ferry's speed — still plainly a current rather than a rapid,
  * but fast enough to survive the zoom and the encoder.
  */
+/**
+ * Let the wave field push the swell around instead of only carrying it.
+ *
+ * Two scrolling maps are still two translations, and a viewer sees straight
+ * through that: however many layers slide, if each one only slides then the
+ * whole surface is a printed sheet on a conveyor. It survived a review twice,
+ * described both times as a pattern moving as one locked unit — which it was.
+ *
+ * So the colour is looked up through the normal map rather than beside it. The
+ * wave slope at a point displaces where that point samples the swell, and
+ * because the two maps scroll at different rates and angles, the displacement
+ * field drifts across the crests rather than with them. Lines bulge, thin and
+ * knit back together instead of marching. It is also roughly what water does
+ * to what you see through it, which is presumably why it reads.
+ *
+ * One extra texture fetch on one material, no geometry and no draw call. The
+ * alternative — averaging a second sample of the swell — evolves just as well
+ * and costs the contrast that makes a crest a crest.
+ */
+function flow(material: THREE.MeshStandardMaterial, metres: number): void {
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <map_fragment>",
+      `
+      #ifdef USE_MAP
+        vec2 swellUv = vMapUv;
+        #ifdef USE_NORMALMAP
+          swellUv += ( texture2D( normalMap, vNormalMapUv ).xy - 0.5 ) * ${(metres / RIPPLE_TILE).toFixed(5)};
+        #endif
+        diffuseColor *= texture2D( map, swellUv );
+      #endif
+      `,
+    );
+  };
+  material.needsUpdate = true;
+}
+
+/**
+ * Metres across one tile of the ripple map.
+ *
+ * The number that decides whether the bay reads as water at all. It used to be
+ * forty-four, which put the whole canal inside a single tile: what reached the
+ * screen was not a swell but one enormous soft gradient, stretched until it
+ * looked like weather on a marble slab. Nothing in the material could rescue
+ * that, because there was no ripple in frame to see. Around fourteen puts three
+ * or four crests across the canal and a field of them on the bay, which is
+ * what a swell looks like from this height.
+ */
+export const RIPPLE_TILE = 14;
+
+/**
+ * Metres across one tile of the shimmer.
+ *
+ * Deliberately not a multiple of the swell: the two maps have to disagree, or
+ * their crossing pattern locks and the surface slides as one sheet.
+ */
+export const SHEEN_TILE = 19;
+
+/**
+ * How fast the current runs across the bands, in metres a second.
+ *
+ * Held here in metres rather than in tiles so that retuning the tile size
+ * cannot quietly change the speed of the water — which is precisely what
+ * shrinking the tile from forty-four metres to fourteen would otherwise have
+ * done, slowing the current to a third without anyone touching it.
+ */
+const CURRENT_ACROSS = 1.06;
+
 export function waterOffset(t: number): [u: number, v: number] {
-  return [t * 0.0054, t * 0.024];
+  return [(t * CURRENT_ACROSS * 0.22) / RIPPLE_TILE, (t * CURRENT_ACROSS) / RIPPLE_TILE];
 }
 
 /**
@@ -441,7 +567,7 @@ export function waterOffset(t: number): [u: number, v: number] {
  * to keep the light from sitting still.
  */
 export function waterSheenOffset(t: number): [u: number, v: number] {
-  return [t * -0.0031, t * 0.0162];
+  return [(t * CURRENT_ACROSS * -0.13) / SHEEN_TILE, (t * CURRENT_ACROSS * 0.68) / SHEEN_TILE];
 }
 
 /** Used by the README stats pass. */

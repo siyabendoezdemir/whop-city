@@ -110,6 +110,60 @@ export function slab(w: number, h: number, d: number, chamfer = 0.03): THREE.Buf
   return bevelBox(w, h, d, chamfer);
 }
 
+/**
+ * A horizontal face that fades to `tint` along one axis. No sides.
+ *
+ * For laying one surface *into* another without a line between them, which
+ * takes both halves of that.
+ *
+ * No sides, because a very thin box looks identical from above and brings four
+ * side walls with it — harmless right up until the material carries a depth
+ * bias to settle which of two coplanar surfaces wins, since the bias applies to
+ * every face and those walls win too, tracing a dark hairline round the shape.
+ *
+ * And faded, because a band that simply stops is an edge. Run the fade to the
+ * exact tint that makes this material match the one underneath and its far side
+ * has nothing to see. The shallows at the waterline are the case this exists
+ * for: flat, they read as a lane marking painted round the coast, a dead
+ * straight line holding perfectly still being the one thing a fluid surface
+ * never has.
+ *
+ * Split across the fade rather than left as two triangles. A four-corner quad
+ * can only interpolate linearly, and a linear ramp stops dead where it ends:
+ * no step in colour, but a crease in the rate of change, which the eye picks
+ * up as an edge anyway. Segments let the ramp ease out and arrive flat.
+ */
+export function fade(
+  w: number,
+  d: number,
+  axis: "x" | "z",
+  towards: -1 | 1,
+  tint: THREE.Color,
+): THREE.BufferGeometry {
+  const along = axis === "x" ? w : d;
+  const steps = Math.max(4, Math.min(14, Math.round(along * 3)));
+  const geometry = new THREE.PlaneGeometry(
+    w,
+    d,
+    axis === "x" ? steps : 1,
+    axis === "x" ? 1 : steps,
+  );
+  geometry.rotateX(-Math.PI / 2);
+
+  const position = geometry.getAttribute("position");
+  const colour = new Float32Array(position.count * 3);
+  for (let i = 0; i < position.count; i++) {
+    const at = axis === "x" ? position.getX(i) : position.getZ(i);
+    const t = Math.min(1, Math.max(0, 0.5 + (towards * at) / along));
+    const eased = t * t * (3 - 2 * t);
+    colour[i * 3] = 1 + (tint.r - 1) * eased;
+    colour[i * 3 + 1] = 1 + (tint.g - 1) * eased;
+    colour[i * 3 + 2] = 1 + (tint.b - 1) * eased;
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(colour, 3));
+  return geometry;
+}
+
 /** Thin cylinder: bollards, posts, pipes, tree trunks. */
 export function post(radius: number, height: number, sides = 8): THREE.BufferGeometry {
   return prototype(

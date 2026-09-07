@@ -291,29 +291,66 @@ export function glassPanes(): THREE.CanvasTexture {
 export function waterRipples(): THREE.CanvasTexture {
   const size = 256;
   const [element, ctx] = canvas(size);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, size, size);
   const rng = new Rng("water");
 
-  // Soft top and bottom edges: a hard-edged band reads as a drawn line, and
-  // several of them scrolling together read as a barcode.
-  const band = (y: number, h: number, alpha: number) => {
-    for (const wrap of [-size, 0, size]) {
-      const top = y + wrap;
-      const gradient = ctx.createLinearGradient(0, top, 0, top + h);
-      gradient.addColorStop(0, "rgba(46,96,140,0)");
-      gradient.addColorStop(0.5, `rgba(46,96,140,${alpha})`);
-      gradient.addColorStop(1, "rgba(46,96,140,0)");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, top, size, h);
+  // This is multiplied against the water colour, so it is a brightness map and
+  // not a picture of water: mid-grey is the open surface, white is a crest with
+  // the sun on it, dark is the trough behind it.
+  //
+  // Which means the body has to sit below white. The first version filled this
+  // with white and could therefore only ever subtract, so every mark on the bay
+  // was a stain on a pale sheet — the one thing water never looks like, because
+  // water is a dark body with light on top of it. Sitting the surface at
+  // seven-tenths costs a little saturation, paid back by making the water
+  // colour brighter, and buys somewhere for a crest to go.
+  ctx.fillStyle = "#b3c2cf";
+  ctx.fillRect(0, 0, size, size);
+
+  /**
+   * One line of swell, drawn column by column so it can wander.
+   *
+   * A band drawn as a single rectangle is a ruled line, and a bay full of ruled
+   * lines scrolling together is a barcode. Two or three cycles of sine across
+   * the tile is enough to break that up; whole cycles only, or the tile stops
+   * wrapping and the seam runs visibly down the water.
+   */
+  const swell = (y: number, h: number, colour: string, alpha: number, waves: number, amp: number) => {
+    const phase = rng.next() * Math.PI * 2;
+    for (let x = 0; x < size; x++) {
+      const wander = Math.sin((x / size) * waves * Math.PI * 2 + phase) * amp;
+      for (const wrap of [-size, 0, size]) {
+        const top = y + wrap + wander;
+        const gradient = ctx.createLinearGradient(0, top, 0, top + h);
+        gradient.addColorStop(0, `rgba(${colour},0)`);
+        gradient.addColorStop(0.5, `rgba(${colour},${alpha})`);
+        gradient.addColorStop(1, `rgba(${colour},0)`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, top, 1, h);
+      }
     }
   };
 
-  // The swell. Six to thirteen metres across once it is on the water, which
-  // is what still reads at the wide framing.
-  for (let i = 0; i < 5; i++) band(rng.next() * size, 34 + rng.next() * 42, 0.22);
+  const CREST = "255,255,255";
+  const TROUGH = "38,74,104";
+
+  // The swell: a handful of long crests with their troughs, at four to eight
+  // metres once it is on the water. This is the structure that still reads when
+  // the whole bay is thirty pixels tall.
+  // Kept a shade under what reads best on the water alone. The bay is the one
+  // busy surface in a flat-shaded world of plain roofs and plain roads, and at
+  // full contrast it pulls the eye off the city it is supposed to sit behind.
+  for (let i = 0; i < 5; i++) {
+    const at = rng.next() * size;
+    swell(at, 26 + rng.next() * 22, CREST, 0.42, 2, 5 + rng.next() * 4);
+    swell(at + 22, 30 + rng.next() * 26, TROUGH, 0.28, 2, 5 + rng.next() * 4);
+  }
   // Ripples over the top, for when the camera is down among the quays.
-  for (let i = 0; i < 14; i++) band(rng.next() * size, 7 + rng.next() * 13, 0.15 + rng.next() * 0.12);
+  for (let i = 0; i < 16; i++) {
+    swell(rng.next() * size, 5 + rng.next() * 9, CREST, 0.2 + rng.next() * 0.17, 3, 3 + rng.next() * 4);
+  }
+  for (let i = 0; i < 10; i++) {
+    swell(rng.next() * size, 6 + rng.next() * 10, TROUGH, 0.16 + rng.next() * 0.12, 3, 3 + rng.next() * 4);
+  }
   return finish(element);
 }
 
