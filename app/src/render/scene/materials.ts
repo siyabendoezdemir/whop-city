@@ -333,7 +333,11 @@ export function applySurfaceDetail(): void {
   shimmer.center.set(0.5, 0.5);
   shimmer.rotation = 0.72;
   M.water.normalMap = shimmer;
-  M.water.normalScale.set(0.5, 0.5);
+  // Swept against the render rather than guessed. Half of this turned the bay
+  // into a dark, blown-out, oil-slick sea; a fifth of it was invisible and the
+  // surface went back to sliding as one rigid sheet. This is the band where
+  // the light moves on the water and the day still reads as a bright one.
+  M.water.normalScale.set(0.26, 0.26);
   M.water.needsUpdate = true;
   shimmering = shimmer;
 
