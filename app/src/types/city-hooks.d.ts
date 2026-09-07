@@ -35,6 +35,8 @@ export type CityHooks = {
   }>;
   plotPoint: (plotId: string) => { x: number; y: number } | null;
   plotGround: (plotId: string) => { x: number; y: number } | null;
+  /** The topmost surface at a point, under `below`, by material name. */
+  surfaceAt: (x: number, z: number, below?: number) => { name: string; y: number } | null;
   shadowRig: () => number[];
   silhouette: (on: boolean) => void;
   /** Rebuilds the plots at explicit levels, for reviewing every state. */

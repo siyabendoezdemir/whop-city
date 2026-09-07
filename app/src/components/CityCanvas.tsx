@@ -568,6 +568,37 @@ export function CityCanvas({
           return project(new THREE.Vector3(site.x, 1, site.z));
         },
 
+        /**
+         * What is lying on the ground at a point, by material name.
+         *
+         * Looks straight down from above the rooftops and reports the first
+         * thing it hits. The city's geometry is merged per material, so a mesh
+         * covers a whole district and its bounding box answers no useful
+         * question about any particular square metre; a ray does.
+         *
+         * This exists because grass was being drawn over carriageways and
+         * nothing could see it. Every piece was built exactly as authored, the
+         * plan data was clean, and the only witness was a screenshot of a car
+         * apparently driving across a lawn.
+         */
+        surfaceAt: (x: number, z: number, below = Infinity) => {
+          const ray = new THREE.Raycaster(
+            new THREE.Vector3(x, 400, z),
+            new THREE.Vector3(0, -1, 0),
+          );
+          // `below` is what separates "something is lying on this road" from
+          // "a tree is growing beside it". Pass head height and the canopies,
+          // balconies and bridges that are supposed to overhang drop out,
+          // leaving whatever a wheel would actually be resting on.
+          for (const hit of ray.intersectObject(stage.scene, true)) {
+            if (hit.point.y > below) continue;
+            const material = (hit.object as THREE.Mesh).material;
+            const named = Array.isArray(material) ? material[0] : material;
+            if (named?.name) return { name: named.name, y: hit.point.y };
+          }
+          return null;
+        },
+
         shadowRig: () => {
           const c = stage.sun.shadow.camera;
           return [

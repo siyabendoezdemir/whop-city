@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
 
+import { DRIVEN_ROADS } from "../../src/render/city/cityPlan";
+import {
+  MEDIAN_SURFACES,
+  ROAD_SURFACES,
+  WHEEL_HEIGHT,
+  carriagewaySamples,
+} from "../../src/render/city/plan";
+
 /**
  * Does the projection actually change the world?
  *
@@ -209,4 +217,44 @@ test("the shadow rig never moves while the camera does", async ({ page }) => {
   // different patch of world and makes the whole map shimmer under a dolly.
   const distinct = new Set(rigs.map((rig) => rig.join("|")));
   expect(distinct.size, `shadow rig took ${distinct.size} states across the fly path`).toBe(1);
+});
+
+test("nothing is lying on any carriageway", async ({ page }) => {
+  /**
+   * The check that finally caught what two rounds of screenshots could not.
+   *
+   * Every geometry test passes when a slab is built exactly where it was
+   * authored, and says nothing about whether it was authored on top of a road.
+   * A plot boundary is not rendered, a promenade looks like a promenade, and
+   * grass on a carriageway reads as grass beside one right up until a car
+   * drives down the middle of it — which is how the headland promenade, both
+   * quay walkways, two rows of backdrop blocks and the unpaved far quarter of
+   * every T-junction all survived in plain sight.
+   *
+   * So this asks the built scene instead: three lines down every carriageway,
+   * every two metres, a ray straight down, and what a wheel would be resting
+   * on. Nearly three hundred of these were something other than road.
+   */
+  await open(page, "thriving");
+
+  const spots = carriagewaySamples(DRIVEN_ROADS);
+  const grade = new Map(DRIVEN_ROADS.map((road) => [road.id, road.grade]));
+
+  const read = await page.evaluate(
+    ({ pts, ceiling }: { pts: { road: string; x: number; z: number }[]; ceiling: number }) =>
+      pts.map((p) => ({ ...p, on: window.__city!.surfaceAt(p.x, p.z, ceiling)?.name ?? "nothing" })),
+    { pts: spots.map((s) => ({ road: s.road, x: s.x, z: s.z })), ceiling: WHEEL_HEIGHT },
+  );
+
+  const covered = read.filter(
+    (s) =>
+      !ROAD_SURFACES.has(s.on) &&
+      // A boulevard is allowed the planted reservation down its middle.
+      !(grade.get(s.road) === "boulevard" && MEDIAN_SURFACES.has(s.on)),
+  );
+
+  expect(
+    covered.slice(0, 12).map((s) => `${s.on} on ${s.road} at (${s.x.toFixed(1)}, ${s.z.toFixed(1)})`),
+    `${covered.length} of ${spots.length} carriageway samples covered`,
+  ).toEqual([]);
 });

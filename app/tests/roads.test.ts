@@ -86,13 +86,20 @@ describe("crossings", () => {
 });
 
 describe("the network as authored", () => {
-  /** Whether a point is inside some other road's carriageway. */
+  /**
+   * Whether a point is inside some other road's junction.
+   *
+   * Out to the far kerb face, not just the carriageway. A road that ends at a
+   * crossing runs on until the junction is covered, which puts its last
+   * half-metre over the kerb line by design — stopping short of that is what
+   * left the far quarter of every junction as bare ground.
+   */
   function paved(x: number, z: number, self: Road): boolean {
     return ROADS.some((other) => {
       if (other === self || other.axis === self.axis) return false;
       const along = other.axis === "x" ? x : z;
       const across = other.axis === "x" ? z - other.at : x - other.at;
-      return along >= other.from && along <= other.to && Math.abs(across) <= other.width / 2 + 0.01;
+      return along >= other.from && along <= other.to && Math.abs(across) <= other.width / 2 + 0.52;
     });
   }
 
