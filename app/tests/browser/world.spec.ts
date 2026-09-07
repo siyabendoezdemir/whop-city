@@ -69,13 +69,24 @@ test("each projection state builds a different world", async ({ page }) => {
     fingerprints.length,
   );
 
-  // And the difference is real geometry, not a rounding artefact. Vertices
-  // rather than triangles, because a taller building is not reliably more
-  // triangles: past six storeys the glazing runs in bands instead of hundreds
-  // of punched openings, so a bigger city can be a cheaper one.
-  expect(vertexCount(seen.get("thriving")!.fingerprint)).toBeGreaterThan(
-    vertexCount(seen.get("struggling")!.fingerprint) * 1.15,
-  );
+  // And the difference is real geometry, not a rounding artefact: a projection
+  // with nothing in it builds a fraction of the world a working one does.
+  //
+  // Only that comparison, and deliberately. This also asserted that thriving
+  // built fifteen per cent more geometry than struggling, which is not how the
+  // game works and was not true: levels are what the business earned and kept,
+  // so a business going wrong still has the city it built — the eleven plots
+  // stand at 138.1 metres of total height thriving against 136.9 struggling,
+  // and what separates them is the skin, the props and the markers, not the
+  // massing. It passed on luck, and the comment it carried already conceded
+  // the measure was unreliable (past six storeys the glazing switches from
+  // punched openings to bands, so the taller tower is often the cheaper one).
+  //
+  // The relationship it was reaching for is real and is tested where it is
+  // real: `game.spec.ts` stands a business with nothing sold on empty ground
+  // and one with a lot under a skyline. What separates two *built* states is
+  // pixels, which "a state change rebuilds the pixels, not just the text"
+  // covers below.
   expect(vertexCount(seen.get("struggling")!.fingerprint)).toBeGreaterThan(
     vertexCount(seen.get("unavailable")!.fingerprint) * 1.15,
   );

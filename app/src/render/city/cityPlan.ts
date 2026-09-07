@@ -1368,6 +1368,24 @@ export function buildSurroundings(seed: number): THREE.Group {
       // A dark deck sitting proud of the parapet. Without it the lit top face
       // of every box reads as a white slab and the massing glares.
       b.add(M.gravel, box(blk.w - 0.25, 0.24, blk.d - 0.25), [blk.x, base + blk.h + 0.2, blk.z]);
+      // And something standing on it, for the two blocks in five that draw no
+      // overrun below. A bare tray reads as a lid at this camera whatever
+      // colour it is, and the top of a tall block is the face this angle sees
+      // most of. Near blocks only: the far bank is a silhouette.
+      if (!blk.far) {
+        const deck = base + blk.h + 0.32;
+        for (const [ox, oz] of [
+          [-0.26, 0.2],
+          [0.2, -0.24],
+        ] as const) {
+          b.add(M.aluminium, box(2.2, 0.85, 1.5), [blk.x + blk.w * ox, deck + 0.42, blk.z + blk.d * oz]);
+          b.add(M.steel, box(1.6, 0.12, 1.0), [blk.x + blk.w * ox, deck + 0.9, blk.z + blk.d * oz]);
+        }
+        b.add(M.ironDark, post(0.9, 1.5, 8), [blk.x + blk.w * 0.3, deck + 1.5, blk.z + blk.d * 0.28]);
+        for (const sx of [-1, 1]) {
+          b.add(M.steel, post(0.07, 0.9, 4), [blk.x + blk.w * 0.3 + sx * 0.7, deck + 0.45, blk.z + blk.d * 0.28]);
+        }
+      }
     }
 
     // Storey lines. Two boxes per floor serve all four elevations, and the
