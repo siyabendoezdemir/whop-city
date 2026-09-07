@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { PartsBuilder, bevelBox, box, post, slab, wedge } from "../src/render/lib/geom";
-import { waterOffset, waterSheenOffset } from "../src/render/scene/materials";
+import { RIPPLE_TILE, waterOffset, waterSheenOffset } from "../src/render/scene/materials";
 
 function centre(geometry: THREE.BufferGeometry): THREE.Vector3 {
   geometry.computeBoundingBox();
@@ -101,9 +101,11 @@ describe("geometry kit", () => {
     expect(v2).toBeCloseTo(v * 2, 10);
     expect(waterOffset(0)).toEqual([0, 0]);
 
-    // A tile is about forty-four metres. Slower than this and twelve seconds of
-    // film shows nothing; faster and a calm bay turns into a conveyor belt.
-    const metresPerSecond = (v / 10) * 44.4;
+    // Read off the tile the map is actually laid at, not a number copied into
+    // the test: the tile has been retuned once already, and a hardcoded span
+    // here would have gone on reporting a healthy speed while the real current
+    // dropped to a third of it.
+    const metresPerSecond = (v / 10) * RIPPLE_TILE;
     expect(metresPerSecond).toBeGreaterThan(0.25);
     expect(metresPerSecond).toBeLessThan(1.2);
 
