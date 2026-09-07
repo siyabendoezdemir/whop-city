@@ -949,8 +949,14 @@ export function buildTraffic(seed: number): Rig[] {
     // spacing used to be one vehicle per hundred and fifty metres, which was
     // as much as the old arrangement could hold without vehicles running into
     // each other; at a shared pace on an evenly spaced loop nothing can close
-    // on anything, so the streets can carry the traffic a city would.
-    const count = Math.max(2, Math.min(12, Math.round(path.length / 44)));
+    // on anything, so the streets can carry more of it.
+    //
+    // What sets the ceiling now is the frame rather than the geometry. A
+    // vehicle is an animated rig, not an instance, and costs about three draw
+    // calls of the two hundred and twenty the city is allowed. One per
+    // forty-four metres looked right and put a fully grown city at 222, which
+    // is over.
+    const count = Math.max(2, Math.min(10, Math.round(path.length / 56)));
     /**
      * One speed for everything on this lane.
      *
