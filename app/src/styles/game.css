@@ -938,6 +938,20 @@ a.menu__item:hover {
   animation: panel-in 140ms ease-out;
 }
 
+/* Two at most, and they wrap rather than squeeze: the card is a fixed width
+   and "Take me to Creator Quarter" is a long thing to put beside anything. */
+.quest__acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quest__acts > * {
+  flex: 1 1 auto;
+  text-align: center;
+  text-decoration: none;
+}
+
 .quest__how {
   margin: 0;
   padding: 0;

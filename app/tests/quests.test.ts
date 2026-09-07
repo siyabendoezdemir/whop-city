@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { DISTRICT_IDS, ZERO_METRICS, type CityMetrics } from "../src/city/projection";
+import { destination } from "../src/components/QuestCard";
 import { RESOURCES } from "../src/game/buildings";
 import {
   QUESTS,
@@ -247,6 +248,43 @@ describe("the district reading", () => {
         expect(reading.line.length, district).toBeGreaterThan(4);
         expect(["bad", "flat", "good"]).toContain(reading.tone);
       }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Where a quest sends you
+// ---------------------------------------------------------------------------
+
+describe("the way out to Whop", () => {
+  it("sends the buying-experience quests to the page a buyer sees", () => {
+    expect(destination({ opens: "storefront" }, "acme")).toEqual({
+      href: "https://whop.com/acme",
+      label: "Open your page",
+    });
+  });
+
+  it("sends everything else to the dashboard", () => {
+    expect(destination({}, "acme").href).toBe("https://whop.com/dashboard");
+  });
+
+  it("falls back rather than guessing a handle it does not have", () => {
+    // A visitor, or an owner whose business Whop declined to name. Building
+    // "https://whop.com/null" would be a 404 with a confident label on it.
+    for (const route of [null, undefined, ""]) {
+      expect(destination({ opens: "storefront" }, route).href).toBe("https://whop.com/dashboard");
+    }
+  });
+
+  it("only ever points at the two URLs that are known to exist", () => {
+    // Anything under /dashboard answers 200 whether or not it is a real
+    // screen, so a deep link cannot be checked by asking for it. Every quest
+    // on every board has to resolve to one of these two.
+    const allowed = (href: string, route: string) =>
+      href === "https://whop.com/dashboard" || href === `https://whop.com/${route}`;
+    for (const quest of QUESTS) {
+      expect(allowed(destination(quest, "acme").href, "acme"), quest.id).toBe(true);
+      expect(destination(quest, null).href, quest.id).toBe("https://whop.com/dashboard");
     }
   });
 });

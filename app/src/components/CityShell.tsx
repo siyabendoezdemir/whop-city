@@ -174,6 +174,22 @@ export function CityShell() {
   }, []);
 
   /**
+   * The beat after signing in.
+   *
+   * The round trip through Whop came back with `auth=ok` and the app said
+   * nothing at all about it: the city simply carried on, and on a return visit
+   * — where the founding sweep does not replay — there was no acknowledgement
+   * that the sign-in had worked. Every failure had a line and the success did
+   * not.
+   */
+  useEffect(() => {
+    if (typeof location === "undefined") return;
+    const outcome = new URLSearchParams(location.search).get("auth");
+    if (outcome === "ok") setFlash("Signed in. This city is yours.");
+    if (outcome === "switched") setFlash("Switched. Reading that Whop now.");
+  }, []);
+
+  /**
    * A phone is not a screen you can play this on.
    *
    * Measured rather than sniffed: what matters is whether there is room for a
@@ -512,6 +528,7 @@ export function CityShell() {
           metrics={metrics}
           scope={district ? "district" : "city"}
           onGo={district ? undefined : () => goToDistrict(quest.district)}
+          route={profile?.business?.route ?? null}
         />
       ) : null}
 
@@ -548,6 +565,17 @@ export function CityShell() {
       {rising !== null ? (
         <p className="nudge" role="status" data-testid="rising">
           Surveying your Whop — this is the city your business has already built.
+          {/* Five seconds is a good first impression and a bad second one, and
+              the only way past it was an operating-system accessibility
+              setting. */}
+          <button
+            type="button"
+            className="nudge__skip"
+            data-action="skip-rising"
+            onClick={() => setRising(null)}
+          >
+            Skip
+          </button>
         </p>
       ) : null}
 

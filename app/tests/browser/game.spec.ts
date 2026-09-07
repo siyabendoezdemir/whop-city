@@ -323,3 +323,34 @@ test("every district has a quest of its own", async ({ page }) => {
   // Three districts, three different things to do.
   expect(new Set(seen).size).toBe(3);
 });
+
+test("the founding sweep can be skipped", async ({ page }) => {
+  // Five seconds is a good first impression and a bad second one, and until
+  // now the only way past it was an operating-system accessibility setting.
+  await open(page, "thriving", { motion: true });
+  const sweep = page.locator('[data-testid="rising"]');
+  await expect(sweep).toBeVisible();
+
+  await page.click('[data-action="skip-rising"]');
+
+  await expect(sweep).toHaveCount(0);
+  // Skipping lands on the finished city, not a half-built one: the markers
+  // and the ready bar are held back while the sweep runs.
+  await expect(page.locator('[data-testid="res-gold"]')).toBeVisible();
+});
+
+test("a quest offers a way into Whop, not just advice about it", async ({ page }) => {
+  // The card said what to do and then left you to find it, which for anybody
+  // who does not know Whop's dashboard by heart is most of the work.
+  await open(page, "balanced");
+  await page.click('[data-action="quest-how"]');
+
+  const out = page.locator('[data-action="quest-open"]');
+  await expect(out).toBeVisible();
+  await expect(out).toHaveAttribute("target", "_blank");
+  // Only the two URLs that are known to exist. Everything under /dashboard
+  // answers 200 whether or not it is a real screen, so a guessed deep link
+  // cannot be told apart from a working one.
+  const href = await out.getAttribute("href");
+  expect(href === "https://whop.com/dashboard" || /^https:\/\/whop\.com\/[\w-]+$/.test(href ?? "")).toBe(true);
+});
