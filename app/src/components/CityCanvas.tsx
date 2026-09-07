@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 
 import type { DistrictId, PublicCityProjection } from "../city/projection";
 import { buildLots, buildTerrain, type Lots, type Terrain } from "../render/city/city";
+import { PARCELS } from "../render/city/cityPlan";
 import { createWorks, type MarkerKind, type Works } from "../render/city/works";
 import { plotSite } from "../game/plots";
 import { applySurfaceDetail } from "../render/scene/materials";
@@ -498,6 +499,7 @@ export function CityCanvas({
       __city: {
         ready: true,
         framings: FRAMING_ORDER,
+        plotIds: PARCELS.map((parcel) => parcel.id),
 
         frame: (key: string, t = 6, bias = 1) => {
           const f = framingFor(key);

@@ -67,6 +67,19 @@ function prototype(key: string, make: () => THREE.BufferGeometry): THREE.BufferG
  */
 export function bevelBox(w: number, h: number, d: number, radius = 0.05): THREE.BufferGeometry {
   const r = Math.min(radius, w / 2.05, h / 2.05, d / 2.05);
+  // Below a certain size, a caught edge is a rounding error.
+  //
+  // A rounded box is a hundred and eight triangles against twelve. That is
+  // worth paying on a mass — a nine-metre wall carries its highlight for
+  // hundreds of pixels and it is the difference between a toy model and a set
+  // of cubes. It is not worth paying on a plant housing, a stair overrun or a
+  // rooftop tank, where the whole part is a few pixels across and a
+  // five-centimetre radius on it is a fraction of one. Those were most of the
+  // bevelled boxes in the city.
+  //
+  // Judged here rather than at each call site, because "is this big enough to
+  // round" is a fact about the camera and not about the building.
+  if (Math.min(w, h, d) < 1.6) return box(w, h, d);
   return prototype(`v:${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 1, r));
 }
 
@@ -108,6 +121,18 @@ export function post(radius: number, height: number, sides = 8): THREE.BufferGeo
 /** Faceted blob for foliage. Flat-shaded, so it reads as carved rather than smooth. */
 export function blob(radius: number, detail = 0): THREE.BufferGeometry {
   return new THREE.IcosahedronGeometry(radius, detail);
+}
+
+/**
+ * The same shape with half the faces, for foliage in the distance.
+ *
+ * An icosahedron is twenty faces and a street tree spends three of them on one
+ * canopy, which is right for something the player is looking at. The five
+ * hundred trees out in the country are ten pixels tall and behind everything,
+ * and at that size an octahedron and an icosahedron are the same green lump.
+ */
+export function farBlob(radius: number): THREE.BufferGeometry {
+  return new THREE.OctahedronGeometry(radius);
 }
 
 /**

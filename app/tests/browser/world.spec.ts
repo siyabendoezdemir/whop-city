@@ -143,6 +143,25 @@ test("every state stays inside the render budget", async ({ page }) => {
   }
 });
 
+test("a fully grown city stays inside the render budget", async ({ page }) => {
+  // The scenarios above are the cities the fixtures earn, and none of them
+  // stands every plot at the top of its ladder. A player who grows the whole
+  // board does, and that is the heaviest world the renderer can be asked for —
+  // so it is the one the budget has to hold at. It did not: the fixtures came
+  // in around 160k while eleven plots at level five came in at 261k against a
+  // ceiling of 250k, and nothing measured it.
+  await open(page, "thriving");
+  await page.evaluate(() => {
+    const city = window.__city!;
+    city.setLevels(Object.fromEntries(city.plotIds.map((id) => [id, 5])));
+  });
+  await page.waitForTimeout(300);
+
+  const measured = await info(page);
+  expect(measured.drawCalls, "grown draw calls").toBeLessThanOrEqual(BUDGET.drawCalls);
+  expect(measured.triangles, "grown triangles").toBeLessThanOrEqual(BUDGET.triangles);
+});
+
 test("rebuilding does not leak GPU resources", async ({ page }) => {
   await open(page, "balanced");
   const baseline = await info(page);

@@ -20,6 +20,8 @@ export type CityInfo = {
 export type CityHooks = {
   ready: boolean;
   framings: string[];
+  /** Every parcel in the plan, so a caller can stand all of them up at once. */
+  plotIds: string[];
   frame: (key: string, t?: number, zoom?: number) => void;
   frameAt: (focus: [number, number, number], height: number, t: number) => void;
   flyTo: (to: string, from: string, progress: number, t: number) => void;
