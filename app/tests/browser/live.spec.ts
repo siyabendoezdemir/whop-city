@@ -121,6 +121,39 @@ test("a sale that pays for a level offers the building in the same beat", async 
   await expect(page.locator('[data-testid="ready-bar"]')).toBeVisible({ timeout: 40_000 });
 });
 
+test("a sale moves the figure before the monthly rollup has caught up", async ({ page }) => {
+  // The reported bug, exactly. Every other test here hands the page a sale
+  // *and* a raised rollup in the same reply, which is the one case that was
+  // never broken — it is the rollup moving that they were really watching.
+  //
+  // In life the two arrive minutes apart: the payments list knows about the
+  // sale at once and the whole-month figure recomputes on Whop's own
+  // schedule. So this raises the sale and deliberately leaves the rollup
+  // where it was, which is what made the counter sit still, the building the
+  // sale had paid for stay out of reach, and the page look broken until it
+  // was reloaded.
+  const inject = await open(page);
+  const before = await page.locator('[data-testid="res-gold"]').textContent();
+
+  inject({ sales: [payment({ cents: 250_000 })] });
+
+  await expect(page.locator('[data-testid="res-gold"]')).not.toHaveText(before ?? "", {
+    timeout: 30_000,
+  });
+});
+
+test("a sale that pays for a level offers the building, rollup or no rollup", async ({ page }) => {
+  // The same lag, one layer further in. Levels are computed from the figures,
+  // so a revenue counter that will not move is also a building that will not
+  // offer itself — which is the half of this the player actually cares about.
+  const inject = await open(page, "balanced");
+  await expect(page.locator('[data-testid="ready-bar"]')).toHaveCount(0);
+
+  inject({ sales: [payment({ cents: 2_500_000 })] });
+
+  await expect(page.locator('[data-testid="ready-bar"]')).toBeVisible({ timeout: 40_000 });
+});
+
 test("a visitor sees no feed at all", async ({ page }) => {
   // The unavailable fixture withholds the figures, which is the state a public
   // visitor is in. Nothing about the business's takings may appear.
