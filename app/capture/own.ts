@@ -151,11 +151,15 @@ const levels = (process.env.OWN_LEVELS ?? "0,3").split(",").map(Number);
 mkdirSync(".frames/own", { recursive: true });
 
 const browser = await chromium.launch(launchOptions());
-const page = await openCity(browser, {
-  scenario: "thriving",
-  ss: 1,
-  view: { width: 1200, height: 760 },
+// Reduced motion, which is the product's own way of skipping the founding
+// sweep. Markers are held back for the whole of that sweep, so without it every
+// frame here is a city with no markers on it whatever the business has done.
+const context = await browser.newContext({
+  viewport: { width: 1200, height: 760 },
+  deviceScaleFactor: 1,
+  reducedMotion: "reduce",
 });
+const page = await openCity(browser, { scenario: "thriving", ss: 1, context });
 // The HUD is not the subject and it covers three corners of the city.
 await page.addStyleTag({
   content:

@@ -6,7 +6,7 @@
  * import it without converting the harness and churning every capture script.
  */
 
-import type { Browser, LaunchOptions, Page } from "@playwright/test";
+import type { Browser, BrowserContext, LaunchOptions, Page } from "@playwright/test";
 
 export declare const APP_URL: string;
 export declare const PROJECT_ROOT: string;
@@ -23,8 +23,10 @@ export declare function openCity(
   browser: Browser,
   options?: {
     scenario?: string;
+    capture?: boolean;
     ss?: number;
-    motion?: boolean;
     view?: { width: number; height: number };
+    /** A context of your own, for the settings `openCity` does not take — reduced motion, mainly. */
+    context?: BrowserContext;
   },
 ): Promise<Page>;
