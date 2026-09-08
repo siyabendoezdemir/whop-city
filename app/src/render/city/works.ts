@@ -15,7 +15,8 @@ import { plotSite } from "../../game/plots";
  *   a **marker** floating over any plot with something waiting: a gold bubble
  *   with a chevron on a built plot, a plus on empty ground
  *
- *   a **ring** on the ground under the selected plot
+ *   a **ring** on the ground under the selected plot, and a second, quieter one
+ *   under whichever plot the pointer is over
  *
  *   an invisible **pick box** over the whole parcel, so a plot is chosen by
  *   clicking the building or the ground it stands on
@@ -52,6 +53,15 @@ export type Works = {
     markers: Readonly<Record<string, MarkerKind>>;
     selected: string | null;
   }) => void;
+  /**
+   * Ring whichever plot the pointer is over, or none.
+   *
+   * Deliberately not part of `apply`, and deliberately not React state. This
+   * fires on every pointer move across the canvas; routing that through a
+   * re-render to reach the same two lines of matrix maths would rebuild the
+   * whole HUD sixty times a second to move one ring.
+   */
+  hover: (plotId: string | null) => void;
   update: (t: number) => void;
   dispose: () => void;
 };
@@ -191,22 +201,35 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
     group.add(mesh);
   }
 
-  // One plot is selected at a time, so the ring is one mesh that moves.
-  const ringMaterial = keep(
-    new THREE.MeshBasicMaterial({
-      color: 0xffd9a0,
-      transparent: true,
-      opacity: 0.5,
-      depthWrite: false,
-      toneMapped: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  const ring = new THREE.Mesh(keep(new THREE.RingGeometry(0.92, 1, 48)), ringMaterial);
-  ring.name = "works:ring";
-  ring.rotation.x = -Math.PI / 2;
-  ring.visible = false;
-  group.add(ring);
+  // One plot is selected at a time, and the pointer is over at most one, so
+  // each ring is a single mesh that moves rather than one per plot.
+  const band = keep(new THREE.RingGeometry(0.92, 1, 48));
+  const circle = (name: string, color: number, opacity: number) => {
+    const material = keep(
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        toneMapped: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    const mesh = new THREE.Mesh(band, material);
+    mesh.name = name;
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.visible = false;
+    group.add(mesh);
+    return { mesh, material };
+  };
+
+  const { mesh: ring, material: ringMaterial } = circle("works:ring", 0xffd9a0, 0.5);
+  // Cooler and fainter than the selection ring, because it is answering a
+  // different question. Selection says "this is the one you are looking at";
+  // hover only says "this one is yours and it can be clicked", which is the
+  // thing that was impossible to find out without clicking and seeing what
+  // happened.
+  const { mesh: hoverRing } = circle("works:hover", 0xffffff, 0.32);
 
   /**
    * Pick boxes.
@@ -233,9 +256,25 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   const scale = new THREE.Vector3(1, 1, 1);
   const at = new THREE.Vector3();
   let selectedIndex = -1;
+  let hoveredIndex = -1;
 
   /** Where a plot's marker floats, ignoring the bob. */
   const restingHeight = (index: number) => slots[index].top + MARKER_LIFT;
+
+  /** How wide a ring sits on a plot: just inside its shorter dimension. */
+  const ringReach = (index: number) =>
+    Math.max(sites[index].width, sites[index].depth) * 0.44;
+
+  function placeRing(mesh: THREE.Mesh, index: number, swell = 1): void {
+    if (index < 0) {
+      mesh.visible = false;
+      return;
+    }
+    const reach = ringReach(index) * swell;
+    mesh.position.set(sites[index].x, 0.4, sites[index].z);
+    mesh.scale.set(reach, reach, 1);
+    mesh.visible = true;
+  }
 
   function writeMarkers(bob: number): void {
     for (const kind of ["ready", "build"] as const) {
@@ -275,16 +314,19 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
       });
 
       writeMarkers(0);
+      placeRing(ring, selectedIndex);
+      // The selected plot already has a ring, and two concentric ones on the
+      // same ground read as a rendering fault rather than as two states.
+      if (hoveredIndex === selectedIndex) hoveredIndex = -1;
+      placeRing(hoverRing, hoveredIndex);
+    },
 
-      if (selectedIndex >= 0) {
-        const site = sites[selectedIndex];
-        const reach = Math.max(site.width, site.depth) * 0.44;
-        ring.position.set(site.x, 0.4, site.z);
-        ring.scale.set(reach, reach, 1);
-        ring.visible = true;
-      } else {
-        ring.visible = false;
-      }
+    hover: (plotId) => {
+      const index = plotId ? sites.findIndex((site) => site.id === plotId) : -1;
+      const wanted = index === selectedIndex ? -1 : index;
+      if (wanted === hoveredIndex) return;
+      hoveredIndex = wanted;
+      placeRing(hoverRing, hoveredIndex);
     },
 
     update: (t) => {
@@ -294,9 +336,7 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
 
       if (ring.visible && selectedIndex >= 0) {
         const wobble = 1 + Math.sin(t * 2.1) * 0.035;
-        const site = sites[selectedIndex];
-        const reach = Math.max(site.width, site.depth) * 0.44 * wobble;
-        ring.scale.set(reach, reach, 1);
+        placeRing(ring, selectedIndex, wobble);
         ringMaterial.opacity = 0.34 + 0.2 * (0.5 + 0.5 * Math.sin(t * 2.1));
       }
     },

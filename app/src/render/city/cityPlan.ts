@@ -1482,7 +1482,18 @@ function buildBridge(b: PartsBuilder, kit: InstanceKit): void {
 export function buildSurroundings(seed: number): THREE.Group {
   const rng = new Rng(seed).fork("surroundings");
   const b = new PartsBuilder();
-  const bodies = [M.brick, M.renderCream, M.renderTeal, M.plaster, M.brickDark, M.renderClay];
+  // Drained. Nothing standing here belongs to the player, and until these had
+  // their own colours the backdrop was built from the same six materials as the
+  // plots, which is why a block across the ring road was indistinguishable from
+  // one you owned.
+  const bodies = [
+    M.backdropBrick,
+    M.backdropCream,
+    M.backdropTeal,
+    M.backdropPlaster,
+    M.backdropBrickDark,
+    M.backdropClay,
+  ];
 
   type Blk = { x: number; z: number; w: number; d: number; h: number; far?: boolean };
   const blocks: Blk[] = [];
@@ -1637,7 +1648,7 @@ export function buildSurroundings(seed: number): THREE.Group {
           );
         }
         const stackX = blk.x + rng.range(-blk.w * 0.3, blk.w * 0.3);
-        b.add(M.brickDark, box(1.0, 1.9, 0.9), [stackX, base + blk.h + rise + 0.55, ridgeZ]);
+        b.add(M.backdropBrickDark, box(1.0, 1.9, 0.9), [stackX, base + blk.h + rise + 0.55, ridgeZ]);
         b.add(M.fascia, box(1.18, 0.2, 1.08), [stackX, base + blk.h + rise + 1.6, ridgeZ]);
       } else {
         // The flat quarter of the low row, which is the other thing a shed can
