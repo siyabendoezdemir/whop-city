@@ -244,6 +244,52 @@ test("hovering does not move the camera or select anything", async ({ page }) =>
   await expect(page.locator('[data-testid="building-card"]')).toHaveCount(0);
 });
 
+/**
+ * The cursor already turned into a pointer over a plot, which is a real cue and
+ * an insufficient one: it is not in the frame the player is looking at, it says
+ * nothing about how far the plot reaches, and on a city where the backdrop used
+ * to be painted in the same six colours as the plots it was the *only* way to
+ * find out which buildings were yours short of clicking them.
+ */
+test("hovering a plot rings it, and only while the pointer is on it", async ({ page }) => {
+  await open(page, "balanced");
+
+  const ringed = () =>
+    page.evaluate(() => {
+      const ring = window.__city!.scene.getObjectByName("works:hover") as
+        | { visible: boolean; position: { x: number; z: number } }
+        | undefined;
+      return ring?.visible ? { x: ring.position.x, z: ring.position.z } : null;
+    });
+
+  expect(await ringed(), "a ring before the pointer has been anywhere").toBeNull();
+
+  const venue = await page.evaluate(() => window.__city!.plotGround("creator-venue"));
+  await page.mouse.move(venue!.x, venue!.y);
+  await page.waitForTimeout(120);
+
+  const on = await ringed();
+  expect(on, "no ring under the pointer").not.toBeNull();
+
+  // Under the plot the pointer is on, not merely somewhere. A ring that lands
+  // on the wrong plot is worse than none: it answers the question wrongly. The
+  // pick box carries the plot id, so its position is where the answer should be.
+  const centre = await page.evaluate(() => {
+    const works = window.__city!.scene.getObjectByName("works") as unknown as {
+      children: Array<{ userData?: { plotId?: string }; position: { x: number; z: number } }>;
+    };
+    const pick = works.children.find((child) => child.userData?.plotId === "creator-venue");
+    return pick ? { x: pick.position.x, z: pick.position.z } : null;
+  });
+  expect(centre, "no pick box for creator-venue").not.toBeNull();
+  expect(Math.hypot(on!.x - centre!.x, on!.z - centre!.z)).toBeLessThan(1);
+
+  // Off the city entirely — the sky above it, where no plot stands.
+  await page.mouse.move(venue!.x, 8);
+  await page.waitForTimeout(120);
+  expect(await ringed(), "the ring outlived the pointer").toBeNull();
+});
+
 // ---------------------------------------------------------------------------
 // Whose city, and on what screen
 // ---------------------------------------------------------------------------

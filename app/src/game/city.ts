@@ -160,20 +160,29 @@ export function levelsOf(state: CityState, metrics: CityMetrics): Record<string,
 }
 
 /**
- * Which plots should be wearing a bubble, and which bubble.
+ * What each plot is wearing.
  *
- * A plus over empty ground, a chevron over a building that has outgrown its
- * current size. Nothing over a plot that is finished or still saving up: a
- * marker over everything is a marker over nothing.
+ * A plus over empty ground with something claimable on it, a chevron over a
+ * building that has outgrown its current size. A marker over everything is a
+ * marker over nothing, so a plot that is finished or still saving up gets
+ * neither.
+ *
+ * It gets a ring instead, which is a different claim: not "there is something
+ * to do here" but "this one is yours". Those are separate questions and only
+ * one of them was being answered. On a city that has earned nothing the plots
+ * are eleven lawns and nothing is claimable, so under the old rule the player
+ * saw no bubbles at all and had no way to tell their own land from the parks —
+ * and once built, the buildings sat among a backdrop that was, until the
+ * palette split, painted in exactly the same six colours.
  */
 export function markersOf(
   state: CityState,
   metrics: CityMetrics,
-): Record<string, "ready" | "build"> {
-  const markers: Record<string, "ready" | "build"> = {};
+): Record<string, "ready" | "build" | "owned"> {
+  const markers: Record<string, "ready" | "build" | "owned"> = {};
   for (const view of viewAll(state, metrics)) {
-    if (view.ready <= 0) continue;
-    markers[view.building.id] = view.level === 0 ? "build" : "ready";
+    markers[view.building.id] =
+      view.ready <= 0 ? "owned" : view.level === 0 ? "build" : "ready";
   }
   return markers;
 }

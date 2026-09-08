@@ -37,11 +37,28 @@ import { plotSite } from "../../game/plots";
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
-/** How far above the roofline a marker floats. */
-const MARKER_LIFT = 4.6;
-const MARKER_SIZE = 7.2;
+export type MarkerKind = "ready" | "build" | "owned";
 
-export type MarkerKind = "ready" | "build";
+/**
+ * How big each marker is and how far above the roofline it floats.
+ *
+ * `owned` is a third of the size and sits closer to the roof, because it is
+ * saying a much smaller thing. A bubble with a glyph in it is a callout: it
+ * means there is something here to do. Eleven of those over a city where
+ * nothing is waiting would be eleven false alarms, and the player would learn
+ * within a minute to stop reading them — which would cost the two that matter.
+ *
+ * So this is a plain ring, not a bubble, and it only has to survive being
+ * looked for. It is the answer to "which of these are mine" on a city that has
+ * earned nothing yet, where the plots are eleven lawns, no bubble is showing
+ * because nothing is claimable, and the palette has nothing to separate either
+ * — a lawn is a lawn whoever owns it.
+ */
+const MARKER: Record<MarkerKind, { size: number; lift: number }> = {
+  ready: { size: 7.2, lift: 4.6 },
+  build: { size: 7.2, lift: 4.6 },
+  owned: { size: 4.4, lift: 3.4 },
+};
 
 export type Works = {
   group: THREE.Group;
@@ -81,6 +98,46 @@ function bubbleTexture(kind: MarkerKind): THREE.CanvasTexture {
   const cx = size / 2;
   const cy = size * 0.44;
   const r = size * 0.3;
+
+  // A ring, for a plot with nothing waiting on it. Drawn as an outline rather
+  // than a disc so it reads as a boundary the way the selection and hover rings
+  // do, and finished before any of the callout furniture below is reached — an
+  // "owned" marker with a tail pointing at the roof would be a callout, which
+  // is the one thing it must not be.
+  if (kind === "owned") {
+    const ring = r * 0.8;
+    // Dark under light. A white ring alone survives against the bay and
+    // disappears against a pale roof or a concrete apron, which are two of the
+    // three things it will ever be seen over; the dark halo under it is what
+    // makes it hold on all of them.
+    ctx.save();
+    ctx.shadowColor = "rgba(16,20,28,0.55)";
+    ctx.shadowBlur = size * 0.055;
+    ctx.strokeStyle = "rgba(24,32,44,0.5)";
+    ctx.lineWidth = size * 0.13;
+    ctx.beginPath();
+    ctx.arc(cx, size / 2, ring, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.94)";
+    ctx.lineWidth = size * 0.075;
+    ctx.beginPath();
+    ctx.arc(cx, size / 2, ring, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // A dot in the middle, so it is a mark rather than a hoop. An empty circle
+    // at this size reads as a hole punched in the picture.
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
+    ctx.beginPath();
+    ctx.arc(cx, size / 2, ring * 0.24, 0, Math.PI * 2);
+    ctx.fill();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+  }
 
   ctx.save();
   ctx.shadowColor = "rgba(18,22,30,0.5)";
@@ -162,13 +219,15 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   camera.updateMatrixWorld();
   const facing = camera.quaternion.clone();
 
-  const quad = keep(new THREE.PlaneGeometry(MARKER_SIZE, MARKER_SIZE));
-  const markers: Record<MarkerKind, THREE.InstancedMesh> = {
-    ready: new THREE.InstancedMesh(
+  // One unit quad for all three; the size difference is in the instance matrix,
+  // so a marker kind costs a texture rather than a geometry.
+  const quad = keep(new THREE.PlaneGeometry(1, 1));
+  const sheet = (kind: MarkerKind) =>
+    new THREE.InstancedMesh(
       quad,
       keep(
         new THREE.MeshBasicMaterial({
-          map: keep(bubbleTexture("ready")),
+          map: keep(bubbleTexture(kind)),
           transparent: true,
           // Always on top. A marker hidden behind the tower next door is a
           // building the player never finds.
@@ -178,24 +237,17 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
         }),
       ),
       count,
-    ),
-    build: new THREE.InstancedMesh(
-      quad,
-      keep(
-        new THREE.MeshBasicMaterial({
-          map: keep(bubbleTexture("build")),
-          transparent: true,
-          depthTest: false,
-          depthWrite: false,
-          toneMapped: false,
-        }),
-      ),
-      count,
-    ),
+    );
+  const markers: Record<MarkerKind, THREE.InstancedMesh> = {
+    ready: sheet("ready"),
+    build: sheet("build"),
+    owned: sheet("owned"),
   };
   for (const [kind, mesh] of Object.entries(markers)) {
     mesh.name = `works:marker:${kind}`;
-    mesh.renderOrder = 20;
+    // Under the callouts. Where a quiet ring and a live bubble land on the same
+    // pixels, the bubble is the one worth reading.
+    mesh.renderOrder = kind === "owned" ? 19 : 20;
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     group.add(mesh);
@@ -259,7 +311,8 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   let hoveredIndex = -1;
 
   /** Where a plot's marker floats, ignoring the bob. */
-  const restingHeight = (index: number) => slots[index].top + MARKER_LIFT;
+  const restingHeight = (index: number, kind: MarkerKind) =>
+    slots[index].top + MARKER[kind].lift;
 
   /** How wide a ring sits on a plot: just inside its shorter dimension. */
   const ringReach = (index: number) =>
@@ -277,11 +330,13 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   }
 
   function writeMarkers(bob: number): void {
-    for (const kind of ["ready", "build"] as const) {
+    for (const kind of ["ready", "build", "owned"] as const) {
+      const { size } = MARKER[kind];
+      scale.set(size, size, 1);
       let used = 0;
       sites.forEach((site, index) => {
         if (slots[index].marker !== kind) return;
-        at.set(site.x, restingHeight(index) + bob, site.z);
+        at.set(site.x, restingHeight(index, kind) + bob, site.z);
         matrix.compose(at, facing, scale);
         markers[kind].setMatrixAt(used++, matrix);
       });
@@ -297,7 +352,10 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
     anchor: (plotId) => {
       const index = sites.findIndex((site) => site.id === plotId);
       if (index < 0) return null;
-      return new THREE.Vector3(sites[index].x, restingHeight(index), sites[index].z);
+      // The callout height, whatever is actually showing: this is where a test
+      // or a capture looks for the marker, and the two that carry a glyph are
+      // the ones worth aiming at.
+      return new THREE.Vector3(sites[index].x, restingHeight(index, "ready"), sites[index].z);
     },
 
     apply: ({ tops, markers: wanted, selected }) => {
