@@ -15,7 +15,8 @@ import { plotSite } from "../../game/plots";
  *   a **marker** floating over any plot with something waiting: a gold bubble
  *   with a chevron on a built plot, a plus on empty ground
  *
- *   a **ring** on the ground under the selected plot
+ *   a **ring** on the ground under the selected plot, and a second, quieter one
+ *   under whichever plot the pointer is over
  *
  *   an invisible **pick box** over the whole parcel, so a plot is chosen by
  *   clicking the building or the ground it stands on
@@ -36,11 +37,28 @@ import { plotSite } from "../../game/plots";
 
 const HIDDEN = new THREE.Matrix4().makeScale(0, 0, 0);
 
-/** How far above the roofline a marker floats. */
-const MARKER_LIFT = 4.6;
-const MARKER_SIZE = 7.2;
+export type MarkerKind = "ready" | "build" | "owned";
 
-export type MarkerKind = "ready" | "build";
+/**
+ * How big each marker is and how far above the roofline it floats.
+ *
+ * `owned` is a third of the size and sits closer to the roof, because it is
+ * saying a much smaller thing. A bubble with a glyph in it is a callout: it
+ * means there is something here to do. Eleven of those over a city where
+ * nothing is waiting would be eleven false alarms, and the player would learn
+ * within a minute to stop reading them — which would cost the two that matter.
+ *
+ * So this is a plain ring, not a bubble, and it only has to survive being
+ * looked for. It is the answer to "which of these are mine" on a city that has
+ * earned nothing yet, where the plots are eleven lawns, no bubble is showing
+ * because nothing is claimable, and the palette has nothing to separate either
+ * — a lawn is a lawn whoever owns it.
+ */
+const MARKER: Record<MarkerKind, { size: number; lift: number }> = {
+  ready: { size: 7.2, lift: 4.6 },
+  build: { size: 7.2, lift: 4.6 },
+  owned: { size: 4.4, lift: 3.4 },
+};
 
 export type Works = {
   group: THREE.Group;
@@ -52,6 +70,15 @@ export type Works = {
     markers: Readonly<Record<string, MarkerKind>>;
     selected: string | null;
   }) => void;
+  /**
+   * Ring whichever plot the pointer is over, or none.
+   *
+   * Deliberately not part of `apply`, and deliberately not React state. This
+   * fires on every pointer move across the canvas; routing that through a
+   * re-render to reach the same two lines of matrix maths would rebuild the
+   * whole HUD sixty times a second to move one ring.
+   */
+  hover: (plotId: string | null) => void;
   update: (t: number) => void;
   dispose: () => void;
 };
@@ -71,6 +98,46 @@ function bubbleTexture(kind: MarkerKind): THREE.CanvasTexture {
   const cx = size / 2;
   const cy = size * 0.44;
   const r = size * 0.3;
+
+  // A ring, for a plot with nothing waiting on it. Drawn as an outline rather
+  // than a disc so it reads as a boundary the way the selection and hover rings
+  // do, and finished before any of the callout furniture below is reached — an
+  // "owned" marker with a tail pointing at the roof would be a callout, which
+  // is the one thing it must not be.
+  if (kind === "owned") {
+    const ring = r * 0.8;
+    // Dark under light. A white ring alone survives against the bay and
+    // disappears against a pale roof or a concrete apron, which are two of the
+    // three things it will ever be seen over; the dark halo under it is what
+    // makes it hold on all of them.
+    ctx.save();
+    ctx.shadowColor = "rgba(16,20,28,0.55)";
+    ctx.shadowBlur = size * 0.055;
+    ctx.strokeStyle = "rgba(24,32,44,0.5)";
+    ctx.lineWidth = size * 0.13;
+    ctx.beginPath();
+    ctx.arc(cx, size / 2, ring, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.strokeStyle = "rgba(255,255,255,0.94)";
+    ctx.lineWidth = size * 0.075;
+    ctx.beginPath();
+    ctx.arc(cx, size / 2, ring, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // A dot in the middle, so it is a mark rather than a hoop. An empty circle
+    // at this size reads as a hole punched in the picture.
+    ctx.fillStyle = "rgba(255,255,255,0.94)";
+    ctx.beginPath();
+    ctx.arc(cx, size / 2, ring * 0.24, 0, Math.PI * 2);
+    ctx.fill();
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+  }
 
   ctx.save();
   ctx.shadowColor = "rgba(18,22,30,0.5)";
@@ -152,13 +219,15 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   camera.updateMatrixWorld();
   const facing = camera.quaternion.clone();
 
-  const quad = keep(new THREE.PlaneGeometry(MARKER_SIZE, MARKER_SIZE));
-  const markers: Record<MarkerKind, THREE.InstancedMesh> = {
-    ready: new THREE.InstancedMesh(
+  // One unit quad for all three; the size difference is in the instance matrix,
+  // so a marker kind costs a texture rather than a geometry.
+  const quad = keep(new THREE.PlaneGeometry(1, 1));
+  const sheet = (kind: MarkerKind) =>
+    new THREE.InstancedMesh(
       quad,
       keep(
         new THREE.MeshBasicMaterial({
-          map: keep(bubbleTexture("ready")),
+          map: keep(bubbleTexture(kind)),
           transparent: true,
           // Always on top. A marker hidden behind the tower next door is a
           // building the player never finds.
@@ -168,45 +237,72 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
         }),
       ),
       count,
-    ),
-    build: new THREE.InstancedMesh(
-      quad,
-      keep(
-        new THREE.MeshBasicMaterial({
-          map: keep(bubbleTexture("build")),
-          transparent: true,
-          depthTest: false,
-          depthWrite: false,
-          toneMapped: false,
-        }),
-      ),
-      count,
-    ),
+    );
+  const markers: Record<MarkerKind, THREE.InstancedMesh> = {
+    ready: sheet("ready"),
+    build: sheet("build"),
+    owned: sheet("owned"),
   };
   for (const [kind, mesh] of Object.entries(markers)) {
     mesh.name = `works:marker:${kind}`;
-    mesh.renderOrder = 20;
+    // Under the callouts. Where a quiet ring and a live bubble land on the same
+    // pixels, the bubble is the one worth reading.
+    mesh.renderOrder = kind === "owned" ? 19 : 20;
     mesh.frustumCulled = false;
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     group.add(mesh);
   }
 
-  // One plot is selected at a time, so the ring is one mesh that moves.
-  const ringMaterial = keep(
-    new THREE.MeshBasicMaterial({
-      color: 0xffd9a0,
-      transparent: true,
-      opacity: 0.5,
-      depthWrite: false,
-      toneMapped: false,
-      side: THREE.DoubleSide,
-    }),
-  );
-  const ring = new THREE.Mesh(keep(new THREE.RingGeometry(0.92, 1, 48)), ringMaterial);
-  ring.name = "works:ring";
-  ring.rotation.x = -Math.PI / 2;
-  ring.visible = false;
-  group.add(ring);
+  // One plot is selected at a time, and the pointer is over at most one, so
+  // each ring is a single mesh that moves rather than one per plot.
+  const band = keep(new THREE.RingGeometry(0.92, 1, 48));
+  const surround = keep(new THREE.RingGeometry(0.885, 1.035, 48));
+  const circle = (
+    name: string,
+    color: number,
+    opacity: number,
+    geometry: THREE.BufferGeometry = band,
+  ) => {
+    const material = keep(
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity,
+        depthWrite: false,
+        toneMapped: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = name;
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.visible = false;
+    group.add(mesh);
+    return { mesh, material };
+  };
+
+  const { mesh: ring, material: ringMaterial } = circle("works:ring", 0xffd9a0, 0.5);
+
+  /**
+   * The hover ring: a white band on a dark one.
+   *
+   * Cooler than the selection ring, because it answers a different question.
+   * Selection says "this is the one you are looking at"; hover only says "this
+   * one is yours and it can be clicked", which is the thing that was impossible
+   * to find out without clicking and seeing what happened.
+   *
+   * Two bands rather than one because a single white hairline is legible over
+   * asphalt and over grass and over nothing else — and the ground it has to
+   * work on is mostly pale: footway, kerb, forecourt, concrete apron. A
+   * reviewer watching the first version scored it four out of ten and said it
+   * would be missed at a glance, which for a cue whose whole job is to be found
+   * is a failure. The darker band sits a shade wider underneath and gives the
+   * white something to be white against.
+   */
+  const { mesh: hoverShadow } = circle("works:hover:edge", 0x121821, 0.42, surround);
+  const { mesh: hoverRing } = circle("works:hover", 0xffffff, 0.85);
+  hoverShadow.renderOrder = 1;
+  hoverRing.renderOrder = 2;
 
   /**
    * Pick boxes.
@@ -233,16 +329,41 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   const scale = new THREE.Vector3(1, 1, 1);
   const at = new THREE.Vector3();
   let selectedIndex = -1;
+  let hoveredIndex = -1;
 
   /** Where a plot's marker floats, ignoring the bob. */
-  const restingHeight = (index: number) => slots[index].top + MARKER_LIFT;
+  const restingHeight = (index: number, kind: MarkerKind) =>
+    slots[index].top + MARKER[kind].lift;
+
+  /** How wide a ring sits on a plot: just inside its shorter dimension. */
+  const ringReach = (index: number) =>
+    Math.max(sites[index].width, sites[index].depth) * 0.44;
+
+  function placeRing(mesh: THREE.Mesh, index: number, swell = 1): void {
+    if (index < 0) {
+      mesh.visible = false;
+      return;
+    }
+    const reach = ringReach(index) * swell;
+    mesh.position.set(sites[index].x, 0.4, sites[index].z);
+    mesh.scale.set(reach, reach, 1);
+    mesh.visible = true;
+  }
+
+  /** The hover ring and the dark band it stands on, which move together. */
+  function placeHover(index: number): void {
+    placeRing(hoverShadow, index);
+    placeRing(hoverRing, index);
+  }
 
   function writeMarkers(bob: number): void {
-    for (const kind of ["ready", "build"] as const) {
+    for (const kind of ["ready", "build", "owned"] as const) {
+      const { size } = MARKER[kind];
+      scale.set(size, size, 1);
       let used = 0;
       sites.forEach((site, index) => {
         if (slots[index].marker !== kind) return;
-        at.set(site.x, restingHeight(index) + bob, site.z);
+        at.set(site.x, restingHeight(index, kind) + bob, site.z);
         matrix.compose(at, facing, scale);
         markers[kind].setMatrixAt(used++, matrix);
       });
@@ -258,7 +379,10 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
     anchor: (plotId) => {
       const index = sites.findIndex((site) => site.id === plotId);
       if (index < 0) return null;
-      return new THREE.Vector3(sites[index].x, restingHeight(index), sites[index].z);
+      // The callout height, whatever is actually showing: this is where a test
+      // or a capture looks for the marker, and the two that carry a glyph are
+      // the ones worth aiming at.
+      return new THREE.Vector3(sites[index].x, restingHeight(index, "ready"), sites[index].z);
     },
 
     apply: ({ tops, markers: wanted, selected }) => {
@@ -275,16 +399,19 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
       });
 
       writeMarkers(0);
+      placeRing(ring, selectedIndex);
+      // The selected plot already has a ring, and two concentric ones on the
+      // same ground read as a rendering fault rather than as two states.
+      if (hoveredIndex === selectedIndex) hoveredIndex = -1;
+      placeHover(hoveredIndex);
+    },
 
-      if (selectedIndex >= 0) {
-        const site = sites[selectedIndex];
-        const reach = Math.max(site.width, site.depth) * 0.44;
-        ring.position.set(site.x, 0.4, site.z);
-        ring.scale.set(reach, reach, 1);
-        ring.visible = true;
-      } else {
-        ring.visible = false;
-      }
+    hover: (plotId) => {
+      const index = plotId ? sites.findIndex((site) => site.id === plotId) : -1;
+      const wanted = index === selectedIndex ? -1 : index;
+      if (wanted === hoveredIndex) return;
+      hoveredIndex = wanted;
+      placeHover(hoveredIndex);
     },
 
     update: (t) => {
@@ -294,9 +421,7 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
 
       if (ring.visible && selectedIndex >= 0) {
         const wobble = 1 + Math.sin(t * 2.1) * 0.035;
-        const site = sites[selectedIndex];
-        const reach = Math.max(site.width, site.depth) * 0.44 * wobble;
-        ring.scale.set(reach, reach, 1);
+        placeRing(ring, selectedIndex, wobble);
         ringMaterial.opacity = 0.34 + 0.2 * (0.5 + 0.5 * Math.sin(t * 2.1));
       }
     },

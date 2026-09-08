@@ -387,6 +387,9 @@ export function CityCanvas({
         dragged = 0;
         canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = "grabbing";
+        // Dragging the city is not hovering a plot, and a ring left standing
+        // under the pointer follows the pan around like a bug.
+        worksRef.current?.hover(null);
       } else if (down.size === 2) {
         const [a, b] = [...down.values()];
         pinchGap = Math.hypot(a.x - b.x, a.y - b.y);
@@ -445,7 +448,16 @@ export function CityCanvas({
         return;
       }
 
-      canvas.style.cursor = pickAt(event) ? "pointer" : "grab";
+      const over = pickAt(event);
+      canvas.style.cursor = over ? "pointer" : "grab";
+      worksRef.current?.hover(over?.kind === "plot" ? over.id : null);
+    };
+
+    // Leaving the canvas has to clear it, or the last plot the pointer crossed
+    // keeps its ring while the mouse is over the HUD or another window.
+    const onPointerLeave = () => {
+      worksRef.current?.hover(null);
+      canvas.style.cursor = "grab";
     };
 
     const onWheel = (event: WheelEvent) => {
@@ -463,6 +475,7 @@ export function CityCanvas({
     canvas.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("pointercancel", onPointerUp);
     canvas.addEventListener("pointermove", onPointerMove);
+    canvas.addEventListener("pointerleave", onPointerLeave);
     canvas.addEventListener("wheel", onWheel, { passive: false });
 
     window.addEventListener("resize", fit);
@@ -718,6 +731,7 @@ export function CityCanvas({
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
       canvas.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerleave", onPointerLeave);
       canvas.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", fit);
       delete (window as { __city?: unknown }).__city;

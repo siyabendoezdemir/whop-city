@@ -39,6 +39,48 @@ function standard(
 }
 
 /**
+ * The six colours a building can be, held apart from the materials made from
+ * them because they are each used twice: once for the player's plots and once,
+ * drained, for the backdrop.
+ */
+const BODY = {
+  brick: "#b4664a",
+  brickDark: "#8f4f39",
+  renderCream: "#f1e6d3",
+  renderTeal: "#3f8f92",
+  renderClay: "#d9784a",
+  plaster: "#e6ddcd",
+} as const;
+
+/** How far a backdrop body gives up its colour. Swept; see `pnpm own`. */
+const DRAINED = 0.66;
+
+/**
+ * The same body colour, for a building that is not yours.
+ *
+ * The backdrop massing and the eleven playable plots were built from one set of
+ * six materials, which meant a player asking "which of these are mine?" had
+ * nothing in the frame to answer with: the block across the ring road was the
+ * same brick as the block they owned, at the same size, finished the same way.
+ *
+ * Draining rather than darkening, and toward the colour's own luminance rather
+ * than toward a fixed grey. Value is what carries the massing — how a city
+ * reads as depth at this camera is light faces against dark ones — so a
+ * backdrop that has been dimmed loses its form and flattens into a wall. One
+ * that has only lost its saturation keeps every plane exactly as bright as it
+ * was and just stops competing, which leaves a plain reading of the frame:
+ * downtown is concrete and glass, and the warm painted quarter is yours.
+ */
+function drained(color: string, roughness: number): THREE.MeshStandardMaterial {
+  const own = new THREE.Color(color);
+  const grey = own.r * 0.2126 + own.g * 0.7152 + own.b * 0.0722;
+  return standard(
+    `#${own.lerp(new THREE.Color(grey, grey, grey), DRAINED).getHexString()}`,
+    roughness,
+  );
+}
+
+/**
  * One material for every small animated actor.
  *
  * Their colour arrives through vertex colours instead, which is what lets a
@@ -131,15 +173,33 @@ export const M = {
   ploughed: standard("#9d8563", 0.97),
 
   // ------------------------------------------------------------ structure
-  brick: standard("#b4664a", 0.86),
-  brickDark: standard("#8f4f39", 0.88),
-  renderCream: standard("#f1e6d3", 0.82),
+  brick: standard(BODY.brick, 0.86),
+  brickDark: standard(BODY.brickDark, 0.88),
+  renderCream: standard(BODY.renderCream, 0.82),
   renderCreamFaded: standard("#d9cebb", 0.94),
-  renderTeal: standard("#3f8f92", 0.8),
+  renderTeal: standard(BODY.renderTeal, 0.8),
   renderTealFaded: standard("#5b7f80", 0.93),
-  renderClay: standard("#d9784a", 0.8),
+  renderClay: standard(BODY.renderClay, 0.8),
   renderClayFaded: standard("#b3785c", 0.94),
-  plaster: standard("#e6ddcd", 0.88),
+  plaster: standard(BODY.plaster, 0.88),
+
+  // Six bodies for buildings the player does not own. Only `buildSurroundings`
+  // uses these; a playable plot reaching for one is a bug.
+  //
+  // The four with colour in them are drained from the player's own, so the
+  // backdrop is recognisably the same city and not a different one pasted in
+  // behind. The two pale ones are not, because they cannot be: `renderCream`
+  // and `plaster` are within a few per cent of neutral already, so draining
+  // them returns almost the colour they started at, and a cream block across
+  // the water went on looking exactly like the cream landmark you own. What
+  // separates two pale surfaces at the same value is temperature, so these are
+  // the cool of concrete against the warm of painted render.
+  backdropBrick: drained(BODY.brick, 0.86),
+  backdropBrickDark: drained(BODY.brickDark, 0.88),
+  backdropTeal: drained(BODY.renderTeal, 0.8),
+  backdropClay: drained(BODY.renderClay, 0.8),
+  backdropCream: standard("#dee3e7", 0.86),
+  backdropPlaster: standard("#c8cfd5", 0.9),
 
   // ------------------------------------------------------------- roofing
   //
@@ -410,9 +470,14 @@ export function applySurfaceDetail(): void {
   flow(M.water, 0.5);
   flow(M.shallows, 0.5);
 
-  // Walls.
+  // Walls. The backdrop bodies take the same maps as the colours they came
+  // from: a drained brick is still brick, and a backdrop that lost its courses
+  // along with its colour would read as a different material rather than as
+  // the same city further away.
   assign(M.brick, brickTex);
   assign(M.brickDark, brickTex);
+  assign(M.backdropBrick, brickTex);
+  assign(M.backdropBrickDark, brickTex);
   for (const material of [
     M.renderCream,
     M.renderCreamFaded,
@@ -421,6 +486,10 @@ export function applySurfaceDetail(): void {
     M.renderClay,
     M.renderClayFaded,
     M.fascia,
+    M.backdropCream,
+    M.backdropTeal,
+    M.backdropClay,
+    M.backdropPlaster,
   ]) {
     assign(material, render);
   }

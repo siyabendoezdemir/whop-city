@@ -10,7 +10,7 @@ import {
   nextTier,
   tierFor,
 } from "../src/game/buildings";
-import { claim, claimAll, changesSince, markSeen, newCity, readyCount, totalLevels, viewOf } from "../src/game/city";
+import { claim, claimAll, changesSince, markSeen, markersOf, newCity, readyCount, totalLevels, viewOf } from "../src/game/city";
 
 /**
  * The one rule the whole game rests on: the city can never be further along
@@ -194,6 +194,39 @@ describe("coming back", () => {
 
   it("says nothing on a first visit rather than inventing a baseline", () => {
     expect(changesSince(city(), metrics({ gold: 100 }))).toEqual([]);
+  });
+});
+
+describe("every plot says whose it is", () => {
+  /**
+   * "Which of these buildings are mine?" and "is there anything to do here?"
+   * are different questions, and only the second was being answered. A plot
+   * with nothing claimable wore nothing at all — so a business that had earned
+   * nothing looked out at eleven lawns with not one mark on them, and no way
+   * short of clicking to tell its own land from the parks.
+   */
+  it("marks a plot with nothing waiting as owned rather than leaving it bare", () => {
+    const marks = markersOf(city(), ZERO_METRICS);
+    expect(Object.keys(marks)).toHaveLength(BUILDINGS.length);
+    expect(Object.values(marks).every((mark) => mark === "owned")).toBe(true);
+  });
+
+  it("still gives the loud marker to the plots that have earned one", () => {
+    const busy = metrics({ gold: 600, citizens: 60, traffic: 120, recurring: 300 });
+    const marks = markersOf(city(), busy);
+
+    // Every plot is accounted for, and the ones with something claimable are
+    // wearing a callout rather than the quiet ring.
+    expect(Object.keys(marks)).toHaveLength(BUILDINGS.length);
+    const loud = Object.values(marks).filter((mark) => mark !== "owned");
+    expect(loud.length).toBeGreaterThan(0);
+    // Nothing is standing yet, so every claimable plot is a plus, not a chevron.
+    expect(loud.every((mark) => mark === "build")).toBe(true);
+
+    // And once claimed, the callout gives way to the ring: a marker that stays
+    // put after the thing it asked for is done is a marker nobody reads.
+    const after = markersOf(claimAll(city(), busy), busy);
+    expect(Object.values(after).every((mark) => mark === "owned")).toBe(true);
   });
 });
 
