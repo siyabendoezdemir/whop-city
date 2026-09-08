@@ -256,7 +256,13 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   // One plot is selected at a time, and the pointer is over at most one, so
   // each ring is a single mesh that moves rather than one per plot.
   const band = keep(new THREE.RingGeometry(0.92, 1, 48));
-  const circle = (name: string, color: number, opacity: number) => {
+  const surround = keep(new THREE.RingGeometry(0.885, 1.035, 48));
+  const circle = (
+    name: string,
+    color: number,
+    opacity: number,
+    geometry: THREE.BufferGeometry = band,
+  ) => {
     const material = keep(
       new THREE.MeshBasicMaterial({
         color,
@@ -267,7 +273,7 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
         side: THREE.DoubleSide,
       }),
     );
-    const mesh = new THREE.Mesh(band, material);
+    const mesh = new THREE.Mesh(geometry, material);
     mesh.name = name;
     mesh.rotation.x = -Math.PI / 2;
     mesh.visible = false;
@@ -276,12 +282,27 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
   };
 
   const { mesh: ring, material: ringMaterial } = circle("works:ring", 0xffd9a0, 0.5);
-  // Cooler and fainter than the selection ring, because it is answering a
-  // different question. Selection says "this is the one you are looking at";
-  // hover only says "this one is yours and it can be clicked", which is the
-  // thing that was impossible to find out without clicking and seeing what
-  // happened.
-  const { mesh: hoverRing } = circle("works:hover", 0xffffff, 0.32);
+
+  /**
+   * The hover ring: a white band on a dark one.
+   *
+   * Cooler than the selection ring, because it answers a different question.
+   * Selection says "this is the one you are looking at"; hover only says "this
+   * one is yours and it can be clicked", which is the thing that was impossible
+   * to find out without clicking and seeing what happened.
+   *
+   * Two bands rather than one because a single white hairline is legible over
+   * asphalt and over grass and over nothing else — and the ground it has to
+   * work on is mostly pale: footway, kerb, forecourt, concrete apron. A
+   * reviewer watching the first version scored it four out of ten and said it
+   * would be missed at a glance, which for a cue whose whole job is to be found
+   * is a failure. The darker band sits a shade wider underneath and gives the
+   * white something to be white against.
+   */
+  const { mesh: hoverShadow } = circle("works:hover:edge", 0x121821, 0.42, surround);
+  const { mesh: hoverRing } = circle("works:hover", 0xffffff, 0.85);
+  hoverShadow.renderOrder = 1;
+  hoverRing.renderOrder = 2;
 
   /**
    * Pick boxes.
@@ -327,6 +348,12 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
     mesh.position.set(sites[index].x, 0.4, sites[index].z);
     mesh.scale.set(reach, reach, 1);
     mesh.visible = true;
+  }
+
+  /** The hover ring and the dark band it stands on, which move together. */
+  function placeHover(index: number): void {
+    placeRing(hoverShadow, index);
+    placeRing(hoverRing, index);
   }
 
   function writeMarkers(bob: number): void {
@@ -376,7 +403,7 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
       // The selected plot already has a ring, and two concentric ones on the
       // same ground read as a rendering fault rather than as two states.
       if (hoveredIndex === selectedIndex) hoveredIndex = -1;
-      placeRing(hoverRing, hoveredIndex);
+      placeHover(hoveredIndex);
     },
 
     hover: (plotId) => {
@@ -384,7 +411,7 @@ export function createWorks(ids: readonly string[], camera: THREE.Camera): Works
       const wanted = index === selectedIndex ? -1 : index;
       if (wanted === hoveredIndex) return;
       hoveredIndex = wanted;
-      placeRing(hoverRing, hoveredIndex);
+      placeHover(hoveredIndex);
     },
 
     update: (t) => {
